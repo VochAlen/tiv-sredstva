@@ -1,0 +1,242 @@
+// GSE Control - Prisma schema (za Demo Mode)
+// Production koristi Supabase (vidi supabase/migrations/)
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+model Employee {
+  id          String   @id @default(cuid())
+  cardId      String   @unique
+  name        String
+  department  String   @default("Ramp")
+  role        String   @default("Operator")
+  active      Boolean  @default(true)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  assignments     Assignment[]
+  damages         DamageReport[]
+  qualifications  EquipmentQualification[]
+}
+
+model Equipment {
+  id            String   @id @default(cuid())
+  code          String   @unique
+  name          String
+  type          String
+  serialNumber  String?
+  location      String   @default("Stand A1")
+  status        String   @default("AVAILABLE")
+  notes         String?
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  // Periodic inspections (IATA AHM 1130)
+  lastInspectionDate     DateTime?
+  nextInspectionDate     DateTime?
+  inspectionIntervalMonths Int   @default(12)
+
+  // Operating hours (EASA Part-M continued airworthiness)
+  totalOperatingHours       Float @default(0)
+  maintenanceIntervalHours  Float @default(500)
+  lastMaintenanceHours      Float @default(0)
+
+  // Lifecycle info
+  manufacturer          String?
+  modelYear             Int?
+  purchaseDate          DateTime?
+  warrantyExpiry        DateTime?
+  registrationNumber    String?
+
+  assignments   Assignment[]
+  damages       DamageReport[]
+  maintenanceLogs MaintenanceLog[]
+  photos        EquipmentPhoto[]
+
+  @@index([status])
+  @@index([type])
+  @@index([nextInspectionDate])
+}
+
+model Assignment {
+  id                String   @id @default(cuid())
+  equipmentId       String
+  equipmentCode     String
+  equipmentName     String
+  employeeId        String?
+  employeeCardId    String
+  employeeName      String
+
+  action            String
+  inspectionResult  String
+  inspectionNotes   String?
+  checklistJson     String
+
+  shift             String?
+  damageReportId    String?
+
+  timestamp         DateTime @default(now())
+
+  equipment         Equipment @relation(fields: [equipmentId], references: [id])
+  employee          Employee? @relation(fields: [employeeId], references: [id])
+
+  @@index([equipmentId])
+  @@index([employeeCardId])
+  @@index([action])
+  @@index([timestamp])
+}
+
+model DamageReport {
+  id            String    @id @default(cuid())
+  equipmentId   String
+  equipmentCode String
+  equipmentName String
+
+  reportedByCardId String
+  reportedByName   String
+  employeeId       String?
+
+  severity      String    @default("MINOR")
+  description   String
+  status        String    @default("OPEN")
+  resolution    String?
+  resolvedAt    DateTime?
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+
+  // Root cause analysis (EASA Part-145)
+  rootCause           String?
+  correctiveAction    String?
+  preventiveAction    String?
+  insuranceClaimRef   String?
+  estimatedCost       Float?
+
+  equipment     Equipment @relation(fields: [equipmentId], references: [id])
+  employee      Employee? @relation(fields: [employeeId], references: [id])
+  photos        EquipmentPhoto[]
+
+  @@index([status])
+  @@index([equipmentId])
+}
+
+model MaintenanceLog {
+  id            String   @id @default(cuid())
+  equipmentId   String
+  equipmentCode String
+  equipmentName String
+
+  maintenanceType String  // PREVENTIVE | CORRECTIVE | INSPECTION | OVERHAUL
+  description   String
+  performedBy   String?
+  performedByCardId String?
+  cost          Float?
+  durationHours Float?
+  operatingHoursAtService Float?
+
+  certificateNumber String?
+  partsReplaced String?
+  nextDueHours  Float?
+  nextDueDate   DateTime?
+
+  status        String   @default("COMPLETED")
+
+  performedAt   DateTime @default(now())
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  equipment     Equipment @relation(fields: [equipmentId], references: [id])
+
+  @@index([equipmentId])
+  @@index([maintenanceType])
+  @@index([performedAt])
+}
+
+model EquipmentPhoto {
+  id            String   @id @default(cuid())
+  damageReportId String?
+  equipmentId   String?
+  photoData     String   // base64 encoded
+  photoType     String   @default("image/jpeg")
+  caption       String?
+  takenByCardId String?
+  takenByName   String?
+  takenAt       DateTime @default(now())
+
+  damageReport  DamageReport? @relation(fields: [damageReportId], references: [id])
+  equipment     Equipment?    @relation(fields: [equipmentId], references: [id])
+
+  @@index([damageReportId])
+  @@index([equipmentId])
+}
+
+model EquipmentQualification {
+  id            String   @id @default(cuid())
+  employeeId    String
+  employeeCardId String
+  employeeName  String
+  equipmentType String
+  qualificationLevel String @default("OPERATOR")
+  trainedAt     DateTime?
+  validUntil    DateTime?
+  certifiedBy   String?
+  certificateNumber String?
+  createdAt     DateTime @default(now())
+
+  employee      Employee @relation(fields: [employeeId], references: [id])
+
+  @@unique([employeeId, equipmentType])
+  @@index([employeeId])
+  @@index([equipmentType])
+}
+
+model WebhookSetting {
+  id            String   @id @default(cuid())
+  name          String
+  webhookUrl    String
+  webhookType   String   @default("SLACK")
+  enabled       Boolean  @default(true)
+  triggerCriticalDamage     Boolean @default(true)
+  triggerDamageResolved     Boolean @default(false)
+  triggerOutOfService       Boolean @default(true)
+  triggerInspectionOverdue  Boolean @default(true)
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+}
+
+model AuditLog {
+  id            String   @id @default(cuid())
+  userId        String?
+  userEmail     String?
+  userRole      String?
+  action        String
+  entityType    String?
+  entityId      String?
+  details       String?
+  ipAddress     String?
+  userAgent     String?
+  createdAt     DateTime @default(now())
+
+  @@index([userId])
+  @@index([action])
+  @@index([createdAt])
+}
+
+model AppSetting {
+  id                            Int      @id @default(1)
+  airportName                   String   @default("Aerodrom")
+  airportCode                   String   @default("XXX")
+  timezone                      String   @default("Europe/Podgorica")
+  language                      String   @default("hr")
+  requirePhotoForDamage         Boolean  @default(false)
+  requireQualificationForCheckout Boolean @default(true)
+  enableEmailNotifications      Boolean  @default(true)
+  enableWebhookNotifications    Boolean  @default(false)
+  inspectionReminderDays        Int      @default(30)
+  updatedAt                     DateTime @updatedAt
+}
