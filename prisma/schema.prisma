@@ -240,3 +240,135 @@ model AppSetting {
   inspectionReminderDays        Int      @default(30)
   updatedAt                     DateTime @updatedAt
 }
+
+// =====================================================
+// EASA Part-145 §50 - Life-limited components
+// =====================================================
+model EquipmentComponent {
+  id                String   @id @default(cuid())
+  equipmentId       String
+  equipmentCode     String
+
+  componentName     String
+  componentType     String
+  serialNumber      String?
+  manufacturer      String?
+
+  installedAt       DateTime?
+  installedHours    Float    @default(0)
+  lifeLimitHours    Float?
+  lifeLimitCycles   Float?
+  currentHours      Float    @default(0)
+  currentCycles     Float    @default(0)
+
+  status            String   @default("ACTIVE")
+
+  replacedAt        DateTime?
+  replacedBy        String?
+  replacementCost   Float?
+
+  notes             String?
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+
+  @@index([equipmentId])
+  @@index([status])
+  @@index([componentType])
+}
+
+// =====================================================
+// EASA Part-145 §71 - Service Bulletins
+// =====================================================
+model ServiceBulletin {
+  id                String   @id @default(cuid())
+  bulletinNumber    String   @unique
+  title             String
+  manufacturer      String
+
+  equipmentType     String?
+  serialRange       String?
+
+  description       String
+  requiredAction    String
+  partsRequired     String?
+  estimatedHours    Float?
+
+  priority          String   @default("MEDIUM")
+  complianceDeadline DateTime?
+  status            String   @default("OPEN")
+
+  issuedAt          DateTime
+  completedAt       DateTime?
+  completedBy       String?
+  completionNotes   String?
+
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+
+  @@index([status])
+  @@index([manufacturer])
+  @@index([priority])
+}
+
+// =====================================================
+// EASA Part-M §39 - Airworthiness Directives
+// =====================================================
+model AirworthinessDirective {
+  id                String   @id @default(cuid())
+  adNumber          String   @unique
+  title             String
+
+  equipmentType     String?
+
+  description       String
+  requiredAction    String
+  complianceMethod  String?
+
+  priority          String   @default("HIGH")
+  effectiveDate     DateTime
+  complianceDeadline DateTime?
+  recurring         Boolean  @default(false)
+  recurringIntervalHours Float?
+
+  status            String   @default("OPEN")
+
+  compliedAt        DateTime?
+  compliedBy        String?
+  complianceNotes   String?
+
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+
+  @@index([status])
+  @@index([priority])
+}
+
+// =====================================================
+// IATA AHM 340 - Shift Handovers
+// =====================================================
+model ShiftHandover {
+  id                String   @id @default(cuid())
+  shiftDate         DateTime
+  shiftType         String
+
+  outgoingCardId    String
+  outgoingName      String
+  outgoingSignature String?
+
+  incomingCardId    String
+  incomingName      String
+  incomingSignature String?
+
+  assignedEquipmentCount Int  @default(0)
+  openDamagesCount       Int  @default(0)
+  notes                  String?
+
+  status            String   @default("COMPLETED")
+
+  handoverAt        DateTime @default(now())
+  createdAt         DateTime @default(now())
+
+  @@index([shiftDate])
+  @@index([outgoingCardId])
+  @@index([incomingCardId])
+}
