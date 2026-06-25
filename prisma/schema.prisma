@@ -17,6 +17,8 @@ model Employee {
   department  String   @default("Ramp")
   role        String   @default("Operator")
   active      Boolean  @default(true)
+  pin         String?  // 4-digit PIN for no-login worker identification
+  idCardQr    String?  // QR kod na ID kartici
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
 
