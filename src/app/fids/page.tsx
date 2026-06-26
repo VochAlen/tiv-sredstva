@@ -17,7 +17,7 @@ export default function FidsPage() {
   const [equipment, setEquipment] = useState<FidsEquipment[]>([])
   const [loading, setLoading] = useState(true)
   const [lastUpdate, setLastUpdate] = useState<Date | null>(null)
-const [clock, setClock] = useState<Date | null>(null)
+  const [clock, setClock] = useState(new Date())
 
   // Auto-refresh svakih 30 sekundi
   const load = async () => {
@@ -84,14 +84,12 @@ const [clock, setClock] = useState<Date | null>(null)
           </div>
           <div className="flex items-center gap-6">
             <div className="text-right">
-             <div className="text-2xl font-mono font-bold text-amber-400 tabular-nums">
-  {clock ? clock.toLocaleTimeString('de-DE', { hour12: false }) : '—:—:—'}
-</div>
-<div className="text-xs text-slate-400 uppercase tracking-wide">
-  {clock
-    ? `Lokalno vrijeme · UTC${clock.getTimezoneOffset() <= 0 ? '+' : '-'}${Math.abs(clock.getTimezoneOffset() / 60)}`
-    : 'Lokalno vrijeme'}
-</div>
+              <div className="text-2xl font-mono font-bold text-amber-400 tabular-nums">
+                {clock.toLocaleTimeString('de-DE', { hour12: false })}
+              </div>
+              <div className="text-xs text-slate-400 uppercase tracking-wide">
+                Lokalno vrijeme · UTC{clock.getTimezoneOffset() <= 0 ? '+' : '-'}{Math.abs(clock.getTimezoneOffset() / 60)}
+              </div>
             </div>
             <Button
               variant="ghost"

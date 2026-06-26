@@ -444,6 +444,15 @@ export async function checkOutEquipment(params: {
     }
   }
 
+  // Access Control - provjeri da li radnik ima dozvolu za ovo sredstvo
+  if (equipment.restricted_access) {
+    const { checkEquipmentAccess } = await import('./actions-access')
+    const accessResult = await checkEquipmentAccess(equipment.id, employeeCardId)
+    if (!accessResult.allowed) {
+      return { ok: false, error: accessResult.reason ?? 'Nemate dozvolu za ovo sredstvo' }
+    }
+  }
+
   // Upsert employee
   const { data: employee } = await supabase
     .from('employees')
@@ -576,6 +585,15 @@ async function checkOutPrisma(params: {
     return {
       ok: false,
       error: `Sredstvo je trenutno u statusu: ${equipment.status}. Zaduživanje nije moguće.`,
+    }
+  }
+
+  // Access Control - provjeri da li radnik ima dozvolu
+  if (equipment.restrictedAccess) {
+    const { checkEquipmentAccess } = await import('./actions-access')
+    const accessResult = await checkEquipmentAccess(equipment.id, employeeCardId)
+    if (!accessResult.allowed) {
+      return { ok: false, error: accessResult.reason ?? 'Nemate dozvolu za ovo sredstvo' }
     }
   }
 

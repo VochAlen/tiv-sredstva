@@ -9,6 +9,7 @@ import {
   Plus,
   Edit3,
   AlertOctagon,
+  ShieldCheck,
   Wrench,
   CheckCircle2,
   Activity,
@@ -86,6 +87,8 @@ import { useLang } from '@/lib/lang-context'
 import { StatisticsView } from './statistics-view'
 import { ReportsView } from './reports-view'
 import { MaintenanceView } from './maintenance-view'
+import { AdrView } from './adr-view'
+import { AccessControlDialog } from './access-control'
 
 type EquipmentRow = Awaited<ReturnType<typeof getAllEquipment>>[number]
 type ActiveAssignment = Awaited<ReturnType<typeof getActiveAssignments>>[number]
@@ -189,6 +192,10 @@ export function DashboardView({ currentUser }: { currentUser: AppUser }) {
             <TabsTrigger value="maintenance">
               <Wrench className="h-4 w-4 mr-1.5" />
               {t('dash.maintenance')}
+            </TabsTrigger>
+            <TabsTrigger value="adr">
+              <ShieldCheck className="h-4 w-4 mr-1.5" />
+              ADR.OPS.C.007
             </TabsTrigger>
             <TabsTrigger value="reports">
               <Printer className="h-4 w-4 mr-1.5" />
@@ -385,6 +392,9 @@ export function DashboardView({ currentUser }: { currentUser: AppUser }) {
                         <TableCell className="text-right">
                           <div className="flex justify-end gap-1">
                             {currentUser.role === 'admin' && (
+                              <AccessControlDialog equipmentId={e.id} equipmentCode={e.code} equipmentName={e.name} />
+                            )}
+                            {currentUser.role === 'admin' && (
                               <EditEquipmentDialog equipment={e} onUpdated={load} />
                             )}
                             {(currentUser.role === 'admin' || currentUser.role === 'engineer') && (
@@ -431,6 +441,10 @@ export function DashboardView({ currentUser }: { currentUser: AppUser }) {
 
         <TabsContent value="maintenance" className="space-y-4">
           <MaintenanceView />
+        </TabsContent>
+
+        <TabsContent value="adr" className="space-y-4">
+          <AdrView />
         </TabsContent>
 
         <TabsContent value="reports" className="space-y-4">

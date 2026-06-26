@@ -14,6 +14,9 @@ import {
   Loader2,
   MapPin,
   Wrench,
+  Camera,
+  Lock,
+  FileText,
 } from 'lucide-react'
 import { QrScanner } from './qr-scanner'
 import { Button } from '@/components/ui/button'
@@ -38,6 +41,8 @@ import {
   checkInEquipment,
   getEquipmentByCode,
 } from '@/lib/actions'
+import { getManualsForEquipment } from '@/lib/actions-manuals'
+import { type EquipmentManualData, MANUAL_TYPE_LABELS } from '@/lib/constants-export'
 import { toast } from 'sonner'
 
 type Step = 'scan' | 'identify' | 'inspect' | 'success' | 'blocked'
@@ -51,6 +56,7 @@ interface EquipmentInfo {
   location: string
   status: string
   notes: string | null
+  manualUrl?: string | null
 }
 
 // Normalizuje ono što je skenirano u kod opreme
@@ -86,6 +92,8 @@ export function WorkerView({
   const [actionType, setActionType] = useState<'CHECK_OUT' | 'CHECK_IN'>('CHECK_OUT')
   const [isPending, startTransition] = useTransition()
   const [lookupLoading, setLookupLoading] = useState(false)
+  const [manuals, setManuals] = useState<EquipmentManualData[]>([])
+  const [showManuals, setShowManuals] = useState(false)
 
   // Ako je otvoreno preko ?scan=XXX URL parametra (skener telefona)
   useEffect(() => {
@@ -127,6 +135,7 @@ export function WorkerView({
         location: eq.location,
         status: eq.status,
         notes: eq.notes,
+        manualUrl: (eq as any).manualUrl ?? null,
       })
 
       // Ako je neispravno ili na održavanju - odmah blokiraj
@@ -141,6 +150,14 @@ export function WorkerView({
         setActionType('CHECK_IN')
       } else {
         setActionType('CHECK_OUT')
+      }
+
+      // Učitaj uputstva za upotrebu (EASA Part-145 §65)
+      try {
+        const manualsData = await getManualsForEquipment(eq.id, eq.type)
+        setManuals(manualsData)
+      } catch {
+        setManuals([])
       }
 
       setStep('identify')
@@ -311,6 +328,36 @@ export function WorkerView({
       {step === 'identify' && equipment && !lookupLoading && (
         <form onSubmit={handleIdentifySubmit} className="space-y-4">
           <EquipmentCard equipment={equipment} actionType={actionType} />
+
+          {/* Uputstvo za upotrebu (EASA Part-145 §65) */}
+          {manuals.length > 0 && (
+            <div className="flex gap-2 flex-wrap">
+              {manuals.map((m) => (
+                <a
+                  key={m.id}
+                  href={m.manualUrl}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="inline-flex items-center gap-1.5 px-3 py-2 rounded-lg bg-blue-50 border border-blue-200 text-blue-700 hover:bg-blue-100 transition text-sm font-medium"
+                >
+                  <FileText className="h-4 w-4" />
+                  {MANUAL_TYPE_LABELS[m.manualType] || 'Uputstvo'}
+                  {m.version && <span className="text-xs opacity-60">({m.version})</span>}
+                </a>
+              ))}
+            </div>
+          )}
+          {manuals.length === 0 && equipment.manualUrl && (
+            <a
+              href={equipment.manualUrl}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="inline-flex items-center gap-1.5 px-3 py-2 rounded-lg bg-blue-50 border border-blue-200 text-blue-700 hover:bg-blue-100 transition text-sm font-medium"
+            >
+              <FileText className="h-4 w-4" />
+              Uputstvo za upotrebu
+            </a>
+          )}
 
           <Card>
             <CardHeader>

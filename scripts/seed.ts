@@ -80,6 +80,38 @@ async function main() {
   }
 
   console.log(`Seeded ${equipment.length} equipment items and ${employees.length} employees`)
+
+  // Seed equipment manuals — PDF fajlovi su u /public/manuals/
+  const manuals = [
+    { equipmentType: 'TOW_TRACTOR', title: 'Goldhofer AST-2 Operating Manual', manualUrl: '/manuals/tow-tractor-ast2.pdf', manualType: 'OPERATING', language: 'en', version: 'v3.0' },
+    { equipmentType: 'TOW_TRACTOR', title: 'Tow Tractor Safety Procedures', manualUrl: '/manuals/tow-tractor-safety.pdf', manualType: 'SAFETY', language: 'en', version: 'v1.0' },
+    { equipmentType: 'GPU', title: 'ITW GSE 1400 GPU Manual', manualUrl: '/manuals/gpu-itw-1400.pdf', manualType: 'OPERATING', language: 'en', version: 'v2.1' },
+    { equipmentType: 'BELT_LOADER', title: 'TLD TB-150 Belt Loader Manual', manualUrl: '/manuals/belt-loader-tb150.pdf', manualType: 'OPERATING', language: 'en', version: 'v1.8' },
+    { equipmentType: 'PUSHBACK', title: 'Goldhofer AST-1X Pushback Manual', manualUrl: '/manuals/pushback-ast1x.pdf', manualType: 'OPERATING', language: 'en', version: 'v2.5' },
+    { equipmentType: 'STAIRS', title: 'Passenger Stairs Manual', manualUrl: '/manuals/stairs.pdf', manualType: 'OPERATING', language: 'en', version: 'v1.2' },
+    { equipmentType: 'BUS', title: 'Cobus 3000 Operating Manual', manualUrl: '/manuals/cobus-3000.pdf', manualType: 'OPERATING', language: 'en', version: 'v4.0' },
+  ]
+
+  for (const m of manuals) {
+    const existing = await db.equipmentManual.findFirst({
+      where: { equipmentType: m.equipmentType, title: m.title },
+    })
+    if (!existing) {
+      await db.equipmentManual.create({ data: m })
+    }
+  }
+
+  // Dodaj manualUrl direktno na nekoliko opreme
+  await db.equipment.updateMany({
+    where: { code: 'GSE-TOW-001' },
+    data: { manualUrl: '/manuals/tow-tractor-ast2.pdf' },
+  })
+  await db.equipment.updateMany({
+    where: { code: 'GSE-GPU-001' },
+    data: { manualUrl: '/manuals/gpu-itw-1400.pdf' },
+  })
+
+  console.log(`Seeded ${manuals.length} equipment manuals`)
 }
 
 main()
