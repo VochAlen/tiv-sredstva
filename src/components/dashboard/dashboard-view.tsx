@@ -10,6 +10,8 @@ import {
   Edit3,
   AlertOctagon,
   ShieldCheck,
+  Award,
+  Calendar,
   Wrench,
   CheckCircle2,
   Activity,
@@ -23,7 +25,6 @@ import {
   Hash,
   MapPin,
   User,
-  Calendar,
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
@@ -89,6 +90,8 @@ import { ReportsView } from './reports-view'
 import { MaintenanceView } from './maintenance-view'
 import { AdrView } from './adr-view'
 import { AccessControlDialog } from './access-control'
+import { CrsView } from './crs-view'
+import { SchedulingView } from './scheduling-view'
 
 type EquipmentRow = Awaited<ReturnType<typeof getAllEquipment>>[number]
 type ActiveAssignment = Awaited<ReturnType<typeof getActiveAssignments>>[number]
@@ -196,6 +199,14 @@ export function DashboardView({ currentUser }: { currentUser: AppUser }) {
             <TabsTrigger value="adr">
               <ShieldCheck className="h-4 w-4 mr-1.5" />
               ADR.OPS.C.007
+            </TabsTrigger>
+            <TabsTrigger value="crs">
+              <Award className="h-4 w-4 mr-1.5" />
+              CRS
+            </TabsTrigger>
+            <TabsTrigger value="scheduling">
+              <Calendar className="h-4 w-4 mr-1.5" />
+              Servis & Dijelovi
             </TabsTrigger>
             <TabsTrigger value="reports">
               <Printer className="h-4 w-4 mr-1.5" />
@@ -445,6 +456,14 @@ export function DashboardView({ currentUser }: { currentUser: AppUser }) {
 
         <TabsContent value="adr" className="space-y-4">
           <AdrView />
+        </TabsContent>
+
+        <TabsContent value="crs" className="space-y-4">
+          <CrsView />
+        </TabsContent>
+
+        <TabsContent value="scheduling" className="space-y-4">
+          <SchedulingView />
         </TabsContent>
 
         <TabsContent value="reports" className="space-y-4">

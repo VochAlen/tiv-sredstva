@@ -60,6 +60,11 @@ model Equipment {
   maintenanceIntervalHours  Float @default(500)
   lastMaintenanceHours      Float @default(0)
 
+  // Kilometrage tracking
+  totalKm                   Float @default(0)
+  maintenanceIntervalKm     Float @default(10000)
+  lastMaintenanceKm         Float @default(0)
+
   // Lifecycle info
   manufacturer          String?
   modelYear             Int?
@@ -401,8 +406,11 @@ model MaintenanceSchedule {
 
   // Trigger criteria
   triggerHours      Float?   // at what operating hours
+  triggerKm         Float?   // at what kilometerage
   triggerDate       DateTime? // or at what date
   triggerInterval   Float?   // recurring interval (hours)
+  triggerIntervalKm Float?   // recurring interval (km)
+  triggerIntervalMonths Int? // recurring interval (months)
 
   // Status
   status            String   @default("SCHEDULED") // SCHEDULED | DUE | IN_PROGRESS | COMPLETED | OVERDUE
@@ -502,4 +510,140 @@ model EquipmentAccess {
   @@unique([equipmentId, employeeCardId])
   @@index([equipmentId])
   @@index([employeeCardId])
+}
+
+// =====================================================
+// EASA Part-145.A.50 - Certificate of Release to Service
+// =====================================================
+model CertificateOfRelease {
+  id                String   @id @default(cuid())
+  crsNumber         String   @unique  // npr. "CRS-2026-001"
+  equipmentId       String
+  equipmentCode     String
+  equipmentName     String
+
+  // Povezanost sa damage report-om (ako je CRS nakon popravke)
+  damageReportId    String?
+
+  // Povezanost sa maintenance log-om (ako je CRS nakon održavanja)
+  maintenanceLogId  String?
+
+  // Detalji popravke/održavanja
+  workDescription   String   // šta je urađeno
+  workOrderNumber   String?  // radni nalog
+
+  // Certifying staff (ko potpisuje CRS)
+  certifierCardId   String   // broj kartice ovlaštene osobe
+  certifierName     String   // ime ovlaštene osobe
+  certifierRole     String   @default("CERTIFYING_STAFF") // CERTIFYING_STAFF | ENGINEER | ADMIN
+  certifierSignature String? // digitalni potpis (opcionalno)
+
+  // Status
+  status            String   @default("VALID") // VALID | REVOKED | SUPERSEDED
+
+  // Datumi
+  releaseDate       DateTime @default(now())
+  validUntil        DateTime? // ako je ograničena valjanost
+
+  notes             String?
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+
+  @@index([equipmentId])
+  @@index([crsNumber])
+  @@index([status])
+  @@index([releaseDate])
+}
+
+// =====================================================
+// Spare Parts Inventory — rezervni dijelovi u magacinu
+// =====================================================
+model SparePart {
+  id              String   @id @default(cuid())
+  partNumber      String   @unique // npr. "OEM-GH-12345"
+  name            String   // npr. "Prednja guma 11x22.5"
+  category        String   // TIRE | BRAKE | HYDRAULIC | ELECTRICAL | FILTER | ENGINE | OTHER
+  manufacturer    String?
+  description     String?
+
+  // Stock
+  quantity        Int      @default(0)
+  minQuantity     Int      @default(1)  // alert kada padne ispod
+  unit            String   @default("kom") // kom | litra | metar | kg
+  location        String?  // npr. "Polica A-3"
+
+  // Price (zadnja nabavna cijena)
+  unitPrice       Float?   // cijena bez PDV
+  vatRate         Float    @default(21) // PDV u %
+
+  active          Boolean  @default(true)
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  @@index([category])
+  @@index([name])
+}
+
+// =====================================================
+// Part Purchases — nabavka rezervnih dijelova
+// =====================================================
+model PartPurchase {
+  id              String   @id @default(cuid())
+  partId          String?
+  partNumber      String   // denormalized
+  partName        String   // denormalized
+
+  // Purchase details
+  orderNumber     String?  // broj porudžbe
+  supplier        String   // naziv firme
+  supplierAddress String?
+  invoiceNumber   String?  // broj računa
+  invoiceDate     DateTime?
+
+  // Quantities & pricing
+  quantity        Int
+  unitPriceNet    Float    // cijena po jedinici bez PDV
+  vatRate         Float    @default(21) // PDV %
+  vatAmount       Float    @default(0) // iznos PDV
+  totalNet        Float    // ukupno bez PDV
+  totalGross      Float    // ukupno sa PDV
+
+  // Payment
+  paymentMethod   String?  // CARD | CASH | INVOICE | TRANSFER
+  paid            Boolean  @default(false)
+  paidDate       DateTime?
+
+  notes           String?
+  purchasedBy     String?
+  createdAt       DateTime @default(now())
+
+  @@index([partId])
+  @@index([supplier])
+  @@index([invoiceDate])
+}
+
+// =====================================================
+// Part Consumption — utrošak rezervnih dijelova
+// =====================================================
+model PartConsumption {
+  id              String   @id @default(cuid())
+  partId          String?
+  partNumber      String   // denormalized
+  partName        String   // denormalized
+
+  equipmentId     String?
+  equipmentCode   String?  // na kojem vozilu je korišteno
+  maintenanceLogId String? // povezano sa maintenance log
+
+  quantity        Int      @default(1)
+  unitPriceNet    Float?   // cijena bez PDV u trenutku utroška
+  totalCost       Float?   // ukupni trošak
+
+  consumedBy      String?  // ko je uzeo dio
+  consumedAt      DateTime @default(now())
+  notes           String?
+
+  @@index([partId])
+  @@index([equipmentId])
+  @@index([consumedAt])
 }

@@ -32,16 +32,21 @@ export async function getStats(): Promise<Stats> {
   await requireAuth()
 
   if (isDemoMode()) {
-    const equipment = await db.equipment.findMany()
+    // PARALELNOST: svi query-ji istovremeno
+    const [equipment, openDamages, allDamagesCount, resolvedDamages, recentAssignments] = await Promise.all([
+      db.equipment.findMany(),
+      db.damageReport.count({ where: { status: { not: 'RESOLVED' } } }),
+      db.damageReport.count(),
+      db.damageReport.findMany({ where: { status: 'RESOLVED', resolvedAt: { not: null } } }),
+      db.assignment.findMany({ where: { timestamp: { gte: new Date(Date.now() - 30 * 24 * 60 * 60 * 1000) } } }),
+    ])
+
     const total = equipment.length
     const available = equipment.filter((e) => e.status === 'AVAILABLE').length
     const assigned = equipment.filter((e) => e.status === 'ASSIGNED').length
     const outOfService = equipment.filter((e) => e.status === 'OUT_OF_SERVICE').length
     const maintenance = equipment.filter((e) => e.status === 'MAINTENANCE').length
 
-    const openDamages = await db.damageReport.count({ where: { status: { not: 'RESOLVED' } } })
-
-    // Inspekcije
     const today = new Date()
     const inspectionOverdue = equipment.filter((e) =>
       e.nextInspectionDate && new Date(e.nextInspectionDate) < today
@@ -52,30 +57,17 @@ export async function getStats(): Promise<Stats> {
       return days >= 0 && days <= 30
     }).length
 
-    // Aktivnost (zadnjih 30 dana)
-    const thirtyDaysAgo = new Date(today.getTime() - 30 * 24 * 60 * 60 * 1000)
-    const recentAssignments = await db.assignment.findMany({
-      where: { timestamp: { gte: thirtyDaysAgo } },
-    })
     const totalCheckouts = recentAssignments.filter((a) => a.action === 'CHECK_OUT' && !a.damageReportId).length
     const totalCheckins = recentAssignments.filter((a) => a.action === 'CHECK_IN').length
     const totalDamages = recentAssignments.filter((a) => a.damageReportId).length
 
-    // Compliance rate = % check-out-a bez oštećenja
     const complianceRate = totalCheckouts + totalDamages > 0
       ? Math.round((totalCheckouts / (totalCheckouts + totalDamages)) * 100)
       : 100
 
-    // MTBF (Mean Time Between Failures) - aproksimacija
-    // Broj radnih sati / broj kvarova
     const totalHours = equipment.reduce((sum, e) => sum + (e.totalOperatingHours ?? 0), 0)
-    const allDamagesCount = await db.damageReport.count()
     const mtbfHours = allDamagesCount > 0 ? Math.round(totalHours / allDamagesCount) : 0
 
-    // MTTR (Mean Time To Repair) - prosječno vrijeme reparacije u satima
-    const resolvedDamages = await db.damageReport.findMany({
-      where: { status: 'RESOLVED', resolvedAt: { not: null } },
-    })
     const mttrHours = resolvedDamages.length > 0
       ? Math.round(resolvedDamages.reduce((sum, d) => {
           const hours = d.resolvedAt! ? (d.resolvedAt!.getTime() - d.createdAt.getTime()) / (1000 * 60 * 60) : 0
@@ -83,7 +75,6 @@ export async function getStats(): Promise<Stats> {
         }, 0) / resolvedDamages.length)
       : 0
 
-    // Utilization rate = % opreme koja je trenutno u upotrebi
     const utilizationRate = total > 0 ? Math.round((assigned / total) * 100) : 0
 
     return {
@@ -94,20 +85,24 @@ export async function getStats(): Promise<Stats> {
     }
   }
 
-  // Supabase
+  // Supabase — paralelno
   const supabase = await createSupabaseClient()
-  const { data: equipment } = await supabase.from('equipment').select('*')
-  const eq = equipment ?? []
+  const thirtyDaysAgoISO = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString()
+
+  const [eqRes, openDamagesRes, allDamagesCountRes, resolvedRes, recentRes] = await Promise.all([
+    supabase.from('equipment').select('*'),
+    supabase.from('damage_reports').select('*', { count: 'exact', head: true }).neq('status', 'RESOLVED'),
+    supabase.from('damage_reports').select('*', { count: 'exact', head: true }),
+    supabase.from('damage_reports').select('created_at, resolved_at').eq('status', 'RESOLVED').not('resolved_at', 'is', null),
+    supabase.from('assignments').select('action, timestamp, damage_report_id').gte('timestamp', thirtyDaysAgoISO),
+  ])
+
+  const eq = eqRes.data ?? []
   const total = eq.length
   const available = eq.filter((e: any) => e.status === 'AVAILABLE').length
   const assigned = eq.filter((e: any) => e.status === 'ASSIGNED').length
   const outOfService = eq.filter((e: any) => e.status === 'OUT_OF_SERVICE').length
   const maintenance = eq.filter((e: any) => e.status === 'MAINTENANCE').length
-
-  const { count: openDamages } = await supabase
-    .from('damage_reports')
-    .select('*', { count: 'exact', head: true })
-    .neq('status', 'RESOLVED')
 
   const today = new Date()
   const inspectionOverdue = eq.filter((e: any) =>
@@ -119,12 +114,7 @@ export async function getStats(): Promise<Stats> {
     return days >= 0 && days <= 30
   }).length
 
-  const thirtyDaysAgo = new Date(today.getTime() - 30 * 24 * 60 * 60 * 1000).toISOString()
-  const { data: recent } = await supabase
-    .from('assignments')
-    .select('*')
-    .gte('timestamp', thirtyDaysAgo)
-  const recentAssignments = recent ?? []
+  const recentAssignments = recentRes.data ?? []
   const totalCheckouts = recentAssignments.filter((a: any) => a.action === 'CHECK_OUT' && !a.damage_report_id).length
   const totalCheckins = recentAssignments.filter((a: any) => a.action === 'CHECK_IN').length
   const totalDamages = recentAssignments.filter((a: any) => a.damage_report_id).length
@@ -134,27 +124,20 @@ export async function getStats(): Promise<Stats> {
     : 100
 
   const totalHours = eq.reduce((sum: number, e: any) => sum + (e.total_operating_hours ?? 0), 0)
-  const { count: allDamagesCount } = await supabase
-    .from('damage_reports')
-    .select('*', { count: 'exact', head: true })
-  const mtbfHours = (allDamagesCount ?? 0) > 0 ? Math.round(totalHours / (allDamagesCount ?? 1)) : 0
+  const mtbfHours = (allDamagesCountRes.count ?? 0) > 0 ? Math.round(totalHours / (allDamagesCountRes.count ?? 1)) : 0
 
-  const { data: resolved } = await supabase
-    .from('damage_reports')
-    .select('created_at, resolved_at')
-    .eq('status', 'RESOLVED')
-    .not('resolved_at', 'is', null)
-  const mttrHours = (resolved ?? []).length > 0
-    ? Math.round((resolved ?? []).reduce((sum: number, d: any) => {
+  const resolvedDamages = resolvedRes.data ?? []
+  const mttrHours = resolvedDamages.length > 0
+    ? Math.round(resolvedDamages.reduce((sum: number, d: any) => {
         const hours = d.resolved_at ? (new Date(d.resolved_at).getTime() - new Date(d.created_at).getTime()) / (1000 * 60 * 60) : 0
         return sum + hours
-      }, 0) / (resolved ?? []).length)
+      }, 0) / resolvedDamages.length)
     : 0
 
   const utilizationRate = total > 0 ? Math.round((assigned / total) * 100) : 0
 
   return {
-    total, available, assigned, outOfService, maintenance, openDamages: openDamages ?? 0,
+    total, available, assigned, outOfService, maintenance, openDamages: openDamagesRes.count ?? 0,
     inspectionOverdue, inspectionDueSoon,
     totalCheckouts, totalCheckins, complianceRate,
     mtbfHours, mttrHours, utilizationRate,
