@@ -1509,3 +1509,178 @@ model ComplianceItem {
   @@index([status])
   @@index([category])
 }
+
+// ============================================================================
+// DOCUMENT CONTROL SYSTEM (EASA Part-145.A.65 + ISO 9001)
+// ============================================================================
+
+// Controlled Document — master document register
+model ControlledDocument {
+  id          String  @id @default(cuid())
+  docId       String  @unique // npr. "MOM-001", "OPS-MAN-2.3"
+  title       String
+  description String?
+
+  // Kategorizacija
+  category String // MANUAL | PROCEDURE | WORK_INSTRUCTION | FORM | RECORD | POLICY | PLAN | OTHER
+  docType  String // OPERATIONS | MAINTENANCE | SAFETY | QUALITY | TRAINING | ADMINISTRATIVE | TECHNICAL
+  standard String? // npr. "EASA Part-145", "ICAO Annex 19", "ISO 9001"
+
+  // Trenutna verzija
+  currentVersion String    @default("1.0")
+  status         String    @default("DRAFT") // DRAFT | UNDER_REVIEW | APPROVED | PUBLISHED | SUPERSEDED | WITHDRAWN
+  effectiveDate  DateTime?
+  nextReviewDate DateTime? // obavezno za published
+
+  // Vlasništvo i odgovornosti
+  owner       String // document owner (Process Owner)
+  ownerCardId String?
+  author      String? // ko je napisao
+  approver    String? // ko je odobrio
+
+  // Lokacija i pristup
+  fileUrl    String? // link do fajla (Google Drive, SharePoint, lokalno)
+  fileFormat String? // PDF, DOCX, XLSX
+  fileSize   Int? // u bajtima
+  location   String? // fizička lokacija (npr. "Server /Documents/MOM/")
+
+  // Review ciklus
+  reviewFrequency String    @default("ANNUAL") // ANNUAL | BIENNIAL | QUARTERLY | ON_CHANGE | AD_HOC
+  lastReviewedAt  DateTime?
+  lastReviewedBy  String?
+
+  // Distribucija
+  distributionList String? // JSON array of recipients (može biti i posebna tabela)
+
+  // Sigurnosna klasifikacija
+  classification String @default("INTERNAL") // PUBLIC | INTERNAL | CONFIDENTIAL | RESTRICTED
+
+  // Napomene
+  keywords String? // za pretragu
+  notes    String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  versions      DocumentVersion[]
+  reviews       DocumentReview[]
+  distributions DocumentDistribution[]
+
+  @@index([docId])
+  @@index([category])
+  @@index([status])
+  @@index([owner])
+  @@index([nextReviewDate])
+}
+
+// Document Version — istorija verzija
+model DocumentVersion {
+  id         String             @id @default(cuid())
+  documentId String // veza na ControlledDocument
+  document   ControlledDocument @relation(fields: [documentId], references: [id], onDelete: Cascade)
+
+  versionNumber String // npr. "1.0", "1.1", "2.0"
+  revisionDate  DateTime @default(now())
+
+  // Autor i approver
+  revisedBy       String
+  revisedByCardId String?
+  approvedBy      String?
+  approvedAt      DateTime?
+
+  // Sadržaj
+  changeDescription String // šta je promijenjeno
+  changeReason      String? // zašto je promijenjeno
+  affectedSections  String? // koje sekcije su pogođene
+
+  // Status
+  status        String    @default("DRAFT") // DRAFT | UNDER_REVIEW | APPROVED | PUBLISHED | SUPERSEDED
+  effectiveDate DateTime?
+
+  // Fajl
+  fileUrl  String?
+  fileSize Int?
+
+  // Napomene
+  reviewNotes String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([documentId])
+  @@index([versionNumber])
+  @@index([revisionDate])
+  @@index([status])
+}
+
+// Document Review — pregledi i revizije
+model DocumentReview {
+  id         String             @id @default(cuid())
+  documentId String // veza na ControlledDocument
+  document   ControlledDocument @relation(fields: [documentId], references: [id], onDelete: Cascade)
+
+  reviewType     String // SCHEDULED | AD_HOC | CHANGE_REQUEST | INCIDENT_DRIVEN
+  reviewDate     DateTime @default(now())
+  reviewer       String
+  reviewerCardId String?
+
+  // Rezultat
+  result          String // NO_CHANGE_NEEDED | MINOR_UPDATE | MAJOR_REVISION | WITHDRAW | SUPERSEDE
+  reviewComments  String? // komentari reviewera
+  changesRequired String? // šta treba promijeniti
+
+  // Akcija
+  newVersionRequired Boolean   @default(false)
+  actionTaken        String?
+  completedAt        DateTime?
+
+  // Status
+  status String @default("OPEN") // OPEN | IN_PROGRESS | COMPLETED | CANCELLED
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([documentId])
+  @@index([reviewDate])
+  @@index([result])
+  @@index([status])
+}
+
+// Document Distribution — ko je dobio dokument
+model DocumentDistribution {
+  id         String             @id @default(cuid())
+  documentId String // veza na ControlledDocument
+  document   ControlledDocument @relation(fields: [documentId], references: [id], onDelete: Cascade)
+
+  // Primaoc
+  recipientName       String // ime primaoca
+  recipientRole       String? // funkcija (npr. "Maintenance Manager")
+  recipientDepartment String? // odjel (Maintenance, Ramp, Safety, ...)
+  recipientEmail      String?
+
+  // Distribucija
+  distributionDate   DateTime @default(now())
+  distributionMethod String // EMAIL | HARD_COPY | PORTAL | TRAINING | OTHER
+  distributedBy      String
+
+  // Primopredaja
+  acknowledged       Boolean   @default(false)
+  acknowledgedAt     DateTime?
+  acknowledgedMethod String? // SIGNATURE | EMAIL_REPLY | SYSTEM_CONFIRM
+
+  // Status
+  status String @default("DISTRIBUTED") // DISTRIBUTED | ACKNOWLEDGED | RETURNED | SUPERSEDED
+
+  // Verzija koja je distribuirana
+  versionNumber String?
+
+  notes     String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([documentId])
+  @@index([recipientName])
+  @@index([recipientDepartment])
+  @@index([status])
+  @@index([distributionDate])
+}

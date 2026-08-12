@@ -31,6 +31,7 @@ import {
   Plane,
   Shield,
   ClipboardCheck,
+  FileText,
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
@@ -105,6 +106,7 @@ import { DeicingView } from './deicing-view'
 import { AerodromeInspectionView } from './aerodrome-inspection-view'
 import { SMSView } from './sms-view'
 import { AuditView } from './audit-view'
+import { DocumentControlView } from './document-control-view'
 
 type EquipmentRow = Awaited<ReturnType<typeof getAllEquipment>>[number]
 type ActiveAssignment = Awaited<ReturnType<typeof getActiveAssignments>>[number]
@@ -248,6 +250,10 @@ export function DashboardView({ currentUser }: { currentUser: AppUser }) {
             <TabsTrigger value="audit">
               <ClipboardCheck className="h-4 w-4 mr-1.5" />
               Audit & Compliance
+            </TabsTrigger>
+            <TabsTrigger value="doc-control">
+              <FileText className="h-4 w-4 mr-1.5" />
+              Document Control
             </TabsTrigger>
             <TabsTrigger value="reports">
               <Printer className="h-4 w-4 mr-1.5" />
@@ -533,6 +539,10 @@ export function DashboardView({ currentUser }: { currentUser: AppUser }) {
 
         <TabsContent value="audit" className="space-y-4">
           <AuditView />
+        </TabsContent>
+
+        <TabsContent value="doc-control" className="space-y-4">
+          <DocumentControlView />
         </TabsContent>
 
         <TabsContent value="reports" className="space-y-4">

@@ -485,3 +485,231 @@ Stage Summary:
 - Compliance rate % prikazan u real-time
 - Gap analiza za NON_COMPLIANT i PARTIAL stavke
 - Compliance: ADR.OPS.D.005, EASA Part-145.A.65, ICAO Annex 19
+
+---
+Task ID: GSE-DOC-CONTROL-VIEW
+Agent: Sub agent (general-purpose)
+Task: Kreiraj React komponentu za Document Control modul (po uzoru na audit-view.tsx pattern).
+
+Work Log:
+- Pročitan worklog.md za kontekst, src/lib/actions-document-control.ts za server actions, src/components/dashboard/audit-view.tsx kao referentni primjer strukture.
+- Kreiran fajl src/components/dashboard/document-control-view.tsx (1470 linija) sa sledećom strukturom:
+  • Glavna `DocumentControlView` komponenta
+    - Header sa FileText ikonom, naslov "Document Control System", subtitle "EASA Part-145.A.65 · ISO 9001"
+    - 6 PDF dugmadi: Documents, Versions, Reviews, Distribution, Statistics, Summary (svako vodi na odgovarajući /api/reports/doc-control-* endpoint)
+    - 4 klikabilne AlertCard kartice: Ukupno dokumenata (blue), Reviews overdue (red), Reviews due soon (amber), Pending acknowledgment (purple) — otvaraju odgovarajući tab
+    - 6 tabova: Documents (FileText), Versions (History), Reviews (ClipboardCheck), Distribution (Users), Statistics (BarChart3), Reviews Calendar (Calendar)
+  • `DocumentsList` — search (po docId, title, description, owner, author, keywords, standard) + 3 filtera (category, status, classification) + Add Document dialog + DocumentCard sa svim poljima + Edit + Delete + brojač X/Y
+  • `DocumentCard` — docId, title, status badge, category, currentVersion, owner, effectiveDate, nextReviewDate (crveni ako overdue), classification badge, standard, keywords, file link
+  • `AddDocumentDialog` — sva polja iz ControlledDocument modela (docId, title, description, category, docType, standard, currentVersion, status, effectiveDate, nextReviewDate, owner, author, approver, fileUrl, location, reviewFrequency, classification, keywords, notes)
+  • `EditDocumentDialog` — status change + title, owner, approver, nextReviewDate, classification, keywords, notes (poziva updateDocument)
+  • `VersionsList` — search (po docId, versionNumber, revisedBy, changeDescription, changeReason) + filter status + Add Version dialog + VersionCard + Delete + brojač
+  • `VersionCard` — documentId→docId, versionNumber, revisionDate, revisedBy, approvedBy, changeDescription, changeReason, affectedSections, status badge, file link
+  • `AddVersionDialog` — documentId select, versionNumber, revisedBy, approvedBy, changeDescription, changeReason, affectedSections, status, effectiveDate, fileUrl + info banner o automatskom ažuriranju currentVersion pri PUBLISHED statusu
+  • `ReviewsList` — search (po docId, reviewer, result, reviewComments, changesRequired, actionTaken) + 3 filtera (reviewType, result, status) + Add Review dialog + ReviewCard + Delete + brojač
+  • `ReviewCard` — documentId→docId, reviewType, reviewDate, reviewer, result, reviewComments, changesRequired, actionTaken, newVersionRequired badge, status, completedAt
+  • `AddReviewDialog` — documentId, reviewType, reviewer, result, reviewComments, changesRequired, newVersionRequired checkbox, actionTaken, status
+  • `DistributionList` — search (po docId, recipientName, recipientRole, recipientDepartment, recipientEmail, distributedBy) + 2 filtera (status, distributionMethod) + Add Distribution dialog + DistributionCard sa Acknowledge dugmetom + Delete + brojač
+  • `DistributionCard` — documentId→docId, recipientName, recipientRole, recipientDepartment, distributionDate, distributedBy, distributionMethod, acknowledged (badge), acknowledgedAt, versionNumber
+  • `AddDistributionDialog` — documentId, recipientName, recipientRole, recipientDepartment, recipientEmail, distributionMethod, distributedBy, versionNumber, notes
+  • `StatisticsView` — 4 StatCard kartice (Total, Published, Reviews overdue, Ack rate %) + 4 bar chart-a (po statusu, po kategoriji, po tipu dokumenta, po klasifikaciji) + Top 10 vlasnika tabela + Reviews by result bar chart + sekcije "Reviews overdue" i "Reviews due soon"
+  • `ReviewsCalendarView` — lista dokumenata sortirana po nextReviewDate, color-coded (crvena overdue / žuta ≤30 dana / zelena >30 dana), search + filter po reviewFrequency
+  • Shared komponente na dnu: `AlertCard`, `TabBtn`, `StatCard` (iste kao u audit-view.tsx)
+
+- Sve labele definirane prema specifikaciji (CATEGORY_LABELS, DOC_TYPE_LABELS, STATUS_LABELS, CLASSIFICATION_LABELS, REVIEW_TYPE_LABELS, REVIEW_RESULT_LABELS, REVIEW_STATUS_LABELS, DISTRIBUTION_METHOD_LABELS, DISTRIBUTION_STATUS_LABELS, REVIEW_FREQUENCY_LABELS, VERSION_STATUS_LABELS)
+- STATUS_COLORS mapiran prema specifikaciji (PUBLISHED=emerald, APPROVED=blue, UNDER_REVIEW=amber, DRAFT=gray, SUPERSEDED=orange, WITHDRAWN=red)
+- dodatne CLASSIFICATION_COLORS i REVIEW_STATUS_COLORS za konzistentne boje
+- Search bar UVIJEK vidljiv u svih 6 prikaza (Documents, Versions, Reviews, Distribution, Calendar + search u Statistics nije potreban jer nema liste) — KRITIČNO pravilo ispunjeno
+- Empty state poruke prikazane ISPOD search bara
+- Brojač "X / Y" prikazan desno od searchbara u svih 5 lista
+- Sve sub-komponente definirane OUTSIDE glavne komponente (zbog ESLint react-hooks/static-components rule) — AuditView pattern
+- shadcn/ui komponente: Card, CardContent, CardHeader, CardTitle, Button, Badge, Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle, Label, Input, Textarea, Checkbox, Select (+ SelectContent/Item/Trigger/Value), Table (+ TableBody/Cell/Head/Header/Row)
+- lucide-react ikone: FileText, Plus, Loader2, Calendar, Trash2, Search, Download, AlertTriangle, History, ClipboardCheck, Users, BarChart3, Pencil, CheckCircle2, Clock, FileCheck, Link
+- `toast` iz sonner za notifikacije
+- `useTransition` za pending state u svim mutacijama (delete, create, update, acknowledge)
+- Auto-izračunavanje: alert counts (overdue/due-soon/pending-ack), statistics (ack rate %, max values za bar charts)
+- Verifikacija:
+  • TypeScript: 0 grešaka (`npx tsc --noEmit`)
+  • ESLint: 0 grešaka/upozorenja (`npx eslint src/components/dashboard/document-control-view.tsx`)
+
+Stage Summary:
+- Document Control View komponenta (1470 linija) kompletno implementirana po uzoru na audit-view.tsx
+- 6 pod-komponenti lista sa uvijek-vidljivim search barom i brojačem
+- 4 AlertCard + 4 StatCard + 5 bar chart-a + Top 10 tabela + 2 overdue/due-soon sekcije
+- Sva polja iz ControlledDocument, DocumentVersion, DocumentReview, DocumentDistribution modela pokrivena u dialogima
+- Automatsko ažuriranje currentVersion pri kreiranju PUBLISHED verzije (logika u server action `createVersion` — komponenta prikazuje info banner)
+- Acknowledge dugme na DistributionCard poziva `acknowledgeDistribution` server action
+- Edit funkcija na DocumentCard poziva `updateDocument` (minimalno status change + ostala polja)
+- Kompletna sukladnost sa zadanim labelama i bojama
+
+---
+Task ID: GSE-DOC-CONTROL-PDF
+Agent: Sub agent (general-purpose)
+Task: Kreiraj 6 PDF API ruta za Document Control modul u src/app/api/reports/ (po uzoru na audit-summary/route.ts pattern).
+
+Work Log:
+- Pročitan worklog.md za kontekst, src/app/api/reports/audit-summary/route.ts i audit-findings/route.ts kao referentni primjeri PDF route-a, src/lib/actions-document-control.ts za server actions (getDocuments, getDocumentStats), src/components/dashboard/document-control-view.tsx za labele i boje.
+- Kreirano 6 novih ruta:
+  • src/app/api/reports/doc-control-documents/route.ts — pregled ControlledDocument modela
+  • src/app/api/reports/doc-control-versions/route.ts — DocumentVersion sa vezom na ControlledDocument
+  • src/app/api/reports/doc-control-reviews/route.ts — DocumentReview sa vezom na ControlledDocument
+  • src/app/api/reports/doc-control-distribution/route.ts — DocumentDistribution sa vezom na ControlledDocument
+  • src/app/api/reports/doc-control-statistics/route.ts — kompletna statistika iz getDocumentStats()
+  • src/app/api/reports/doc-control-summary/route.ts — combo sažeti izvještaj svih 4 modula
+
+- Reference pattern primijenjen dosljedno:
+  • pdf-lib (PDFDocument, StandardFonts, rgb)
+  • getCurrentUser + 401 Unauthorized check
+  • transliterate() primijenjen na sav tekst kroz addText() helper
+  • A4 format (595.28 × 841.89), margin 50
+  • Footer: `GSE Control · ${new Date().toLocaleString('hr-HR').slice(0, 16)}` na y=30
+  • Header pattern: naslov (15pt bold) + subtitle (9pt grey) + generisao/datum linije
+  • wrapText() helper za dugačke tekstove (110 karaktera)
+  • Page break logika (y < 80 / 180 / 200) sa novom stranicom i reset y
+  • Filename pattern: `doc-control-<module>-YYYY-MM-DD.pdf`
+  • Content-Disposition: attachment header
+
+- Labele (identične kao u document-control-view.tsx):
+  • CATEGORY_LABELS, DOC_TYPE_LABELS, STATUS_LABELS, CLASSIFICATION_LABELS, REVIEW_FREQUENCY_LABELS (Route 1)
+  • VERSION_STATUS_LABELS (Route 2)
+  • REVIEW_TYPE_LABELS, REVIEW_RESULT_LABELS, REVIEW_STATUS_LABELS (Route 3)
+  • DISTRIBUTION_METHOD_LABELS, DISTRIBUTION_STATUS_LABELS (Route 4)
+  • Sve gore navedeno + REVIEW_RESULT_LABELS (Route 5)
+  • VERSION_STATUS_LABELS, REVIEW_RESULT_LABELS, STATUS_LABELS (Route 6)
+
+- Boje (konzistentne kroz sve 6 ruta):
+  • RED = rgb(0.86, 0.15, 0.15)
+  • GREEN = rgb(0.1, 0.55, 0.15)
+  • YELLOW = rgb(0.85, 0.55, 0.1)
+  • BLUE = rgb(0.2, 0.4, 0.7)
+  • GREY = rgb(0.4, 0.4, 0.4)
+  • Status/result color mappers primijenjeni per-pojačani prikaz (PUBLISHED=green, DRAFT=grey, SUPERSEDED/UNDER_REVIEW=yellow, WITHDRAWN=red)
+
+- Route 1 (doc-control-documents):
+  • Header: "GSE CONTROL — DOCUMENT REGISTER"
+  • Subtitle: "EASA Part-145.A.65 · ISO 9001"
+  • Sažetak: ukupno, published, draft, superseded, overdue reviews
+  • Tabela: DocID, Naslov, Kategorija, Verzija, Status, Vlasnik, Sljedeći pregled
+  • Detalji po dokumentu: Description, Standard, Classification, Owner, Author, Approver, File URL, Keywords, EffectiveDate, NextReviewDate, LastReviewedAt, ReviewFrequency
+
+- Route 2 (doc-control-versions):
+  • Header: "GSE CONTROL — DOCUMENT VERSIONS HISTORY"
+  • Sažetak: ukupno verzija, recent (90 dana), po statusu
+  • Tabela: DocID, Verzija, Datum revizije, Revidirao, Status, Promjena
+  • Detalji po verziji: Change description, Change reason, Affected sections, Approved by (sa datumom), File URL
+  • Verzije flattene iz getDocuments() sa _docId i _docTitle referencom
+
+- Route 3 (doc-control-reviews):
+  • Header: "GSE CONTROL — DOCUMENT REVIEWS"
+  • Sažetak: ukupno reviews, po result-u (svih 5: NO_CHANGE_NEEDED, MINOR_UPDATE, MAJOR_REVISION, WITHDRAW, SUPERSEDE)
+  • Tabela: DocID, Tip review-a, Datum, Reviewer, Rezultat, Status
+  • Detalji: Review comments, Changes required, New version required (DA/NE), Action taken, CompletedAt
+  • Reviews flattene iz getDocuments() sa _docId i _docTitle referencom
+
+- Route 4 (doc-control-distribution):
+  • Header: "GSE CONTROL — DOCUMENT DISTRIBUTION LIST"
+  • Sažetak: ukupno distribucija, acknowledged, pending, ack rate %
+  • Tabela: DocID, Primaoc, Odjel, Datum distribucije, Metoda, Status
+  • Posebna sekcija "PENDING ACKNOWLEDGMENT" sa žutim headerom i pod-tabelom za nepotvrđene (ukupno + DocID, Primaoc, Odjel, Datum, Metoda, Email)
+  • Detalji po distribuciji: odjel, uloga, email, datum, metoda, distributor, verzija, status, acknowledged flag, acknowledgedAt, acknowledgedMethod, notes
+  • Distributions flattene iz getDocuments() sa _docId i _docTitle referencom
+
+- Route 5 (doc-control-statistics):
+  • Header: "GSE CONTROL — DOCUMENT CONTROL STATISTICS"
+  • 8 sekcija:
+    1. Sažetak (total, published, draft, superseded, totalVersions, totalReviews, totalDistributions)
+    2. Po statusu (svih 6: DRAFT, UNDER_REVIEW, APPROVED, PUBLISHED, SUPERSEDED, WITHDRAWN)
+    3. Po kategoriji (svih 8: MANUAL, PROCEDURE, WORK_INSTRUCTION, FORM, RECORD, POLICY, PLAN, OTHER)
+    4. Po tipu dokumenta (svih 7: OPERATIONS, MAINTENANCE, SAFETY, QUALITY, TRAINING, ADMINISTRATIVE, TECHNICAL)
+    5. Po klasifikaciji (svih 4: PUBLIC, INTERNAL, CONFIDENTIAL, RESTRICTED)
+    6. Reviews by result (svih 5 rezultata)
+    7. Overdue reviews — lista dokumenata sa nextReviewDate < today (crvena tabela)
+    8. Reviews due soon (30 dana) — lista predstojećih pregleda (žuta tabela)
+  • Promise.all([getDocumentStats(), getDocuments()]) za paralelan dohvat
+
+- Route 6 (doc-control-summary):
+  • Header: "GSE CONTROL — DOCUMENT CONTROL SUMMARY"
+  • 5 sekcija:
+    1. DOCUMENT REGISTER — KPI counts (total, published, draft, superseded, withdrawn, under_review, approved)
+    2. VERSIONS — ukupno, recent (90 dana), po statusu
+    3. REVIEWS — ukupno, overdue, due soon, po result
+    4. DISTRIBUTION — ukupno, acknowledged, pending, ack rate %
+    5. ZAKLJUČAK — overall health na osnovu overdue reviews i ack rate
+  • Health logika:
+    - RED: overdueReviews > 0 ILI ackRate < 70%
+    - YELLOW: pendingDistributions > 5 ILI ackRate < 90% ILI dueSoonReviews > 0
+    - GREEN: sve na vrijeme i distribucije potvrđene
+  • Preporuke dinamički generisane na osnovu KPI (overdue reviews, due-soon, pending distributions, ack rate < 90%, draft count, withdrawn count)
+  • Health tekst wrap-ovan kroz riječi sa max 95 karaktera
+
+- Verifikacija:
+  • TypeScript: 0 grešaka (`npx tsc --noEmit`)
+  • ESLint: 0 grešaka/upozorenja (`npx eslint src/app/api/reports/doc-control-*/route.ts`)
+
+Stage Summary:
+- 6 PDF API ruta kompletno implementirano po uzoru na audit-summary/route.ts pattern
+- Sve rute koriste getDocuments() / getDocumentStats() server actions iz actions-document-control.ts
+- Podaci iz getDocuments() uključuju versions, reviews, distributions array-eve (flatten-ovano u rutama 2-4)
+- Identične labele kao u document-control-view.tsx (konzistentan HR prijevod)
+- Sve boje (RED/GREEN/YELLOW/BLUE/GREY) primijenjene konzistentno kroz sve rute
+- transliterate() primijenjen na sav tekst zbog pdf-lib StandardFonts limitacije (bez dijakritika)
+- A4 format sa margin 50, footer na y=30, page-break logika za duge sadržaje
+- Content-Disposition: attachment sa filename pattern-om `doc-control-<module>-YYYY-MM-DD.pdf`
+- Sve rute dostupne sa document-control-view.tsx UI-ja kroz Download dugmad (Documents/Versions/Reviews/Distribution/Statistics/Summary)
+
+---
+Task ID: GSE-CONTROL-DOCUMENT-CONTROL-MODULE
+Agent: Super Z (main agent)
+Task: Implementacija Document Control System modula (EASA Part-145.A.65 + ISO 9001)
+
+Work Log:
+- Prisma schema: 4 nova modela (ControlledDocument, DocumentVersion, DocumentReview, DocumentDistribution)
+- Supabase SQL migracija 015_document_control.sql sa RLS policies, triggers
+- Server actions (src/lib/actions-document-control.ts):
+  • CRUD za ControlledDocument (sa auto-effectiveDate na PUBLISHED)
+  • CRUD za DocumentVersion (sa auto-update currentVersion na dokumentu kad je PUBLISHED)
+  • CRUD za DocumentReview (sa auto-update lastReviewedAt na dokumentu)
+  • CRUD za DocumentDistribution (sa acknowledge funkcijom)
+  • getDocumentStats() — sve KPI na jednom mjestu (byStatus, byCategory, byDocType, byOwner, byClassification, reviewsDueSoon, reviewsOverdue, ackRate, etc.)
+- DocumentControlView komponenta sa 6 sub-tabova:
+  • Documents — search + filteri (category, status, classification) + edit + delete
+  • Versions — search + filter (status) + auto-update currentVersion na PUBLISHED
+  • Reviews — search + filteri (reviewType, result, status)
+  • Distribution — search + filteri (status, method) + acknowledge dugme
+  • Statistics — 4 KPI + 5 bar chart-ova + Top 10 vlasnika + overdue/due soon sekcije
+  • Reviews Calendar — color-coded lista nadolazećih review-a (crvena/žuta/zelena)
+- 6 PDF API ruta:
+  • /api/reports/doc-control-documents — Document Register
+  • /api/reports/doc-control-versions — Version History
+  • /api/reports/doc-control-reviews — Reviews Log
+  • /api/reports/doc-control-distribution — Distribution List sa pending sekcijom
+  • /api/reports/doc-control-statistics — kompletna statistika sa 8 sekcija
+  • /api/reports/doc-control-summary — sažeti izvještaj sa zaključkom
+- Tab "Document Control" dodan u dashboard sa FileText ikonom
+- Seed podaci (scripts/seed-document-control.js):
+  • 12 dokumenata (MOM, OPS-MAN, SMS-MAN, QM, WI, FORM, POL, PROC, PLAN, REC, PROC-DEICE, stari MOM)
+  • 8 verzija (nekoliko dokumenata sa 2-3 verzije, uključujući SUPERSEDED i DRAFT)
+  • 8 review-a (SCHEDULED, AD_HOC, CHANGE_REQUEST, INCIDENT_DRIVEN)
+  • 12 distribucija (EMAIL, PORTAL, TRAINING — neke acknowledged, neke pending)
+- Search UVIJEK vidljiv u svih 5 lista (Documents, Versions, Reviews, Distribution, Calendar)
+- Auto-izračunavanje:
+  • Compliance rate % u real-time
+  • Ack rate % za distribucije
+  • Overdue reviews (nextReviewDate < today)
+  • Due soon reviews (30 dana)
+  • Auto-update currentVersion kada se verzija publikuje
+  • Auto-update lastReviewedAt kada se review završi
+- Testirano end-to-end:
+  • Login kao admin ✓
+  • Document Control tab prikazuje 4 alert kartice: 12/1/4/4 ✓
+  • Search "SMS" filtrira dokumente ✓
+  • Svi 6 PDF-a vraćaju HTTP 200 ✓
+- Build čist: TypeScript 0, ESLint 0
+
+Stage Summary:
+- Kompletan Document Control System funkcionalan sa 6 sub-tabova
+- Search UVIJEK vidljiv u svih 5 lista
+- 6 PDF izvještaja: Documents, Versions, Reviews, Distribution, Statistics, Summary
+- Auto-generacija ID-a, auto-update verzija na PUBLISHED, auto-acknowledge
+- Reviews Calendar sa color-coded prikazom (overdue/due soon/future)
+- Compliance: EASA Part-145.A.65, ISO 9001, ICAO Annex 19
