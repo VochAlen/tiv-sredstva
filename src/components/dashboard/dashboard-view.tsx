@@ -28,6 +28,9 @@ import {
   MapPin,
   User,
   Snowflake,
+  Plane,
+  Shield,
+  ClipboardCheck,
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
@@ -99,6 +102,9 @@ import { IncidentsView } from './incidents-view'
 import { DriverAuthView } from './driver-auth-view'
 import { FuelParkingView } from './fuel-parking-view'
 import { DeicingView } from './deicing-view'
+import { AerodromeInspectionView } from './aerodrome-inspection-view'
+import { SMSView } from './sms-view'
+import { AuditView } from './audit-view'
 
 type EquipmentRow = Awaited<ReturnType<typeof getAllEquipment>>[number]
 type ActiveAssignment = Awaited<ReturnType<typeof getActiveAssignments>>[number]
@@ -230,6 +236,18 @@ export function DashboardView({ currentUser }: { currentUser: AppUser }) {
             <TabsTrigger value="deicing">
               <Snowflake className="h-4 w-4 mr-1.5" />
               De-icing
+            </TabsTrigger>
+            <TabsTrigger value="aero-inspection">
+              <Plane className="h-4 w-4 mr-1.5" />
+              Aerodrom Inspekcija
+            </TabsTrigger>
+            <TabsTrigger value="sms">
+              <Shield className="h-4 w-4 mr-1.5" />
+              SMS
+            </TabsTrigger>
+            <TabsTrigger value="audit">
+              <ClipboardCheck className="h-4 w-4 mr-1.5" />
+              Audit & Compliance
             </TabsTrigger>
             <TabsTrigger value="reports">
               <Printer className="h-4 w-4 mr-1.5" />
@@ -503,6 +521,18 @@ export function DashboardView({ currentUser }: { currentUser: AppUser }) {
 
         <TabsContent value="deicing" className="space-y-4">
           <DeicingView />
+        </TabsContent>
+
+        <TabsContent value="aero-inspection" className="space-y-4">
+          <AerodromeInspectionView />
+        </TabsContent>
+
+        <TabsContent value="sms" className="space-y-4">
+          <SMSView />
+        </TabsContent>
+
+        <TabsContent value="audit" className="space-y-4">
+          <AuditView />
         </TabsContent>
 
         <TabsContent value="reports" className="space-y-4">

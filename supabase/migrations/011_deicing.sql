@@ -140,27 +140,28 @@ CREATE TRIGGER update_deicing_disposal_updated_at BEFORE UPDATE ON deicing_fluid
 -- ============================================================================
 -- Seed: primjer deicing vozila (ako ne postoji)
 -- Napomena: equipment tabela (iz 001_initial_schema.sql) ima kolone:
---   id, code, name, type, serial_number, location, status, notes, created_at, updated_at
+--   id (UUID!), code, name, type, serial_number, location, status, notes, created_at, updated_at
 -- Ne postoji "manufacturer", "model", "current_hours", "current_km" kolona.
 -- Takođe, type CHECK constraint ne uključuje 'DEICER'.
 -- Zato ovdje koristimo type='OTHER' i podatke stavljamo u notes.
+-- ID mora biti UUID — koristimo gen_random_uuid() unutar INSERT-a.
 -- ============================================================================
 
 INSERT INTO equipment (id, code, name, type, status, location, serial_number, notes, created_at, updated_at)
-SELECT 'gse-dei-001', 'GSE-DEI-001', 'De-icing Truck 1', 'OTHER', 'AVAILABLE', 'Hangar 1', 'VST-2024-001', 'De-icing truck Vestergaard Elephant Beta — 8000L tank', now(), now()
+SELECT 'a1b2c3d4-0001-4000-8000-000000000001', 'GSE-DEI-001', 'De-icing Truck 1', 'OTHER', 'AVAILABLE', 'Hangar 1', 'VST-2024-001', 'De-icing truck Vestergaard Elephant Beta — 8000L tank', now(), now()
 WHERE NOT EXISTS (SELECT 1 FROM equipment WHERE code = 'GSE-DEI-001');
 
 INSERT INTO equipment (id, code, name, type, status, location, serial_number, notes, created_at, updated_at)
-SELECT 'gse-dei-002', 'GSE-DEI-002', 'De-icing Truck 2', 'OTHER', 'AVAILABLE', 'Hangar 1', 'BCH-2024-002', 'De-icing truck Bucher CityCat S2 — 6000L tank', now(), now()
+SELECT 'a1b2c3d4-0001-4000-8000-000000000002', 'GSE-DEI-002', 'De-icing Truck 2', 'OTHER', 'AVAILABLE', 'Hangar 1', 'BCH-2024-002', 'De-icing truck Bucher CityCat S2 — 6000L tank', now(), now()
 WHERE NOT EXISTS (SELECT 1 FROM equipment WHERE code = 'GSE-DEI-002');
 
 -- ============================================================================
 -- Seed: primjer tečnosti (ako je prazno)
 -- ============================================================================
 INSERT INTO deicing_fluids (id, fluid_type, brand_name, manufacturer, batch_number, quantity_liters, unit_price, concentration, expiry_date, storage_location, notes, created_at, updated_at)
-SELECT 'demo-fluid-001', 'TYPE_I', 'Kilfrost ABC-I', 'Kilfrost', 'KIL-2025-A001', 1000, 3.50, '100/0', '2027-03-31', 'Skladište B - Polica 1', 'Type I fluid — za de-icing', now(), now()
+SELECT 'a1b2c3d4-0001-4000-8000-000000000010', 'TYPE_I', 'Kilfrost ABC-I', 'Kilfrost', 'KIL-2025-A001', 1000, 3.50, '100/0', '2027-03-31', 'Skladište B - Polica 1', 'Type I fluid — za de-icing', now(), now()
 WHERE NOT EXISTS (SELECT 1 FROM deicing_fluids WHERE batch_number = 'KIL-2025-A001');
 
 INSERT INTO deicing_fluids (id, fluid_type, brand_name, manufacturer, batch_number, quantity_liters, unit_price, concentration, expiry_date, storage_location, notes, created_at, updated_at)
-SELECT 'demo-fluid-002', 'TYPE_IV', 'Clariant Safewing MP IV Launch', 'Clariant', 'CLA-2025-B042', 500, 12.80, '100/0', '2027-09-30', 'Skladište B - Polica 2', 'Type IV anti-icing fluid', now(), now()
+SELECT 'a1b2c3d4-0001-4000-8000-000000000011', 'TYPE_IV', 'Clariant Safewing MP IV Launch', 'Clariant', 'CLA-2025-B042', 500, 12.80, '100/0', '2027-09-30', 'Skladište B - Polica 2', 'Type IV anti-icing fluid', now(), now()
 WHERE NOT EXISTS (SELECT 1 FROM deicing_fluids WHERE batch_number = 'CLA-2025-B042');

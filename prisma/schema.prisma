@@ -847,7 +847,7 @@ model DeicingFluid {
   fluidType       String // TYPE_I | TYPE_II | TYPE_III | TYPE_IV
   brandName       String // npr. "Kilfrost ABC-S Plus", "Clariant Safewing MP II"
   manufacturer    String?
-  batchNumber     String   @unique // batch lot
+  batchNumber     String    @unique // batch lot
   quantityLiters  Float // količina u litrima
   unitPrice       Float? // cijena po litru (EUR)
   concentration   String? // npr. "50/50", "75/25", "100/0" (Type II/IV)
@@ -950,4 +950,562 @@ model DeicingFluidDisposal {
   @@index([disposalDate])
   @@index([fluidType])
   @@index([batchNumber])
+}
+
+// ============================================================================
+// AERODROME DAILY INSPECTION (ADR.OPS.B.005 + ICAO Annex 14)
+// ============================================================================
+
+// Dnevna inspekcija aerodroma (runway, taxiway, apron, movement area)
+model AerodromeInspection {
+  id String @id @default(cuid())
+
+  // Tip inspekcije
+  inspectionType    String // RUNWAY | TAXIWAY | APRON | MOVEMENT_AREA_JOINT
+  inspectionDate    DateTime // datum i vrijeme inspekcije
+  performedBy       String // ime inspektora
+  performedByCardId String? // broj kartice
+  shift             String? // Morning | Evening | Night
+
+  // Pozicija inspekcije (ako je runway/taxiway)
+  runwayCode  String? // npr. "14/32", "08/26"
+  taxiwayCode String? // npr. "A", "B1", "TWY-A"
+  apronArea   String? // npr. "Apron 1", "Stand A1-A5"
+
+  // Vremenski uslovi
+  weatherConditions String? // npr. "Clear, OAT 5°C, wind 280/5kt"
+  visibility        Float? // metars
+  runwayCondition   String? // DRY | WET | DAMP | SNOW | ICE | SLUSH | STANDING_WATER
+
+  // Rezultat
+  status        String // COMPLETED | WITH_FINDINGS | CRITICAL | ABORTED
+  findingsCount Int    @default(0)
+  criticalCount Int    @default(0)
+
+  // Provjere (boolean — applicable/ok/not_ok/not_applicable)
+  // Runway provjere
+  runwaySurface           String? // OK | NOT_OK | N/A
+  runwayMarkings          String? // OK | NOT_OK | N/A
+  runwayLights            String? // OK | NOT_OK | N/A
+  papiLights              String? // OK | NOT_OK | N/A
+  windDirectionIndicators String? // OK | NOT_OK | N/A
+  // Taxiway provjere
+  taxiwaySurface          String? // OK | NOT_OK | N/A
+  taxiwaySigns            String? // OK | NOT_OK | N/A
+  taxiwayLights           String? // OK | NOT_OK | N/A
+  // Apron provjere
+  gseParking              String? // OK | NOT_OK | N/A
+  fodCheck                String? // OK | NOT_OK | N/A
+  markings                String? // OK | NOT_OK | N/A
+  fuelingArea             String? // OK | NOT_OK | N/A
+  // Movement area
+  drainageSystem          String? // OK | NOT_OK | N/A
+  perimeterFence          String? // OK | NOT_OK | N/A
+  wildlifeActivity        String? // OK | NOT_OK | N/A
+
+  // Napomene
+  notes String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  findings InspectionFinding[]
+
+  @@index([inspectionDate])
+  @@index([inspectionType])
+  @@index([status])
+  @@index([performedBy])
+}
+
+// Inspekcijski nalazi (findings) sa fotografijama i koordinatama
+model InspectionFinding {
+  id           String              @id @default(cuid())
+  inspectionId String // veza na DailyInspection
+  inspection   AerodromeInspection @relation(fields: [inspectionId], references: [id], onDelete: Cascade)
+
+  // Tip i opis
+  category    String // FOD | PAVEMENT_DAMAGE | MARKINGS | LIGHTING | WILDLIFE | DRAINAGE | GSE_PARKING | SIGNAGE | OTHER
+  severity    String // LOW | MEDIUM | HIGH | CRITICAL
+  description String // detaljan opis nalaza
+  location    String? // opisna lokacija npr. "RWY 14, 200m from threshold"
+
+  // Koordinate
+  latitude  Float?
+  longitude Float?
+
+  // Foto dokaz (base64 ili URL)
+  photoUrl String?
+
+  // Akcija
+  actionRequired String? // opis potrebne akcije
+  actionTaken    String? // opis poduzete akcije
+  status         String    @default("OPEN") // OPEN | IN_PROGRESS | RESOLVED | DEFERRED
+  resolvedAt     DateTime?
+  resolvedBy     String?
+
+  // NOTAM (ako je kreiran)
+  notamGenerated Boolean @default(false)
+  notamNumber    String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([inspectionId])
+  @@index([category])
+  @@index([severity])
+  @@index([status])
+}
+
+// NOTAM (Notice to Airmen) — generisani na osnovu findings
+model Notam {
+  id             String  @id @default(cuid())
+  notamNumber    String  @unique // npr. "A1234/26"
+  series         String // A | B | C | D | E | F | G | S | T
+  qualifier      String // NOTAMN (new) | NOTAMR (replace) | NOTAMC (cancel)
+  refNotamNumber String? // za replace/cancel
+
+  // Sadržaj
+  fir         String  @default("LYBA") // Flight Information Region (Beograd)
+  aerodrome   String  @default("LYTV") // ICAO kod aerodroma (Tivat)
+  subject     String // npr. "RWY", "TWY", "APRON", "AD"
+  condition   String // npr. "CLOSED", "WIP", "FOD", "POOR SURFACE"
+  purpose     String // N (OBSTACLE) | B (bez uslova) | O (ostalo) | M (military) | K (checklist)
+  scope       String // A (aerodrome) | E (en-route) | W (navigation warning) | K (checklist)
+  traffic     String // IFR | VFR | IV (oba)
+  lowerLimit  Int?
+  upperLimit  Int?
+  coordinates String?
+  radius      Float?
+
+  // Tekst
+  text                    String // NOTAM text (Item E)
+  createdFromFindingId    String? // veza na finding
+  createdFromInspectionId String? // veza na inspection
+
+  // Status
+  status    String   @default("ACTIVE") // ACTIVE | CANCELLED | EXPIRED
+  validFrom DateTime @default(now())
+  validTo   DateTime
+
+  createdBy String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([notamNumber])
+  @@index([aerodrome])
+  @@index([status])
+  @@index([validTo])
+}
+
+// ============================================================================
+// SMS — Safety Management System (ICAO Annex 19, EASA M.GEN.205)
+// ============================================================================
+
+// Hazard Identification Log — proaktivno prijavljivanje opasnosti
+model Hazard {
+  id               String   @id @default(cuid())
+  hazardId         String   @unique // npr. "HZ-2026-001"
+  title            String // kratak naslov
+  description      String // detaljan opis
+  category         String // OPERATIONAL | TECHNICAL | ENVIRONMENTAL | HUMAN | ORGANIZATIONAL | EXTERNAL
+  source           String // INSPECTION | INCIDENT | AUDIT | EMPLOYEE | SAFETY_CULTURE_SURVEY | OTHER
+  location         String? // gde je hazard uočen
+  reportedBy       String // prijavitelj
+  reportedByCardId String?
+  reportedAt       DateTime @default(now())
+
+  // Početna procjena rizika (prije mitigejšna)
+  initialProbability Int // 1-5
+  initialSeverity    Int // 1-5
+  initialRiskLevel   String // LOW | MEDIUM | HIGH | CRITICAL (auto-izračunato)
+
+  // Trenutni status
+  status     String    @default("OPEN") // OPEN | ASSESSED | MITIGATED | CLOSED | MONITORED
+  assignedTo String? // ko je zadužen
+  dueDate    DateTime?
+
+  // Mitigejšn
+  mitigation          String? // opis preduzetih mjera
+  residualProbability Int? // nakon mitigejšna
+  residualSeverity    Int?
+  residualRiskLevel   String? // LOW | MEDIUM | HIGH | CRITICAL
+
+  // ALARP justification
+  alarpJustification String? // zašto je rizik ALARP (As Low As Reasonably Practicable)
+  alarpReviewedAt    DateTime?
+  alarpReviewedBy    String?
+
+  // Veza na Safety Action Plan
+  actionPlanId String?
+
+  closedAt DateTime?
+  closedBy String?
+
+  notes     String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([hazardId])
+  @@index([category])
+  @@index([status])
+  @@index([initialRiskLevel])
+  @@index([reportedAt])
+}
+
+// SPI — Safety Performance Indicators
+model SPI {
+  id          String  @id @default(cuid())
+  spiId       String  @unique // npr. "SPI-001"
+  name        String // npr. "Broj GSE incidenata po 10.000 pokreta"
+  description String?
+  category    String // OUTPUT | PROCESS | LEADING | LAGGING
+  unit        String // npr. "incidents", "%", "hours"
+  frequency   String // MONTHLY | QUARTERLY | ANNUALLY
+
+  // Tolerable limit (gornja granica)
+  targetValue    Float // ciljana vrijednost (npr. 0.5)
+  alertLevel     Float // nivo upozorenja (npr. 1.0)
+  tolerableLimit Float // maksimalno tolerisano (npr. 2.0)
+
+  // Trenutna vrijednost
+  currentValue  Float?
+  currentPeriod String? // npr. "2026-08"
+  trend         String? // IMPROVING | STABLE | WORSENING
+
+  // Status
+  status      String   @default("GREEN") // GREEN | AMBER | RED
+  lastUpdated DateTime @default(now())
+
+  // Veza na SPT
+  sptId String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([spiId])
+  @@index([category])
+  @@index([status])
+}
+
+// SPT — Safety Performance Targets
+model SPT {
+  id            String  @id @default(cuid())
+  sptId         String  @unique // npr. "SPT-001"
+  name          String // npr. "Smanjiti GSE incidente za 20% YoY"
+  description   String?
+  category      String // SAFETY | OPERATIONAL | COMPLIANCE
+  baselineValue Float // početna vrijednost
+  targetValue   Float // ciljana vrijednost
+  currentValue  Float?
+  unit          String
+
+  // Vremenski okvir
+  startDate       DateTime
+  targetDate      DateTime
+  status          String   @default("ON_TRACK") // ON_TRACK | AT_RISK | OFF_TRACK | ACHIEVED | MISSED
+  progressPercent Float    @default(0)
+
+  notes     String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([sptId])
+  @@index([status])
+  @@index([targetDate])
+}
+
+// Safety Action Plan — akcije sa rokovima i odgovornima
+model SafetyAction {
+  id          String @id @default(cuid())
+  actionId    String @unique // npr. "SAP-2026-001"
+  title       String
+  description String
+  category    String // CORRECTIVE | PREVENTIVE | MITIGATION | IMPROVEMENT
+  priority    String // LOW | MEDIUM | HIGH | CRITICAL
+
+  // Veza
+  hazardId String? // ako proizilazi iz hazard-a
+  spiId    String? // ako je vezano za SPI
+  sptId    String? // ako je vezano za SPT
+
+  // Realizacija
+  assignedTo       String // odgovorna osoba
+  assignedToCardId String?
+  dueDate          DateTime
+  completedAt      DateTime?
+  status           String    @default("OPEN") // OPEN | IN_PROGRESS | COMPLETED | OVERDUE | CANCELLED
+
+  // Trošak
+  estimatedCost Float?
+  actualCost    Float?
+
+  // Napomene
+  progressNotes      String?
+  verificationResult String? // kako je verifikovano da je akcija efikasna
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([actionId])
+  @@index([status])
+  @@index([priority])
+  @@index([dueDate])
+  @@index([assignedTo])
+}
+
+// ============================================================================
+// AUDIT & COMPLIANCE MONITORING (ADR.OPS.D.005 + EASA Part-145.A.65)
+// ============================================================================
+
+// Audit Program — godišnji plan internih audita
+model AuditProgram {
+  id            String  @id @default(cuid())
+  programId     String  @unique // npr. "AP-2026-001"
+  title         String // npr. "Internal Audit GSE Operations Q1 2026"
+  auditType     String // INTERNAL | EXTERNAL | REGULATORY | SUPPLIER | PROCESS | SYSTEM
+  auditScope    String // opseg (npr. "GSE maintenance, QR check-out, fuel operations")
+  auditStandard String? // npr. "EASA Part-145", "ADR.OPS.D.005", "ISO 9001"
+
+  // Period
+  plannedYear    Int // npr. 2026
+  plannedQuarter Int? // 1-4
+  plannedDate    DateTime?
+  actualDate     DateTime?
+  completedAt    DateTime?
+
+  // Osobe
+  leadAuditor       String // glavni auditor
+  leadAuditorCardId String?
+  auditees          String? // ko se audituje (npr. "Maintenance Dept, Ramp Ops")
+
+  // Status
+  status   String @default("PLANNED") // PLANNED | SCHEDULED | IN_PROGRESS | COMPLETED | CANCELLED | OVERDUE
+  priority String @default("MEDIUM") // LOW | MEDIUM | HIGH | CRITICAL
+
+  // Rezultat (popunjava se nakon audita)
+  findingsCount Int     @default(0)
+  majorFindings Int     @default(0)
+  minorFindings Int     @default(0)
+  observations  Int     @default(0)
+  overallResult String? // CONFORMANT | NON_CONFORMANT | CONDITIONAL
+
+  // Napomene
+  notes String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  audits Audit[]
+
+  @@index([programId])
+  @@index([plannedYear])
+  @@index([status])
+  @@index([auditType])
+}
+
+// Audit — pojedinačna realizacija audita
+model Audit {
+  id        String        @id @default(cuid())
+  auditId   String        @unique // npr. "AUD-2026-001"
+  programId String? // veza na AuditProgram (ako postoji)
+  program   AuditProgram? @relation(fields: [programId], references: [id], onDelete: SetNull)
+
+  title         String
+  auditType     String // INTERNAL | EXTERNAL | REGULATORY | SUPPLIER | PROCESS | SYSTEM
+  auditScope    String
+  auditStandard String?
+  description   String?
+
+  // Datumi
+  scheduledDate DateTime
+  startDate     DateTime?
+  endDate       DateTime?
+  reportDate    DateTime?
+
+  // Auditori
+  leadAuditor       String
+  leadAuditorCardId String?
+  auditTeam         String? // ostali članovi tima
+
+  // Audited
+  auditeeOrganization String? // npr. "Maintenance Department"
+  auditeeContact      String? // kontakt osoba
+  auditeeAreas        String? // oblasti koje su auditovane
+
+  // Status
+  status String @default("SCHEDULED") // SCHEDULED | IN_PROGRESS | COMPLETED | CANCELLED
+
+  // Rezultat
+  overallResult   String? // CONFORMANT | NON_CONFORMANT | CONDITIONAL
+  summary         String? // sažeti izvještaj
+  recommendations String? // preporuke
+
+  // Dokumentacija
+  reportUrl String? // link do pisanog izvještaja (ako postoji)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  findings AuditFinding[]
+
+  @@index([auditId])
+  @@index([scheduledDate])
+  @@index([status])
+  @@index([leadAuditor])
+  @@index([auditType])
+}
+
+// AuditFinding — nalazi audita
+model AuditFinding {
+  id        String @id @default(cuid())
+  findingId String @unique // npr. "FIN-2026-001"
+  auditId   String // veza na Audit
+  audit     Audit  @relation(fields: [auditId], references: [id], onDelete: Cascade)
+
+  // Tip i klasifikacija
+  classification String // MAJOR | MINOR | OBSERVATION | POSITIVE
+  category       String // DOCUMENTATION | PROCESS | TRAINING | EQUIPMENT | SAFETY | COMPLIANCE | RECORDS | OTHER
+  findingType    String // CONFORMITY | EFFECTIVENESS | OPPORTUNITY_FOR_IMPROVEMENT
+
+  // Sadržaj
+  title       String // kratak naslov nalaza
+  description String // detaljan opis
+  criteria    String? // kriterijum protiv kojeg je utvrđen nalaz (npr. "Part-145.A.40")
+  evidence    String? // dokazi (interview, dokument, posmatranje)
+
+  // Lokacija
+  area    String? // oblast (npr. "Maintenance log review")
+  process String? // proces (npr. "Daily inspection")
+
+  // CAPA
+  rootCause        String? // korijenski uzrok (5-why analiza)
+  immediateAction  String? // hitna mjera (corrective)
+  preventiveAction String? // preventivna mjera
+  correctiveAction String? // korektivna mjera
+
+  // Status
+  status             String    @default("OPEN") // OPEN | IN_PROGRESS | CORRECTED | VERIFIED | CLOSED | DEFERRED
+  assignedTo         String? // ko je zadužen
+  dueDate            DateTime?
+  closedAt           DateTime?
+  closedBy           String?
+  verificationResult String? // kako je verifikovano
+  verifiedBy         String?
+  verifiedAt         DateTime?
+
+  // Risk
+  riskLevel String? // LOW | MEDIUM | HIGH | CRITICAL
+
+  notes     String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([findingId])
+  @@index([auditId])
+  @@index([classification])
+  @@index([status])
+  @@index([category])
+  @@index([dueDate])
+}
+
+// CAPA — Corrective and Preventive Action (može biti vezano za finding ili samostalno)
+model CAPA {
+  id          String @id @default(cuid())
+  capaId      String @unique // npr. "CAPA-2026-001"
+  title       String
+  description String
+
+  // Tip
+  type      String // CORRECTIVE | PREVENTIVE | CORRECTIVE_AND_PREVENTIVE
+  source    String // AUDIT_FINDING | INCIDENT | HAZARD | SMS | MANAGEMENT_REVIEW | EXTERNAL_AUDIT | CUSTOMER_COMPLAINT | OTHER
+  sourceRef String? // referenca (npr. FIN-2026-001, HZ-2026-001)
+
+  // Veza na AuditFinding (ako proizilazi iz audita)
+  findingId String?
+
+  // Problem analiza
+  problemStatement  String // opis problema
+  rootCauseAnalysis String? // 5-why, fishbone analiza
+  rootCause         String? // identifikovani korijenski uzrok
+
+  // Akcije
+  correctiveAction String? // korektivna akcija
+  preventiveAction String? // preventivna akcija
+  actionPlan       String? // detaljan plan implementacije
+
+  // Realizacija
+  assignedTo       String // odgovorna osoba
+  assignedToCardId String?
+  dueDate          DateTime
+  completedAt      DateTime?
+
+  // Verifikacija
+  status                 String    @default("OPEN") // OPEN | IN_PROGRESS | IMPLEMENTED | VERIFIED | CLOSED | OVERDUE
+  implementationEvidence String? // dokazi implementacije
+  verificationMethod     String? // metoda verifikacije
+  verificationResult     String? // rezultat verifikacije (EFFECTIVE | NOT_EFFECTIVE | PARTIAL)
+  verifiedBy             String?
+  verifiedAt             DateTime?
+
+  // Trošak
+  estimatedCost Float?
+  actualCost    Float?
+
+  // Napomene
+  progressNotes String?
+  closureNotes  String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([capaId])
+  @@index([status])
+  @@index([type])
+  @@index([source])
+  @@index([dueDate])
+  @@index([assignedTo])
+}
+
+// ComplianceItem — Compliance Matrix (EASA Reg → interni dokument → dokaz)
+model ComplianceItem {
+  id     String @id @default(cuid())
+  itemId String @unique // npr. "CM-001"
+
+  // Regulativa
+  regulation      String // npr. "EASA Part-145.A.30"
+  requirement     String // tekst zahtjeva (kratak)
+  requirementText String? // pun tekst zahtjeva
+  category        String // PERSONNEL | FACILITIES | EQUIPMENT | DOCUMENTATION | MAINTENANCE | SMS | OTHER
+
+  // Interni dokumenti
+  internalDoc String? // referenca internog dokumenta (npr. "MOM-001", "OPS-MAN-2.3")
+  docLocation String? // gdje se nalazi dokument (folder, link)
+  docVersion  String? // verzija dokumenta
+  docOwner    String? // vlasnik dokumenta
+
+  // Dokaz sukladnosti
+  evidenceType        String? // DOCUMENT | RECORD | INTERVIEW | OBSERVATION | TEST
+  evidenceRef         String? // referenca na dokaz (npr. "Audit AUD-2026-001")
+  evidenceDescription String?
+  lastVerified        DateTime?
+  verifiedBy          String?
+
+  // Status
+  status           String  @default("COMPLIANT") // COMPLIANT | NON_COMPLIANT | PARTIAL | NOT_APPLICABLE | PENDING_REVIEW
+  riskLevel        String? // LOW | MEDIUM | HIGH
+  gapDescription   String? // ako nije compliant — opis gap-a
+  correctiveAction String? // planirana korekcija
+
+  // Review
+  nextReviewDate  DateTime? // kada treba ponovo pregledati
+  reviewFrequency String? // ANNUAL | BIENNIAL | QUARTERLY
+
+  notes     String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([itemId])
+  @@index([regulation])
+  @@index([status])
+  @@index([category])
 }
