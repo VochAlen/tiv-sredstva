@@ -27,6 +27,7 @@ import {
   Hash,
   MapPin,
   User,
+  Snowflake,
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
@@ -97,6 +98,7 @@ import { SchedulingView } from './scheduling-view'
 import { IncidentsView } from './incidents-view'
 import { DriverAuthView } from './driver-auth-view'
 import { FuelParkingView } from './fuel-parking-view'
+import { DeicingView } from './deicing-view'
 
 type EquipmentRow = Awaited<ReturnType<typeof getAllEquipment>>[number]
 type ActiveAssignment = Awaited<ReturnType<typeof getActiveAssignments>>[number]
@@ -224,6 +226,10 @@ export function DashboardView({ currentUser }: { currentUser: AppUser }) {
             <TabsTrigger value="fuelparking">
               <Fuel className="h-4 w-4 mr-1.5" />
               Gorivo & Parking
+            </TabsTrigger>
+            <TabsTrigger value="deicing">
+              <Snowflake className="h-4 w-4 mr-1.5" />
+              De-icing
             </TabsTrigger>
             <TabsTrigger value="reports">
               <Printer className="h-4 w-4 mr-1.5" />
@@ -493,6 +499,10 @@ export function DashboardView({ currentUser }: { currentUser: AppUser }) {
 
         <TabsContent value="fuelparking" className="space-y-4">
           <FuelParkingView />
+        </TabsContent>
+
+        <TabsContent value="deicing" className="space-y-4">
+          <DeicingView />
         </TabsContent>
 
         <TabsContent value="reports" className="space-y-4">

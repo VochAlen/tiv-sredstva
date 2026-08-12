@@ -3,7 +3,7 @@
 import { useEffect, useState, useTransition } from 'react'
 import {
   ShieldCheck, Plus, Loader2, Lock, Unlock, AlertTriangle, CheckCircle2,
-  Clock, User, Download, Car, Award,
+  Clock, User, Download, Car, Award, Search, FileText,
 } from 'lucide-react'
 import { Card, CardContent } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
@@ -14,6 +14,9 @@ import { Switch } from '@/components/ui/switch'
 import {
   Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle,
 } from '@/components/ui/dialog'
+import {
+  Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
+} from '@/components/ui/select'
 import { toast } from 'sonner'
 import {
   getDriverAuthorizations, addDriverAuthorization, updateDriverAuthorization, getDriverAuthStats,
@@ -25,6 +28,9 @@ export function DriverAuthView() {
   const [loading, setLoading] = useState(true)
   const [showAdd, setShowAdd] = useState(false)
   const [editAuth, setEditAuth] = useState<any>(null)
+
+  const [search, setSearch] = useState('')
+  const [catFilter, setCatFilter] = useState('ALL')
 
   const load = async () => {
     setLoading(true)
@@ -44,7 +50,12 @@ export function DriverAuthView() {
           <h2 className="text-lg font-semibold flex items-center gap-2"><Car className="h-5 w-5" />Driver Authorization</h2>
           <p className="text-sm text-muted-foreground">ADR.OPS.C.005 — Dozvole za Movement Area</p>
         </div>
-        <Button onClick={() => setShowAdd(true)}><Plus className="h-4 w-4 mr-1.5" />Dodaj dozvolu</Button>
+        <div className="flex gap-2 flex-wrap">
+          <Button variant="outline" size="sm" onClick={() => window.open('/api/reports/driver-auth?days=30', '_blank')}><Download className="h-4 w-4 mr-1.5" />30 dana</Button>
+          <Button variant="outline" size="sm" onClick={() => window.open('/api/reports/driver-auth?days=60', '_blank')}><Download className="h-4 w-4 mr-1.5" />60 dana</Button>
+          <Button variant="outline" size="sm" onClick={() => window.open('/api/reports/driver-auth', '_blank')}><Download className="h-4 w-4 mr-1.5" />Sve (PDF)</Button>
+          <Button onClick={() => setShowAdd(true)}><Plus className="h-4 w-4 mr-1.5" />Dodaj dozvolu</Button>
+        </div>
       </div>
 
       {/* Stats */}
@@ -76,6 +87,23 @@ export function DriverAuthView() {
         </div>
       )}
 
+      {/* Search & Filter */}
+      <div className="flex gap-2 flex-wrap">
+        <div className="relative flex-1 min-w-[200px]">
+          <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
+          <Input placeholder="Pretraga po imenu, kartici..." value={search} onChange={(e) => setSearch(e.target.value)} className="pl-9" />
+        </div>
+        <Select value={catFilter} onValueChange={setCatFilter}>
+          <SelectTrigger className="w-[180px]"><SelectValue placeholder="Kategorija" /></SelectTrigger>
+          <SelectContent>
+            <SelectItem value="ALL">Sve kategorije</SelectItem>
+            <SelectItem value="CAT1">Cat.1 — Airside</SelectItem>
+            <SelectItem value="CAT2">Cat.2 — Maneuvering</SelectItem>
+            <SelectItem value="CAT3">Cat.3 — Runway</SelectItem>
+          </SelectContent>
+        </Select>
+      </div>
+
       {/* List */}
       {loading ? (
         <div className="flex items-center justify-center py-12"><Loader2 className="h-6 w-6 animate-spin text-muted-foreground" /></div>
@@ -83,7 +111,16 @@ export function DriverAuthView() {
         <Card><CardContent className="py-12 text-center text-muted-foreground"><Car className="h-10 w-10 mx-auto mb-2 opacity-30" /><p>Nema izdatih dozvola.</p></CardContent></Card>
       ) : (
         <div className="space-y-2">
-          {auths.map((auth: any) => {
+          {auths.filter((auth: any) => {
+            if (search) {
+              const s = search.toLowerCase()
+              if (!auth.employeeName?.toLowerCase().includes(s) && !auth.employeeCardId?.toLowerCase().includes(s)) return false
+            }
+            if (catFilter === 'CAT1' && !auth.category1) return false
+            if (catFilter === 'CAT2' && !auth.category2) return false
+            if (catFilter === 'CAT3' && !auth.category3) return false
+            return true
+          }).map((auth: any) => {
             const today = new Date()
             const isExpired = auth.validUntil && new Date(auth.validUntil) < today
             const isExpiring = auth.validUntil && !isExpired && new Date(auth.validUntil) <= new Date(today.getTime() + 30 * 24 * 60 * 60 * 1000)
@@ -114,7 +151,10 @@ export function DriverAuthView() {
                     </div>
                     {auth.suspendReason && <div className="text-xs text-red-600 mt-1">Razlog suspenzije: {auth.suspendReason}</div>}
                   </div>
-                  <Button size="sm" variant="outline" onClick={() => setEditAuth(auth)}>Uredi</Button>
+                  <div className="flex gap-1">
+                    <Button size="sm" variant="ghost" onClick={() => window.open(`/api/reports/driver-auth?id=${auth.id}`, '_blank')}><FileText className="h-4 w-4" /></Button>
+                    <Button size="sm" variant="outline" onClick={() => setEditAuth(auth)}>Uredi</Button>
+                  </div>
                 </div>
               </Card>
             )

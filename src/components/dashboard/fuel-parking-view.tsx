@@ -63,8 +63,18 @@ export function FuelParkingView() {
           <p className="text-sm text-muted-foreground">Refueling/Charging + GSE Parking Management (AHM 1115)</p>
         </div>
         <div className="flex gap-2">
-          {tab === 'fuel' && <Button onClick={() => setShowFuel(true)}><Plus className="h-4 w-4 mr-1.5" />Zabilježi točenje</Button>}
-          {tab === 'parking' && <Button onClick={() => setShowParking(true)}><Plus className="h-4 w-4 mr-1.5" />Potvrdi parking</Button>}
+          {tab === 'fuel' && (
+            <div className="flex gap-2">
+              <Button variant="outline" size="sm" onClick={() => window.open('/api/reports/fuel', '_blank')}><Download className="h-4 w-4 mr-1.5" />PDF</Button>
+              <Button onClick={() => setShowFuel(true)}><Plus className="h-4 w-4 mr-1.5" />Zabilježi točenje</Button>
+            </div>
+          )}
+          {tab === 'parking' && (
+            <div className="flex gap-2">
+              <Button variant="outline" size="sm" onClick={() => window.open('/api/reports/parking', '_blank')}><Download className="h-4 w-4 mr-1.5" />PDF</Button>
+              <Button onClick={() => setShowParking(true)}><Plus className="h-4 w-4 mr-1.5" />Potvrdi parking</Button>
+            </div>
+          )}
         </div>
       </div>
 

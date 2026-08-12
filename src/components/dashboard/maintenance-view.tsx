@@ -1,7 +1,7 @@
 'use client'
 
 import { useEffect, useState, useTransition } from 'react'
-import { Wrench, Plus, Loader2, Calendar, Award, FileText } from 'lucide-react'
+import { Wrench, Plus, Loader2, Calendar, Award, FileText, Search, Download } from 'lucide-react'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
@@ -101,115 +101,269 @@ export function MaintenanceView() {
 }
 
 function MaintenanceLogsList({ logs }: { logs: MaintenanceLog[] }) {
-  if (logs.length === 0) {
-    return (
-      <Card>
-        <CardContent className="py-12 text-center text-muted-foreground">
-          <Wrench className="h-10 w-10 mx-auto mb-2 opacity-30" />
-          <p>Nema zabilježenih aktivnosti održavanja.</p>
-        </CardContent>
-      </Card>
-    )
-  }
+  const [search, setSearch] = useState('')
+  const [typeFilter, setTypeFilter] = useState('ALL')
+  const [statusFilter, setStatusFilter] = useState('ALL')
+
+  const filtered = logs.filter((log) => {
+    if (search) {
+      const q = search.toLowerCase()
+      const hay = [log.equipmentCode, log.equipmentName, log.description, log.performedBy, log.certificateNumber, log.partsReplaced].filter(Boolean).join(' ').toLowerCase()
+      if (!hay.includes(q)) return false
+    }
+    if (typeFilter !== 'ALL' && log.maintenanceType !== typeFilter) return false
+    if (statusFilter !== 'ALL' && log.status !== statusFilter) return false
+    return true
+  })
 
   return (
-    <div className="space-y-2">
-      {logs.map((log) => (
-        <Card key={log.id} className="p-4">
-          <div className="flex items-start justify-between gap-3 flex-wrap">
-            <div className="flex-1 min-w-0">
-              <div className="flex items-center gap-2 mb-1 flex-wrap">
-                <Badge variant="outline" className="font-mono text-xs">
-                  {log.equipmentCode}
-                </Badge>
-                <Badge className="text-xs">
-                  {MAINTENANCE_TYPE_LABELS[log.maintenanceType as keyof typeof MAINTENANCE_TYPE_LABELS] ?? log.maintenanceType}
-                </Badge>
-                <Badge className={`text-xs ${MAINTENANCE_STATUS_COLORS[log.status as keyof typeof MAINTENANCE_STATUS_COLORS] ?? ''}`}>
-                  {MAINTENANCE_STATUS_LABELS[log.status as keyof typeof MAINTENANCE_STATUS_LABELS] ?? log.status}
-                </Badge>
-              </div>
-              <div className="text-sm font-medium">{log.equipmentName}</div>
-              <div className="text-sm text-muted-foreground mt-1">{log.description}</div>
+    <div className="space-y-3">
+      {/* Search & filters — always visible */}
+      <div className="flex gap-2 flex-wrap items-center">
+        <div className="relative flex-1 min-w-[220px]">
+          <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
+          <Input placeholder="Pretraga po izvođaču, opremi, opisu..." value={search} onChange={(e) => setSearch(e.target.value)} className="pl-9" />
+        </div>
+        <Select value={typeFilter} onValueChange={setTypeFilter}>
+          <SelectTrigger className="w-[170px]"><SelectValue placeholder="Tip" /></SelectTrigger>
+          <SelectContent>
+            <SelectItem value="ALL">Svi tipovi</SelectItem>
+            {Object.entries(MAINTENANCE_TYPE_LABELS).map(([k, v]) => (
+              <SelectItem key={k} value={k}>{v}</SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+        <Select value={statusFilter} onValueChange={setStatusFilter}>
+          <SelectTrigger className="w-[170px]"><SelectValue placeholder="Status" /></SelectTrigger>
+          <SelectContent>
+            <SelectItem value="ALL">Svi statusi</SelectItem>
+            {Object.entries(MAINTENANCE_STATUS_LABELS).map(([k, v]) => (
+              <SelectItem key={k} value={k}>{v}</SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+        <Button variant="outline" size="sm" onClick={() => window.open('/api/reports/maintenance-log', '_blank')}>
+          <Download className="h-4 w-4 mr-1.5" />PDF
+        </Button>
+        <div className="text-xs text-muted-foreground ml-auto">{filtered.length} / {logs.length}</div>
+      </div>
 
-              <div className="text-xs text-muted-foreground mt-2 flex items-center gap-3 flex-wrap">
-                {log.performedBy && <span>Izveo: {log.performedBy}</span>}
-                <span className="flex items-center gap-1">
-                  <Calendar className="h-3 w-3" />
-                  {new Date(log.performedAt).toLocaleDateString('hr-HR')}
-                </span>
-                {log.certificateNumber && <span>Certifikat: {log.certificateNumber}</span>}
-                {log.cost != null && <span>Trošak: {log.cost}€</span>}
-                {log.durationHours != null && <span>Trajanje: {log.durationHours}h</span>}
-              </div>
-
-              {log.partsReplaced && (
-                <div className="text-xs mt-1 p-2 bg-muted/30 rounded">
-                  <strong>Zamijenjeni dijelovi:</strong> {log.partsReplaced}
-                </div>
-              )}
-            </div>
-          </div>
+      {logs.length === 0 ? (
+        <Card>
+          <CardContent className="py-12 text-center text-muted-foreground">
+            <Wrench className="h-10 w-10 mx-auto mb-2 opacity-30" />
+            <p>Nema zabilježenih aktivnosti održavanja.</p>
+            <p className="text-xs mt-1">Kliknite "Novi log" da zabilježite prvu aktivnost.</p>
+          </CardContent>
         </Card>
-      ))}
+      ) : filtered.length === 0 ? (
+        <Card>
+          <CardContent className="py-12 text-center text-muted-foreground">
+            <Wrench className="h-10 w-10 mx-auto mb-2 opacity-30" />
+            <p>Nema rezultata pretrage.</p>
+            <p className="text-xs mt-1">Pokušajte sa drugim kriterijumima.</p>
+          </CardContent>
+        </Card>
+      ) : (
+        <div className="space-y-2">
+          {filtered.map((log) => (
+            <Card key={log.id} className="p-4">
+              <div className="flex items-start justify-between gap-3 flex-wrap">
+                <div className="flex-1 min-w-0">
+                  <div className="flex items-center gap-2 mb-1 flex-wrap">
+                    <Badge variant="outline" className="font-mono text-xs">
+                      {log.equipmentCode}
+                    </Badge>
+                    <Badge className="text-xs">
+                      {MAINTENANCE_TYPE_LABELS[log.maintenanceType as keyof typeof MAINTENANCE_TYPE_LABELS] ?? log.maintenanceType}
+                    </Badge>
+                    <Badge className={`text-xs ${MAINTENANCE_STATUS_COLORS[log.status as keyof typeof MAINTENANCE_STATUS_COLORS] ?? ''}`}>
+                      {MAINTENANCE_STATUS_LABELS[log.status as keyof typeof MAINTENANCE_STATUS_LABELS] ?? log.status}
+                    </Badge>
+                  </div>
+                  <div className="text-sm font-medium">{log.equipmentName}</div>
+                  <div className="text-sm text-muted-foreground mt-1">{log.description}</div>
+
+                  <div className="text-xs text-muted-foreground mt-2 flex items-center gap-3 flex-wrap">
+                    {log.performedBy && <span>Izveo: {log.performedBy}</span>}
+                    <span className="flex items-center gap-1">
+                      <Calendar className="h-3 w-3" />
+                      {new Date(log.performedAt).toLocaleDateString('hr-HR')}
+                    </span>
+                    {log.certificateNumber && <span>Certifikat: {log.certificateNumber}</span>}
+                    {log.cost != null && <span>Trošak: {log.cost}€</span>}
+                    {log.durationHours != null && <span>Trajanje: {log.durationHours}h</span>}
+                  </div>
+
+                  {log.partsReplaced && (
+                    <div className="text-xs mt-1 p-2 bg-muted/30 rounded">
+                      <strong>Zamijenjeni dijelovi:</strong> {log.partsReplaced}
+                    </div>
+                  )}
+                </div>
+              </div>
+            </Card>
+          ))}
+        </div>
+      )}
     </div>
   )
 }
 
 function QualificationsList({ qualifications }: { qualifications: Qualification[] }) {
-  if (qualifications.length === 0) {
-    return (
-      <Card>
-        <CardContent className="py-12 text-center text-muted-foreground">
-          <Award className="h-10 w-10 mx-auto mb-2 opacity-30" />
-          <p>Nema zabilježenih kvalifikacija.</p>
-          <p className="text-xs mt-1">Dodajte kvalifikacije da biste kontrolisali ko može upravljati kojom opremom.</p>
-        </CardContent>
-      </Card>
-    )
-  }
+  const [search, setSearch] = useState('')
+  const [typeFilter, setTypeFilter] = useState('ALL')
+  const [statusFilter, setStatusFilter] = useState('ALL')
 
   const today = new Date()
 
+  const getQualStatus = (q: Qualification): 'VALID' | 'EXPIRING_SOON' | 'EXPIRED' | 'NO_EXPIRY' => {
+    if (!q.validUntil) return 'NO_EXPIRY'
+    const d = new Date(q.validUntil)
+    if (d < today) return 'EXPIRED'
+    const days = Math.floor((d.getTime() - today.getTime()) / (1000 * 60 * 60 * 24))
+    if (days <= 30) return 'EXPIRING_SOON'
+    return 'VALID'
+  }
+
+  const filtered = qualifications.filter((q) => {
+    if (search) {
+      const s = search.toLowerCase()
+      const hay = [q.employeeName, q.employeeCardId, q.certificateNumber, q.certifiedBy].filter(Boolean).join(' ').toLowerCase()
+      if (!hay.includes(s)) return false
+    }
+    if (typeFilter !== 'ALL' && q.equipmentType !== typeFilter) return false
+    if (statusFilter !== 'ALL') {
+      const st = getQualStatus(q)
+      if (st !== statusFilter) return false
+    }
+    return true
+  })
+
+  if (qualifications.length === 0) {
+    // Even if no qualifications, show search bar so the user knows the feature exists
+    return (
+      <div className="space-y-3">
+        <div className="flex gap-2 flex-wrap items-center">
+          <div className="relative flex-1 min-w-[220px]">
+            <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
+            <Input placeholder="Pretraga po imenu, kartici, certifikatu..." value={search} onChange={(e) => setSearch(e.target.value)} className="pl-9" />
+          </div>
+          <Select value={typeFilter} onValueChange={setTypeFilter}>
+            <SelectTrigger className="w-[180px]"><SelectValue placeholder="Tip opreme" /></SelectTrigger>
+            <SelectContent>
+              <SelectItem value="ALL">Svi tipovi opreme</SelectItem>
+              {Object.entries(EQUIPMENT_TYPE_LABELS).map(([k, v]) => (
+                <SelectItem key={k} value={k}>{v}</SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+          <Select value={statusFilter} onValueChange={setStatusFilter}>
+            <SelectTrigger className="w-[180px]"><SelectValue placeholder="Status" /></SelectTrigger>
+            <SelectContent>
+              <SelectItem value="ALL">Svi statusi</SelectItem>
+              <SelectItem value="VALID">Važeće</SelectItem>
+              <SelectItem value="EXPIRING_SOON">Ističe u 30 dana</SelectItem>
+              <SelectItem value="EXPIRED">Istekle</SelectItem>
+              <SelectItem value="NO_EXPIRY">Bez roka</SelectItem>
+            </SelectContent>
+          </Select>
+          <Button variant="outline" size="sm" onClick={() => window.open('/api/reports/qualifications', '_blank')}>
+            <Download className="h-4 w-4 mr-1.5" />PDF
+          </Button>
+          <div className="text-xs text-muted-foreground ml-auto">{filtered.length} / {qualifications.length}</div>
+        </div>
+        <Card>
+          <CardContent className="py-12 text-center text-muted-foreground">
+            <Award className="h-10 w-10 mx-auto mb-2 opacity-30" />
+            <p>Nema zabilježenih kvalifikacija.</p>
+            <p className="text-xs mt-1">Dodajte kvalifikacije da biste kontrolisali ko može upravljati kojom opremom.</p>
+          </CardContent>
+        </Card>
+      </div>
+    )
+  }
+
   return (
-    <div className="space-y-2">
-      {qualifications.map((q) => {
-        const isExpired = q.validUntil && new Date(q.validUntil) < today
-        const isExpiringSoon = q.validUntil && !isExpired &&
-          Math.floor((new Date(q.validUntil).getTime() - today.getTime()) / (1000 * 60 * 60 * 24)) <= 30
+    <div className="space-y-3">
+      <div className="flex gap-2 flex-wrap items-center">
+        <div className="relative flex-1 min-w-[220px]">
+          <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
+          <Input placeholder="Pretraga po imenu, kartici, certifikatu..." value={search} onChange={(e) => setSearch(e.target.value)} className="pl-9" />
+        </div>
+        <Select value={typeFilter} onValueChange={setTypeFilter}>
+          <SelectTrigger className="w-[180px]"><SelectValue placeholder="Tip opreme" /></SelectTrigger>
+          <SelectContent>
+            <SelectItem value="ALL">Svi tipovi opreme</SelectItem>
+            {Object.entries(EQUIPMENT_TYPE_LABELS).map(([k, v]) => (
+              <SelectItem key={k} value={k}>{v}</SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+        <Select value={statusFilter} onValueChange={setStatusFilter}>
+          <SelectTrigger className="w-[180px]"><SelectValue placeholder="Status" /></SelectTrigger>
+          <SelectContent>
+            <SelectItem value="ALL">Svi statusi</SelectItem>
+            <SelectItem value="VALID">Važeće</SelectItem>
+            <SelectItem value="EXPIRING_SOON">Ističe u 30 dana</SelectItem>
+            <SelectItem value="EXPIRED">Istekle</SelectItem>
+            <SelectItem value="NO_EXPIRY">Bez roka</SelectItem>
+          </SelectContent>
+        </Select>
+        <Button variant="outline" size="sm" onClick={() => window.open('/api/reports/qualifications', '_blank')}>
+          <Download className="h-4 w-4 mr-1.5" />PDF
+        </Button>
+        <div className="text-xs text-muted-foreground ml-auto">{filtered.length} / {qualifications.length}</div>
+      </div>
+      {filtered.length === 0 ? (
+        <Card>
+          <CardContent className="py-12 text-center text-muted-foreground">
+            <Award className="h-10 w-10 mx-auto mb-2 opacity-30" />
+            <p>Nema rezultata pretrage.</p>
+            <p className="text-xs mt-1">Pokušajte sa drugim kriterijumima.</p>
+          </CardContent>
+        </Card>
+      ) : (
+        <div className="space-y-2">
+          {filtered.map((q) => {
+            const isExpired = q.validUntil && new Date(q.validUntil) < today
+            const isExpiringSoon = q.validUntil && !isExpired &&
+              Math.floor((new Date(q.validUntil).getTime() - today.getTime()) / (1000 * 60 * 60 * 24)) <= 30
 
-        return (
-          <Card key={q.id} className={`p-4 ${isExpired ? 'border-red-300 bg-red-50' : isExpiringSoon ? 'border-amber-300 bg-amber-50' : ''}`}>
-            <div className="flex items-start justify-between gap-3 flex-wrap">
-              <div className="flex-1 min-w-0">
-                <div className="flex items-center gap-2 mb-1 flex-wrap">
-                  <Badge variant="outline" className="font-mono text-xs">{q.employeeCardId}</Badge>
-                  <span className="font-medium">{q.employeeName}</span>
-                  <Badge variant="secondary" className="text-xs">
-                    {EQUIPMENT_TYPE_LABELS[q.equipmentType as keyof typeof EQUIPMENT_TYPE_LABELS] ?? q.equipmentType}
-                  </Badge>
-                  <Badge className="text-xs bg-purple-100 text-purple-800">
-                    {QUALIFICATION_LEVEL_LABELS[q.qualificationLevel as keyof typeof QUALIFICATION_LEVEL_LABELS] ?? q.qualificationLevel}
-                  </Badge>
-                </div>
+            return (
+              <Card key={q.id} className={`p-4 ${isExpired ? 'border-red-300 bg-red-50' : isExpiringSoon ? 'border-amber-300 bg-amber-50' : ''}`}>
+                <div className="flex items-start justify-between gap-3 flex-wrap">
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center gap-2 mb-1 flex-wrap">
+                      <Badge variant="outline" className="font-mono text-xs">{q.employeeCardId}</Badge>
+                      <span className="font-medium">{q.employeeName}</span>
+                      <Badge variant="secondary" className="text-xs">
+                        {EQUIPMENT_TYPE_LABELS[q.equipmentType as keyof typeof EQUIPMENT_TYPE_LABELS] ?? q.equipmentType}
+                      </Badge>
+                      <Badge className="text-xs bg-purple-100 text-purple-800">
+                        {QUALIFICATION_LEVEL_LABELS[q.qualificationLevel as keyof typeof QUALIFICATION_LEVEL_LABELS] ?? q.qualificationLevel}
+                      </Badge>
+                    </div>
 
-                <div className="text-xs text-muted-foreground mt-1 flex items-center gap-3 flex-wrap">
-                  {q.trainedAt && <span>Obučen: {new Date(q.trainedAt).toLocaleDateString('hr-HR')}</span>}
-                  {q.validUntil && (
-                    <span className={isExpired ? 'text-red-700 font-medium' : isExpiringSoon ? 'text-amber-700 font-medium' : ''}>
-                      Važi do: {new Date(q.validUntil).toLocaleDateString('hr-HR')}
-                      {isExpired && ' (ISTEKLA)'}
-                      {isExpiringSoon && ' (USKORO ISTIČE)'}
-                    </span>
-                  )}
-                  {q.certifiedBy && <span>Certifikovao: {q.certifiedBy}</span>}
-                  {q.certificateNumber && <span>Certifikat: {q.certificateNumber}</span>}
+                    <div className="text-xs text-muted-foreground mt-1 flex items-center gap-3 flex-wrap">
+                      {q.trainedAt && <span>Obučen: {new Date(q.trainedAt).toLocaleDateString('hr-HR')}</span>}
+                      {q.validUntil && (
+                        <span className={isExpired ? 'text-red-700 font-medium' : isExpiringSoon ? 'text-amber-700 font-medium' : ''}>
+                          Važi do: {new Date(q.validUntil).toLocaleDateString('hr-HR')}
+                          {isExpired && ' (ISTEKLA)'}
+                          {isExpiringSoon && ' (USKORO ISTIČE)'}
+                        </span>
+                      )}
+                      {q.certifiedBy && <span>Certifikovao: {q.certifiedBy}</span>}
+                      {q.certificateNumber && <span>Certifikat: {q.certificateNumber}</span>}
+                    </div>
+                  </div>
                 </div>
-              </div>
-            </div>
-          </Card>
-        )
-      })}
+              </Card>
+            )
+          })}
+        </div>
+      )}
     </div>
   )
 }

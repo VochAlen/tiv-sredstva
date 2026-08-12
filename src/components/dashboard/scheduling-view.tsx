@@ -3,7 +3,7 @@
 import { useEffect, useState, useTransition } from 'react'
 import {
   Calendar, Wrench, Package, ShoppingCart, TrendingDown, Plus, Loader2,
-  AlertTriangle, CheckCircle2, Clock, Zap, Trash2, DollarSign, FileText,
+  AlertTriangle, CheckCircle2, Clock, Zap, Trash2, DollarSign, FileText, Download, Search,
 } from 'lucide-react'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
@@ -61,7 +61,7 @@ export function SchedulingView() {
   const handleAutoGen = () => {
     startTransition(async () => {
       const res = await autoGenerateSchedules()
-      toast.success(`Generisano ${res.generated} servisa`)
+      toast.success('Generisano ' + res.generated + ' servisa')
       load()
     })
   }
@@ -76,9 +76,15 @@ export function SchedulingView() {
           <h2 className="text-lg font-semibold flex items-center gap-2"><Calendar className="h-5 w-5" />Servisni planer & Rezervni dijelovi</h2>
           <p className="text-sm text-muted-foreground">Auto-zakazivanje po km/h/mjesecima · Magacin rezervnih dijelova · Troškovnik</p>
         </div>
-        <Button onClick={handleAutoGen} disabled={isPending}>
-          <Zap className="h-4 w-4 mr-1.5" />Auto-generiši servise
-        </Button>
+        <div className="flex gap-2 flex-wrap">
+          <Button variant="outline" size="sm" onClick={() => window.open('/api/reports/maintenance-schedule', '_blank')}><Download className="h-4 w-4 mr-1.5" />Servisni plan PDF</Button>
+          <Button variant="outline" size="sm" onClick={() => window.open('/api/reports/spare-parts', '_blank')}><Download className="h-4 w-4 mr-1.5" />Dijelovi PDF</Button>
+          <Button variant="outline" size="sm" onClick={() => window.open('/api/reports/purchases', '_blank')}><Download className="h-4 w-4 mr-1.5" />Nabavke PDF</Button>
+          <Button variant="outline" size="sm" onClick={() => window.open('/api/reports/consumption', '_blank')}><Download className="h-4 w-4 mr-1.5" />Utrošak PDF</Button>
+          <Button onClick={handleAutoGen} disabled={isPending}>
+            <Zap className="h-4 w-4 mr-1.5" />Auto-generiši servise
+          </Button>
+        </div>
       </div>
 
       {/* Alert cards */}
@@ -86,7 +92,7 @@ export function SchedulingView() {
         <AlertCard icon={AlertTriangle} label="Servisi na naplatu" value={dueTasks} tone="amber" onClick={() => setTab('schedule')} />
         <AlertCard icon={Package} label="Niska zaliha" value={lowStock} tone="red" onClick={() => setTab('parts')} />
         <AlertCard icon={ShoppingCart} label="Nabavke" value={purchases.length} tone="blue" onClick={() => setTab('purchases')} />
-        <AlertCard icon={DollarSign} label="Ukupni troškovi" value={`${(costs?.grandTotal ?? 0).toFixed(0)}€`} tone="purple" onClick={() => setTab('costs')} />
+        <AlertCard icon={DollarSign} label="Ukupni troškovi" value={(costs?.grandTotal ?? 0).toFixed(0) + ' EUR'} tone="purple" onClick={() => setTab('costs')} />
       </div>
 
       {/* Tabs */}
@@ -139,10 +145,28 @@ function TabBtn({ active, onClick, icon: Icon, label }: any) {
   )
 }
 
+const SCHEDULE_STATUS_LABELS: Record<string, string> = {
+  SCHEDULED: 'Zakazano', DUE: 'Na naplatu', IN_PROGRESS: 'U toku', COMPLETED: 'Završeno', OVERDUE: 'Prekoračeno',
+}
+
 function ScheduleList({ schedule, onUpdated }: any) {
   const [completeId, setCompleteId] = useState<string | null>(null)
   const [notes, setNotes] = useState('')
   const [isPending, startTransition] = useTransition()
+  const [search, setSearch] = useState('')
+  const [statusFilter, setStatusFilter] = useState('ALL')
+  const [typeFilter, setTypeFilter] = useState('ALL')
+
+  const filtered = schedule.filter((s: any) => {
+    if (search) {
+      const q = search.toLowerCase()
+      const hay = [s.equipmentCode, s.title, s.description, s.maintenanceType, s.completionNotes].filter(Boolean).join(' ').toLowerCase()
+      if (!hay.includes(q)) return false
+    }
+    if (statusFilter !== 'ALL' && s.status !== statusFilter) return false
+    if (typeFilter !== 'ALL' && s.maintenanceType !== typeFilter) return false
+    return true
+  })
 
   const handleComplete = () => {
     if (!completeId) return
@@ -153,11 +177,70 @@ function ScheduleList({ schedule, onUpdated }: any) {
     })
   }
 
-  if (schedule.length === 0) return <Card><CardContent className="py-12 text-center text-muted-foreground"><Calendar className="h-10 w-10 mx-auto mb-2 opacity-30" /><p>Nema zakazanih servisa. Kliknite "Auto-generiši servise".</p></CardContent></Card>
+  if (schedule.length === 0) {
+    // Show search bar even when empty, so users know the feature exists
+    return (
+      <div className="space-y-3">
+        <div className="flex gap-2 flex-wrap items-center">
+          <div className="relative flex-1 min-w-[220px]">
+            <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
+            <Input placeholder="Pretraga po kodu, nazivu, opisu..." value={search} onChange={(e) => setSearch(e.target.value)} className="pl-9" />
+          </div>
+          <Select value={statusFilter} onValueChange={setStatusFilter}>
+            <SelectTrigger className="w-[170px]"><SelectValue placeholder="Status" /></SelectTrigger>
+            <SelectContent>
+              <SelectItem value="ALL">Svi statusi</SelectItem>
+              {Object.entries(SCHEDULE_STATUS_LABELS).map(([k, v]) => <SelectItem key={k} value={k}>{v}</SelectItem>)}
+            </SelectContent>
+          </Select>
+          <Select value={typeFilter} onValueChange={setTypeFilter}>
+            <SelectTrigger className="w-[170px]"><SelectValue placeholder="Tip" /></SelectTrigger>
+            <SelectContent>
+              <SelectItem value="ALL">Svi tipovi</SelectItem>
+              <SelectItem value="PREVENTIVE">Preventivno</SelectItem>
+              <SelectItem value="CORRECTIVE">Korektivno</SelectItem>
+              <SelectItem value="INSPECTION">Inspekcija</SelectItem>
+              <SelectItem value="OVERHAUL">Generalni</SelectItem>
+            </SelectContent>
+          </Select>
+          <div className="text-xs text-muted-foreground ml-auto">{filtered.length} / {schedule.length}</div>
+        </div>
+        <Card><CardContent className="py-12 text-center text-muted-foreground"><Calendar className="h-10 w-10 mx-auto mb-2 opacity-30" /><p>Nema zakazanih servisa. Kliknite "Auto-generiši servise" u gornjem desnom uglu.</p></CardContent></Card>
+      </div>
+    )
+  }
 
   return (
-    <div className="space-y-2">
-      {schedule.map((s: any) => (
+    <div className="space-y-3">
+      <div className="flex gap-2 flex-wrap items-center">
+        <div className="relative flex-1 min-w-[220px]">
+          <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
+          <Input placeholder="Pretraga po kodu, nazivu, opisu..." value={search} onChange={(e) => setSearch(e.target.value)} className="pl-9" />
+        </div>
+        <Select value={statusFilter} onValueChange={setStatusFilter}>
+          <SelectTrigger className="w-[170px]"><SelectValue placeholder="Status" /></SelectTrigger>
+          <SelectContent>
+            <SelectItem value="ALL">Svi statusi</SelectItem>
+            {Object.entries(SCHEDULE_STATUS_LABELS).map(([k, v]) => <SelectItem key={k} value={k}>{v}</SelectItem>)}
+          </SelectContent>
+        </Select>
+        <Select value={typeFilter} onValueChange={setTypeFilter}>
+          <SelectTrigger className="w-[170px]"><SelectValue placeholder="Tip" /></SelectTrigger>
+          <SelectContent>
+            <SelectItem value="ALL">Svi tipovi</SelectItem>
+            <SelectItem value="PREVENTIVE">Preventivno</SelectItem>
+            <SelectItem value="CORRECTIVE">Korektivno</SelectItem>
+            <SelectItem value="INSPECTION">Inspekcija</SelectItem>
+            <SelectItem value="OVERHAUL">Generalni</SelectItem>
+          </SelectContent>
+        </Select>
+        <div className="text-xs text-muted-foreground ml-auto">{filtered.length} / {schedule.length}</div>
+      </div>
+      {filtered.length === 0 ? (
+        <Card><CardContent className="py-12 text-center text-muted-foreground"><Calendar className="h-10 w-10 mx-auto mb-2 opacity-30" /><p>Nema rezultata pretrage.</p></CardContent></Card>
+      ) : (
+        <div className="space-y-2">
+      {filtered.map((s: any) => (
         <Card key={s.id} className={'p-4 border-l-4 ' + (s.status === 'OVERDUE' ? 'border-l-red-500' : s.status === 'DUE' ? 'border-l-amber-500' : 'border-l-blue-500')}>
           <div className="flex items-start justify-between gap-3 flex-wrap">
             <div className="flex-1 min-w-0">
@@ -185,6 +268,8 @@ function ScheduleList({ schedule, onUpdated }: any) {
           </div>
         </Card>
       ))}
+        </div>
+      )}
 
       <Dialog open={!!completeId} onOpenChange={(v) => !v && setCompleteId(null)}>
         <DialogContent>
@@ -207,6 +292,17 @@ function PartsList({ parts, onUpdated }: any) {
   const [editPart, setEditPart] = useState<any>(null)
   const [newQty, setNewQty] = useState(0)
   const [isPending, startTransition] = useTransition()
+  const [partSearch, setPartSearch] = useState('')
+  const [partCatFilter, setPartCatFilter] = useState('ALL')
+
+  const filteredParts = parts.filter((p: any) => {
+    if (partSearch) {
+      const s = partSearch.toLowerCase()
+      if (!p.partNumber?.toLowerCase().includes(s) && !p.name?.toLowerCase().includes(s) && !p.manufacturer?.toLowerCase().includes(s)) return false
+    }
+    if (partCatFilter !== 'ALL' && p.category !== partCatFilter) return false
+    return true
+  })
 
   const handleSaveQty = () => {
     if (!editPart) return
@@ -218,7 +314,7 @@ function PartsList({ parts, onUpdated }: any) {
   }
 
   const handleDelete = (id: string, name: string) => {
-    if (!confirm(`Obrisati "${name}"?`)) return
+    if (!confirm('Obrisati "' + name + '"?')) return
     startTransition(async () => {
       await deleteSparePart(id); toast.success('Obrisano'); onUpdated()
     })
@@ -226,12 +322,22 @@ function PartsList({ parts, onUpdated }: any) {
 
   return (
     <div className="space-y-2">
-      <div className="flex justify-end"><Button size="sm" onClick={() => setShowAdd(true)}><Plus className="h-4 w-4 mr-1.5" />Dodaj dio</Button></div>
-      {parts.length === 0 ? (
+      <div className="flex gap-2 flex-wrap">
+        <div className="relative flex-1 min-w-[200px]">
+          <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
+          <Input placeholder="Pretraga dijelova..." value={partSearch} onChange={(e) => setPartSearch(e.target.value)} className="pl-9" />
+        </div>
+        <Select value={partCatFilter} onValueChange={setPartCatFilter}>
+          <SelectTrigger className="w-[160px]"><SelectValue placeholder="Kategorija" /></SelectTrigger>
+          <SelectContent><SelectItem value="ALL">Sve kategorije</SelectItem>{Object.entries(CATEGORY_LABELS).map(([k, v]) => <SelectItem key={k} value={k}>{v}</SelectItem>)}</SelectContent>
+        </Select>
+        <Button size="sm" onClick={() => setShowAdd(true)}><Plus className="h-4 w-4 mr-1.5" />Dodaj dio</Button>
+      </div>
+      {filteredParts.length === 0 ? (
         <Card><CardContent className="py-12 text-center text-muted-foreground"><Package className="h-10 w-10 mx-auto mb-2 opacity-30" /><p>Nema rezervnih dijelova u magacinu.</p></CardContent></Card>
       ) : (
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
-          {parts.map((p: any) => (
+          {filteredParts.map((p: any) => (
             <Card key={p.id} className={'p-4 ' + (p.quantity <= p.minQuantity ? 'border-red-300 bg-red-50' : '')}>
               <div className="flex items-start justify-between gap-2">
                 <div className="flex-1 min-w-0">
@@ -328,14 +434,43 @@ function AddPartDialog({ open, onOpenChange, onAdded }: any) {
 
 function PurchasesList({ purchases, parts, onUpdated }: any) {
   const [showAdd, setShowAdd] = useState(false)
+  const [search, setSearch] = useState('')
+  const [paidFilter, setPaidFilter] = useState('ALL')
+
+  const filtered = purchases.filter((p: any) => {
+    if (search) {
+      const q = search.toLowerCase()
+      const hay = [p.partNumber, p.partName, p.supplier, p.invoiceNumber, p.orderNumber].filter(Boolean).join(' ').toLowerCase()
+      if (!hay.includes(q)) return false
+    }
+    if (paidFilter === 'PAID' && !p.paid) return false
+    if (paidFilter === 'UNPAID' && p.paid) return false
+    return true
+  })
+
   return (
-    <div className="space-y-2">
-      <div className="flex justify-end"><Button size="sm" onClick={() => setShowAdd(true)}><Plus className="h-4 w-4 mr-1.5" />Nova nabavka</Button></div>
-      {purchases.length === 0 ? (
-        <Card><CardContent className="py-12 text-center text-muted-foreground"><ShoppingCart className="h-10 w-10 mx-auto mb-2 opacity-30" /><p>Nema zabilježenih nabavki.</p></CardContent></Card>
+    <div className="space-y-3">
+      <div className="flex gap-2 flex-wrap items-center">
+        <div className="relative flex-1 min-w-[220px]">
+          <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
+          <Input placeholder="Pretraga po dijelu, dobavljaču, računu..." value={search} onChange={(e) => setSearch(e.target.value)} className="pl-9" />
+        </div>
+        <Select value={paidFilter} onValueChange={setPaidFilter}>
+          <SelectTrigger className="w-[160px]"><SelectValue placeholder="Plaćanje" /></SelectTrigger>
+          <SelectContent>
+            <SelectItem value="ALL">Sve nabavke</SelectItem>
+            <SelectItem value="PAID">Plaćeno</SelectItem>
+            <SelectItem value="UNPAID">Nije plaćeno</SelectItem>
+          </SelectContent>
+        </Select>
+        <Button size="sm" onClick={() => setShowAdd(true)}><Plus className="h-4 w-4 mr-1.5" />Nova nabavka</Button>
+        <div className="text-xs text-muted-foreground ml-auto">{filtered.length} / {purchases.length}</div>
+      </div>
+      {filtered.length === 0 ? (
+        <Card><CardContent className="py-12 text-center text-muted-foreground"><ShoppingCart className="h-10 w-10 mx-auto mb-2 opacity-30" /><p>Nema rezultata pretrage.</p></CardContent></Card>
       ) : (
         <div className="space-y-2">
-          {purchases.map((p: any) => (
+          {filtered.map((p: any) => (
             <Card key={p.id} className="p-4">
               <div className="flex items-start justify-between gap-3 flex-wrap">
                 <div className="flex-1 min-w-0">
@@ -433,14 +568,32 @@ function AddPurchaseDialog({ open, onOpenChange, onAdded, parts }: any) {
 
 function ConsumptionList({ consumption, parts, onUpdated }: any) {
   const [showAdd, setShowAdd] = useState(false)
+  const [search, setSearch] = useState('')
+
+  const filtered = consumption.filter((c: any) => {
+    if (search) {
+      const q = search.toLowerCase()
+      const hay = [c.partNumber, c.partName, c.equipmentCode, c.consumedBy, c.notes].filter(Boolean).join(' ').toLowerCase()
+      if (!hay.includes(q)) return false
+    }
+    return true
+  })
+
   return (
-    <div className="space-y-2">
-      <div className="flex justify-end"><Button size="sm" onClick={() => setShowAdd(true)}><Plus className="h-4 w-4 mr-1.5" />Zabilježi utrošak</Button></div>
-      {consumption.length === 0 ? (
-        <Card><CardContent className="py-12 text-center text-muted-foreground"><TrendingDown className="h-10 w-10 mx-auto mb-2 opacity-30" /><p>Nema zabilježenog utroška.</p></CardContent></Card>
+    <div className="space-y-3">
+      <div className="flex gap-2 flex-wrap items-center">
+        <div className="relative flex-1 min-w-[220px]">
+          <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
+          <Input placeholder="Pretraga po dijelu, vozilu, potrošaču..." value={search} onChange={(e) => setSearch(e.target.value)} className="pl-9" />
+        </div>
+        <Button size="sm" onClick={() => setShowAdd(true)}><Plus className="h-4 w-4 mr-1.5" />Zabilježi utrošak</Button>
+        <div className="text-xs text-muted-foreground ml-auto">{filtered.length} / {consumption.length}</div>
+      </div>
+      {filtered.length === 0 ? (
+        <Card><CardContent className="py-12 text-center text-muted-foreground"><TrendingDown className="h-10 w-10 mx-auto mb-2 opacity-30" /><p>Nema rezultata pretrage.</p></CardContent></Card>
       ) : (
         <div className="space-y-2">
-          {consumption.map((c: any) => (
+          {filtered.map((c: any) => (
             <Card key={c.id} className="p-4">
               <div className="flex items-start justify-between gap-3">
                 <div className="flex-1">
@@ -481,7 +634,7 @@ function AddConsumptionDialog({ open, onOpenChange, onAdded, parts }: any) {
     startTransition(async () => {
       try {
         await consumePart({ partId: p.id, partNumber: p.partNumber, partName: p.name, equipmentCode: equipmentCode || undefined, quantity, unitPriceNet: p.unitPrice ?? 0, notes: notes || undefined })
-        toast.success(`Utrošeno ${quantity} kom — stanje smanjeno`)
+        toast.success('Utrošeno ' + quantity + ' kom — stanje smanjeno')
         onOpenChange(false); onAdded()
         setPartId(''); setQuantity(1); setEquipmentCode(''); setNotes('')
       } catch (e: any) { toast.error(e?.message ?? 'Greška') }

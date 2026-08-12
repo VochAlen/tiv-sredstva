@@ -11,77 +11,77 @@ datasource db {
 }
 
 model Employee {
-  id          String   @id @default(cuid())
-  cardId      String   @unique
-  name        String
-  department  String   @default("Ramp")
-  role        String   @default("Operator")
-  active      Boolean  @default(true)
-  pin         String?  // 4-digit PIN for no-login worker identification
-  idCardQr    String?  // QR kod na ID kartici
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
+  id         String   @id @default(cuid())
+  cardId     String   @unique
+  name       String
+  department String   @default("Ramp")
+  role       String   @default("Operator")
+  active     Boolean  @default(true)
+  pin        String? // 4-digit PIN for no-login worker identification
+  idCardQr   String? // QR kod na ID kartici
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
 
-  assignments     Assignment[]
-  damages         DamageReport[]
-  qualifications  EquipmentQualification[]
+  assignments    Assignment[]
+  damages        DamageReport[]
+  qualifications EquipmentQualification[]
 }
 
 model Equipment {
-  id            String   @id @default(cuid())
-  code          String   @unique
-  name          String
-  type          String
-  serialNumber  String?
-  location      String   @default("Stand A1")
-  status        String   @default("AVAILABLE")
-  notes         String?
-  createdAt     DateTime @default(now())
-  updatedAt     DateTime @updatedAt
+  id           String   @id @default(cuid())
+  code         String   @unique
+  name         String
+  type         String
+  serialNumber String?
+  location     String   @default("Stand A1")
+  status       String   @default("AVAILABLE")
+  notes        String?
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
 
   // ADR.OPS.C.007 - Vehicle Fitness Certificate
-  fitnessStatus       String?  // FIT | UNFIT | CONDITIONAL (auto-calculated)
+  fitnessStatus       String? // FIT | UNFIT | CONDITIONAL (auto-calculated)
   fitnessCalculatedAt DateTime?
-  fitnessReason       String?  // why it's unfit/conditional
+  fitnessReason       String? // why it's unfit/conditional
 
   // Vehicle Operating Manual (Part-145 §65)
-  manualUrl           String?  // direct link to PDF manual
+  manualUrl String? // direct link to PDF manual
 
   // Access Control - admin može ograničiti ko može zadužiti sredstvo
-  restrictedAccess    Boolean  @default(false)
+  restrictedAccess Boolean @default(false)
 
   // Fuel / Charging state
-  fuelType            String?  // DIESEL | PETROL | ELECTRIC | HYBRID | LPG
-  fuelLevel           Float?   // current level: % for electric, liters for fuel
-  fuelCapacity        Float?   // max capacity (liters or kWh)
-  lowFuelThreshold   Float    @default(20) // alert below this %
+  fuelType         String? // DIESEL | PETROL | ELECTRIC | HYBRID | LPG
+  fuelLevel        Float? // current level: % for electric, liters for fuel
+  fuelCapacity     Float? // max capacity (liters or kWh)
+  lowFuelThreshold Float   @default(20) // alert below this %
 
   // Periodic inspections (IATA AHM 1130)
-  lastInspectionDate     DateTime?
-  nextInspectionDate     DateTime?
-  inspectionIntervalMonths Int   @default(12)
+  lastInspectionDate       DateTime?
+  nextInspectionDate       DateTime?
+  inspectionIntervalMonths Int       @default(12)
 
   // Operating hours (EASA Part-M continued airworthiness)
-  totalOperatingHours       Float @default(0)
-  maintenanceIntervalHours  Float @default(500)
-  lastMaintenanceHours      Float @default(0)
+  totalOperatingHours      Float @default(0)
+  maintenanceIntervalHours Float @default(500)
+  lastMaintenanceHours     Float @default(0)
 
   // Kilometrage tracking
-  totalKm                   Float @default(0)
-  maintenanceIntervalKm     Float @default(10000)
-  lastMaintenanceKm         Float @default(0)
+  totalKm               Float @default(0)
+  maintenanceIntervalKm Float @default(10000)
+  lastMaintenanceKm     Float @default(0)
 
   // Lifecycle info
-  manufacturer          String?
-  modelYear             Int?
-  purchaseDate          DateTime?
-  warrantyExpiry        DateTime?
-  registrationNumber    String?
+  manufacturer       String?
+  modelYear          Int?
+  purchaseDate       DateTime?
+  warrantyExpiry     DateTime?
+  registrationNumber String?
 
-  assignments   Assignment[]
-  damages       DamageReport[]
+  assignments     Assignment[]
+  damages         DamageReport[]
   maintenanceLogs MaintenanceLog[]
-  photos        EquipmentPhoto[]
+  photos          EquipmentPhoto[]
 
   @@index([status])
   @@index([type])
@@ -89,26 +89,26 @@ model Equipment {
 }
 
 model Assignment {
-  id                String   @id @default(cuid())
-  equipmentId       String
-  equipmentCode     String
-  equipmentName     String
-  employeeId        String?
-  employeeCardId    String
-  employeeName      String
+  id             String  @id @default(cuid())
+  equipmentId    String
+  equipmentCode  String
+  equipmentName  String
+  employeeId     String?
+  employeeCardId String
+  employeeName   String
 
-  action            String
-  inspectionResult  String
-  inspectionNotes   String?
-  checklistJson     String
+  action           String
+  inspectionResult String
+  inspectionNotes  String?
+  checklistJson    String
 
-  shift             String?
-  damageReportId    String?
+  shift          String?
+  damageReportId String?
 
-  timestamp         DateTime @default(now())
+  timestamp DateTime @default(now())
 
-  equipment         Equipment @relation(fields: [equipmentId], references: [id])
-  employee          Employee? @relation(fields: [employeeId], references: [id])
+  equipment Equipment @relation(fields: [equipmentId], references: [id])
+  employee  Employee? @relation(fields: [employeeId], references: [id])
 
   @@index([equipmentId])
   @@index([employeeCardId])
@@ -117,7 +117,7 @@ model Assignment {
 }
 
 model DamageReport {
-  id            String    @id @default(cuid())
+  id            String @id @default(cuid())
   equipmentId   String
   equipmentCode String
   equipmentName String
@@ -126,55 +126,55 @@ model DamageReport {
   reportedByName   String
   employeeId       String?
 
-  severity      String    @default("MINOR")
-  description   String
-  status        String    @default("OPEN")
-  resolution    String?
-  resolvedAt    DateTime?
-  createdAt     DateTime  @default(now())
-  updatedAt     DateTime  @updatedAt
+  severity    String    @default("MINOR")
+  description String
+  status      String    @default("OPEN")
+  resolution  String?
+  resolvedAt  DateTime?
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
 
   // Root cause analysis (EASA Part-145)
-  rootCause           String?
-  correctiveAction    String?
-  preventiveAction    String?
-  insuranceClaimRef   String?
-  estimatedCost       Float?
+  rootCause         String?
+  correctiveAction  String?
+  preventiveAction  String?
+  insuranceClaimRef String?
+  estimatedCost     Float?
 
-  equipment     Equipment @relation(fields: [equipmentId], references: [id])
-  employee      Employee? @relation(fields: [employeeId], references: [id])
-  photos        EquipmentPhoto[]
+  equipment Equipment        @relation(fields: [equipmentId], references: [id])
+  employee  Employee?        @relation(fields: [employeeId], references: [id])
+  photos    EquipmentPhoto[]
 
   @@index([status])
   @@index([equipmentId])
 }
 
 model MaintenanceLog {
-  id            String   @id @default(cuid())
+  id            String @id @default(cuid())
   equipmentId   String
   equipmentCode String
   equipmentName String
 
-  maintenanceType String  // PREVENTIVE | CORRECTIVE | INSPECTION | OVERHAUL
-  description   String
-  performedBy   String?
-  performedByCardId String?
-  cost          Float?
-  durationHours Float?
+  maintenanceType         String // PREVENTIVE | CORRECTIVE | INSPECTION | OVERHAUL
+  description             String
+  performedBy             String?
+  performedByCardId       String?
+  cost                    Float?
+  durationHours           Float?
   operatingHoursAtService Float?
 
   certificateNumber String?
-  partsReplaced String?
-  nextDueHours  Float?
-  nextDueDate   DateTime?
+  partsReplaced     String?
+  nextDueHours      Float?
+  nextDueDate       DateTime?
 
-  status        String   @default("COMPLETED")
+  status String @default("COMPLETED")
 
-  performedAt   DateTime @default(now())
-  createdAt     DateTime @default(now())
-  updatedAt     DateTime @updatedAt
+  performedAt DateTime @default(now())
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
 
-  equipment     Equipment @relation(fields: [equipmentId], references: [id])
+  equipment Equipment @relation(fields: [equipmentId], references: [id])
 
   @@index([equipmentId])
   @@index([maintenanceType])
@@ -182,37 +182,37 @@ model MaintenanceLog {
 }
 
 model EquipmentPhoto {
-  id            String   @id @default(cuid())
+  id             String   @id @default(cuid())
   damageReportId String?
-  equipmentId   String?
-  photoData     String   // base64 encoded
-  photoType     String   @default("image/jpeg")
-  caption       String?
-  takenByCardId String?
-  takenByName   String?
-  takenAt       DateTime @default(now())
+  equipmentId    String?
+  photoData      String // base64 encoded
+  photoType      String   @default("image/jpeg")
+  caption        String?
+  takenByCardId  String?
+  takenByName    String?
+  takenAt        DateTime @default(now())
 
-  damageReport  DamageReport? @relation(fields: [damageReportId], references: [id])
-  equipment     Equipment?    @relation(fields: [equipmentId], references: [id])
+  damageReport DamageReport? @relation(fields: [damageReportId], references: [id])
+  equipment    Equipment?    @relation(fields: [equipmentId], references: [id])
 
   @@index([damageReportId])
   @@index([equipmentId])
 }
 
 model EquipmentQualification {
-  id            String   @id @default(cuid())
-  employeeId    String
-  employeeCardId String
-  employeeName  String
-  equipmentType String
-  qualificationLevel String @default("OPERATOR")
-  trainedAt     DateTime?
-  validUntil    DateTime?
-  certifiedBy   String?
-  certificateNumber String?
-  createdAt     DateTime @default(now())
+  id                 String    @id @default(cuid())
+  employeeId         String
+  employeeCardId     String
+  employeeName       String
+  equipmentType      String
+  qualificationLevel String    @default("OPERATOR")
+  trainedAt          DateTime?
+  validUntil         DateTime?
+  certifiedBy        String?
+  certificateNumber  String?
+  createdAt          DateTime  @default(now())
 
-  employee      Employee @relation(fields: [employeeId], references: [id])
+  employee Employee @relation(fields: [employeeId], references: [id])
 
   @@unique([employeeId, equipmentType])
   @@index([employeeId])
@@ -220,31 +220,31 @@ model EquipmentQualification {
 }
 
 model WebhookSetting {
-  id            String   @id @default(cuid())
-  name          String
-  webhookUrl    String
-  webhookType   String   @default("SLACK")
-  enabled       Boolean  @default(true)
-  triggerCriticalDamage     Boolean @default(true)
-  triggerDamageResolved     Boolean @default(false)
-  triggerOutOfService       Boolean @default(true)
-  triggerInspectionOverdue  Boolean @default(true)
-  createdAt     DateTime @default(now())
-  updatedAt     DateTime @updatedAt
+  id                       String   @id @default(cuid())
+  name                     String
+  webhookUrl               String
+  webhookType              String   @default("SLACK")
+  enabled                  Boolean  @default(true)
+  triggerCriticalDamage    Boolean  @default(true)
+  triggerDamageResolved    Boolean  @default(false)
+  triggerOutOfService      Boolean  @default(true)
+  triggerInspectionOverdue Boolean  @default(true)
+  createdAt                DateTime @default(now())
+  updatedAt                DateTime @updatedAt
 }
 
 model AuditLog {
-  id            String   @id @default(cuid())
-  userId        String?
-  userEmail     String?
-  userRole      String?
-  action        String
-  entityType    String?
-  entityId      String?
-  details       String?
-  ipAddress     String?
-  userAgent     String?
-  createdAt     DateTime @default(now())
+  id         String   @id @default(cuid())
+  userId     String?
+  userEmail  String?
+  userRole   String?
+  action     String
+  entityType String?
+  entityId   String?
+  details    String?
+  ipAddress  String?
+  userAgent  String?
+  createdAt  DateTime @default(now())
 
   @@index([userId])
   @@index([action])
@@ -252,48 +252,48 @@ model AuditLog {
 }
 
 model AppSetting {
-  id                            Int      @id @default(1)
-  airportName                   String   @default("Aerodrom")
-  airportCode                   String   @default("XXX")
-  timezone                      String   @default("Europe/Podgorica")
-  language                      String   @default("hr")
-  requirePhotoForDamage         Boolean  @default(false)
-  requireQualificationForCheckout Boolean @default(true)
-  enableEmailNotifications      Boolean  @default(true)
-  enableWebhookNotifications    Boolean  @default(false)
-  inspectionReminderDays        Int      @default(30)
-  updatedAt                     DateTime @updatedAt
+  id                              Int      @id @default(1)
+  airportName                     String   @default("Aerodrom")
+  airportCode                     String   @default("XXX")
+  timezone                        String   @default("Europe/Podgorica")
+  language                        String   @default("hr")
+  requirePhotoForDamage           Boolean  @default(false)
+  requireQualificationForCheckout Boolean  @default(true)
+  enableEmailNotifications        Boolean  @default(true)
+  enableWebhookNotifications      Boolean  @default(false)
+  inspectionReminderDays          Int      @default(30)
+  updatedAt                       DateTime @updatedAt
 }
 
 // =====================================================
 // EASA Part-145 §50 - Life-limited components
 // =====================================================
 model EquipmentComponent {
-  id                String   @id @default(cuid())
-  equipmentId       String
-  equipmentCode     String
+  id            String @id @default(cuid())
+  equipmentId   String
+  equipmentCode String
 
-  componentName     String
-  componentType     String
-  serialNumber      String?
-  manufacturer      String?
+  componentName String
+  componentType String
+  serialNumber  String?
+  manufacturer  String?
 
-  installedAt       DateTime?
-  installedHours    Float    @default(0)
-  lifeLimitHours    Float?
-  lifeLimitCycles   Float?
-  currentHours      Float    @default(0)
-  currentCycles     Float    @default(0)
+  installedAt     DateTime?
+  installedHours  Float     @default(0)
+  lifeLimitHours  Float?
+  lifeLimitCycles Float?
+  currentHours    Float     @default(0)
+  currentCycles   Float     @default(0)
 
-  status            String   @default("ACTIVE")
+  status String @default("ACTIVE")
 
-  replacedAt        DateTime?
-  replacedBy        String?
-  replacementCost   Float?
+  replacedAt      DateTime?
+  replacedBy      String?
+  replacementCost Float?
 
-  notes             String?
-  createdAt         DateTime @default(now())
-  updatedAt         DateTime @updatedAt
+  notes     String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 
   @@index([equipmentId])
   @@index([status])
@@ -304,30 +304,30 @@ model EquipmentComponent {
 // EASA Part-145 §71 - Service Bulletins
 // =====================================================
 model ServiceBulletin {
-  id                String   @id @default(cuid())
-  bulletinNumber    String   @unique
-  title             String
-  manufacturer      String
+  id             String @id @default(cuid())
+  bulletinNumber String @unique
+  title          String
+  manufacturer   String
 
-  equipmentType     String?
-  serialRange       String?
+  equipmentType String?
+  serialRange   String?
 
-  description       String
-  requiredAction    String
-  partsRequired     String?
-  estimatedHours    Float?
+  description    String
+  requiredAction String
+  partsRequired  String?
+  estimatedHours Float?
 
-  priority          String   @default("MEDIUM")
+  priority           String    @default("MEDIUM")
   complianceDeadline DateTime?
-  status            String   @default("OPEN")
+  status             String    @default("OPEN")
 
-  issuedAt          DateTime
-  completedAt       DateTime?
-  completedBy       String?
-  completionNotes   String?
+  issuedAt        DateTime
+  completedAt     DateTime?
+  completedBy     String?
+  completionNotes String?
 
-  createdAt         DateTime @default(now())
-  updatedAt         DateTime @updatedAt
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 
   @@index([status])
   @@index([manufacturer])
@@ -338,30 +338,30 @@ model ServiceBulletin {
 // EASA Part-M §39 - Airworthiness Directives
 // =====================================================
 model AirworthinessDirective {
-  id                String   @id @default(cuid())
-  adNumber          String   @unique
-  title             String
+  id       String @id @default(cuid())
+  adNumber String @unique
+  title    String
 
-  equipmentType     String?
+  equipmentType String?
 
-  description       String
-  requiredAction    String
-  complianceMethod  String?
+  description      String
+  requiredAction   String
+  complianceMethod String?
 
-  priority          String   @default("HIGH")
-  effectiveDate     DateTime
-  complianceDeadline DateTime?
-  recurring         Boolean  @default(false)
+  priority               String    @default("HIGH")
+  effectiveDate          DateTime
+  complianceDeadline     DateTime?
+  recurring              Boolean   @default(false)
   recurringIntervalHours Float?
 
-  status            String   @default("OPEN")
+  status String @default("OPEN")
 
-  compliedAt        DateTime?
-  compliedBy        String?
-  complianceNotes   String?
+  compliedAt      DateTime?
+  compliedBy      String?
+  complianceNotes String?
 
-  createdAt         DateTime @default(now())
-  updatedAt         DateTime @updatedAt
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 
   @@index([status])
   @@index([priority])
@@ -371,9 +371,9 @@ model AirworthinessDirective {
 // IATA AHM 340 - Shift Handovers
 // =====================================================
 model ShiftHandover {
-  id                String   @id @default(cuid())
-  shiftDate         DateTime
-  shiftType         String
+  id        String   @id @default(cuid())
+  shiftDate DateTime
+  shiftType String
 
   outgoingCardId    String
   outgoingName      String
@@ -383,14 +383,14 @@ model ShiftHandover {
   incomingName      String
   incomingSignature String?
 
-  assignedEquipmentCount Int  @default(0)
-  openDamagesCount       Int  @default(0)
+  assignedEquipmentCount Int     @default(0)
+  openDamagesCount       Int     @default(0)
   notes                  String?
 
-  status            String   @default("COMPLETED")
+  status String @default("COMPLETED")
 
-  handoverAt        DateTime @default(now())
-  createdAt         DateTime @default(now())
+  handoverAt DateTime @default(now())
+  createdAt  DateTime @default(now())
 
   @@index([shiftDate])
   @@index([outgoingCardId])
@@ -401,38 +401,38 @@ model ShiftHandover {
 // ADR.OPS.C.007 - Maintenance Schedule (auto-generation)
 // =====================================================
 model MaintenanceSchedule {
-  id                String   @id @default(cuid())
-  equipmentId       String
-  equipmentCode     String
-  equipmentName     String
+  id            String @id @default(cuid())
+  equipmentId   String
+  equipmentCode String
+  equipmentName String
 
-  maintenanceType   String   // PREVENTIVE | PERIODIC | ANNUAL | SCHEDULED
-  title             String
-  description       String?
+  maintenanceType String // PREVENTIVE | PERIODIC | ANNUAL | SCHEDULED
+  title           String
+  description     String?
 
   // Trigger criteria
-  triggerHours      Float?   // at what operating hours
-  triggerKm         Float?   // at what kilometerage
-  triggerDate       DateTime? // or at what date
-  triggerInterval   Float?   // recurring interval (hours)
-  triggerIntervalKm Float?   // recurring interval (km)
+  triggerHours          Float? // at what operating hours
+  triggerKm             Float? // at what kilometerage
+  triggerDate           DateTime? // or at what date
+  triggerInterval       Float? // recurring interval (hours)
+  triggerIntervalKm     Float? // recurring interval (km)
   triggerIntervalMonths Int? // recurring interval (months)
 
   // Status
-  status            String   @default("SCHEDULED") // SCHEDULED | DUE | IN_PROGRESS | COMPLETED | OVERDUE
-  priority          String   @default("MEDIUM")    // LOW | MEDIUM | HIGH | CRITICAL
+  status   String @default("SCHEDULED") // SCHEDULED | DUE | IN_PROGRESS | COMPLETED | OVERDUE
+  priority String @default("MEDIUM") // LOW | MEDIUM | HIGH | CRITICAL
 
   // Completion
-  completedAt       DateTime?
-  completedBy       String?
-  completionNotes   String?
-  actualHours       Float?
+  completedAt     DateTime?
+  completedBy     String?
+  completionNotes String?
+  actualHours     Float?
 
   // Auto-generated
-  autoGenerated     Boolean  @default(false)
+  autoGenerated Boolean @default(false)
 
-  createdAt         DateTime @default(now())
-  updatedAt         DateTime @updatedAt
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 
   @@index([equipmentId])
   @@index([status])
@@ -443,31 +443,31 @@ model MaintenanceSchedule {
 // ADR.OPS.C.007 - Daily Inspection Record
 // =====================================================
 model DailyInspection {
-  id                String   @id @default(cuid())
-  equipmentId       String
-  equipmentCode     String
-  equipmentName     String
+  id            String @id @default(cuid())
+  equipmentId   String
+  equipmentCode String
+  equipmentName String
 
   // Inspector
-  inspectorCardId   String
-  inspectorName     String
+  inspectorCardId String
+  inspectorName   String
 
   // Inspection date
-  inspectionDate    DateTime @default(now())
-  shift             String   // MORNING | AFTERNOON | NIGHT
+  inspectionDate DateTime @default(now())
+  shift          String // MORNING | AFTERNOON | NIGHT
 
   // Checklist (JSON: [{ id, label, passed }])
-  checklistJson     String
+  checklistJson String
 
   // Result
-  result            String   // FIT | UNFIT | CONDITIONAL
-  notes             String?
+  result String // FIT | UNFIT | CONDITIONAL
+  notes  String?
 
   // Issues found
-  issuesFound       Int      @default(0)
-  issuesJson        String?  // JSON array of issues
+  issuesFound Int     @default(0)
+  issuesJson  String? // JSON array of issues
 
-  createdAt         DateTime @default(now())
+  createdAt DateTime @default(now())
 
   @@index([equipmentId])
   @@index([inspectionDate])
@@ -478,23 +478,23 @@ model DailyInspection {
 // EASA Part-145 §65 - Vehicle Operating Manuals
 // =====================================================
 model EquipmentManual {
-  id              String   @id @default(cuid())
-  equipmentId     String?  // null = generic manual for equipmentType
-  equipmentCode   String?  // denormalized for display
-  equipmentName   String?  // denormalized
-  equipmentType   String   // TOW_TRACTOR, GPU, BELT_LOADER, etc.
+  id            String  @id @default(cuid())
+  equipmentId   String? // null = generic manual for equipmentType
+  equipmentCode String? // denormalized for display
+  equipmentName String? // denormalized
+  equipmentType String // TOW_TRACTOR, GPU, BELT_LOADER, etc.
 
-  title           String   // npr. "Goldhofer AST-2 Operating Manual"
-  manualUrl       String   // URL to PDF (Supabase Storage or external)
-  manualType      String   @default("OPERATING") // OPERATING | MAINTENANCE | SAFETY | PARTS
-  language        String   @default("hr") // hr | en | de | etc.
-  fileSize        Int?     // bytes (optional)
-  uploadedBy      String?
-  version         String?  // npr. "v2.1"
-  active          Boolean  @default(true)
+  title      String // npr. "Goldhofer AST-2 Operating Manual"
+  manualUrl  String // URL to PDF (Supabase Storage or external)
+  manualType String  @default("OPERATING") // OPERATING | MAINTENANCE | SAFETY | PARTS
+  language   String  @default("hr") // hr | en | de | etc.
+  fileSize   Int? // bytes (optional)
+  uploadedBy String?
+  version    String? // npr. "v2.1"
+  active     Boolean @default(true)
 
-  createdAt       DateTime @default(now())
-  updatedAt       DateTime @updatedAt
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 
   @@index([equipmentId])
   @@index([equipmentType])
@@ -505,13 +505,13 @@ model EquipmentManual {
 // Equipment Access Control - ko može zadužiti koje sredstvo
 // =====================================================
 model EquipmentAccess {
-  id              String   @id @default(cuid())
-  equipmentId     String
-  equipmentCode   String
-  employeeCardId  String
-  employeeName    String
-  grantedBy       String?  // ko je dao dozvolu
-  createdAt       DateTime @default(now())
+  id             String   @id @default(cuid())
+  equipmentId    String
+  equipmentCode  String
+  employeeCardId String
+  employeeName   String
+  grantedBy      String? // ko je dao dozvolu
+  createdAt      DateTime @default(now())
 
   @@unique([equipmentId, employeeCardId])
   @@index([equipmentId])
@@ -522,38 +522,38 @@ model EquipmentAccess {
 // EASA Part-145.A.50 - Certificate of Release to Service
 // =====================================================
 model CertificateOfRelease {
-  id                String   @id @default(cuid())
-  crsNumber         String   @unique  // npr. "CRS-2026-001"
-  equipmentId       String
-  equipmentCode     String
-  equipmentName     String
+  id            String @id @default(cuid())
+  crsNumber     String @unique // npr. "CRS-2026-001"
+  equipmentId   String
+  equipmentCode String
+  equipmentName String
 
   // Povezanost sa damage report-om (ako je CRS nakon popravke)
-  damageReportId    String?
+  damageReportId String?
 
   // Povezanost sa maintenance log-om (ako je CRS nakon održavanja)
-  maintenanceLogId  String?
+  maintenanceLogId String?
 
   // Detalji popravke/održavanja
-  workDescription   String   // šta je urađeno
-  workOrderNumber   String?  // radni nalog
+  workDescription String // šta je urađeno
+  workOrderNumber String? // radni nalog
 
   // Certifying staff (ko potpisuje CRS)
-  certifierCardId   String   // broj kartice ovlaštene osobe
-  certifierName     String   // ime ovlaštene osobe
-  certifierRole     String   @default("CERTIFYING_STAFF") // CERTIFYING_STAFF | ENGINEER | ADMIN
+  certifierCardId    String // broj kartice ovlaštene osobe
+  certifierName      String // ime ovlaštene osobe
+  certifierRole      String  @default("CERTIFYING_STAFF") // CERTIFYING_STAFF | ENGINEER | ADMIN
   certifierSignature String? // digitalni potpis (opcionalno)
 
   // Status
-  status            String   @default("VALID") // VALID | REVOKED | SUPERSEDED
+  status String @default("VALID") // VALID | REVOKED | SUPERSEDED
 
   // Datumi
-  releaseDate       DateTime @default(now())
-  validUntil        DateTime? // ako je ograničena valjanost
+  releaseDate DateTime  @default(now())
+  validUntil  DateTime? // ako je ograničena valjanost
 
-  notes             String?
-  createdAt         DateTime @default(now())
-  updatedAt         DateTime @updatedAt
+  notes     String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 
   @@index([equipmentId])
   @@index([crsNumber])
@@ -565,26 +565,26 @@ model CertificateOfRelease {
 // Spare Parts Inventory — rezervni dijelovi u magacinu
 // =====================================================
 model SparePart {
-  id              String   @id @default(cuid())
-  partNumber      String   @unique // npr. "OEM-GH-12345"
-  name            String   // npr. "Prednja guma 11x22.5"
-  category        String   // TIRE | BRAKE | HYDRAULIC | ELECTRICAL | FILTER | ENGINE | OTHER
-  manufacturer    String?
-  description     String?
+  id           String  @id @default(cuid())
+  partNumber   String  @unique // npr. "OEM-GH-12345"
+  name         String // npr. "Prednja guma 11x22.5"
+  category     String // TIRE | BRAKE | HYDRAULIC | ELECTRICAL | FILTER | ENGINE | OTHER
+  manufacturer String?
+  description  String?
 
   // Stock
-  quantity        Int      @default(0)
-  minQuantity     Int      @default(1)  // alert kada padne ispod
-  unit            String   @default("kom") // kom | litra | metar | kg
-  location        String?  // npr. "Polica A-3"
+  quantity    Int     @default(0)
+  minQuantity Int     @default(1) // alert kada padne ispod
+  unit        String  @default("kom") // kom | litra | metar | kg
+  location    String? // npr. "Polica A-3"
 
   // Price (zadnja nabavna cijena)
-  unitPrice       Float?   // cijena bez PDV
-  vatRate         Float    @default(21) // PDV u %
+  unitPrice Float? // cijena bez PDV
+  vatRate   Float  @default(21) // PDV u %
 
-  active          Boolean  @default(true)
-  createdAt       DateTime @default(now())
-  updatedAt       DateTime @updatedAt
+  active    Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 
   @@index([category])
   @@index([name])
@@ -594,34 +594,34 @@ model SparePart {
 // Part Purchases — nabavka rezervnih dijelova
 // =====================================================
 model PartPurchase {
-  id              String   @id @default(cuid())
-  partId          String?
-  partNumber      String   // denormalized
-  partName        String   // denormalized
+  id         String  @id @default(cuid())
+  partId     String?
+  partNumber String // denormalized
+  partName   String // denormalized
 
   // Purchase details
-  orderNumber     String?  // broj porudžbe
-  supplier        String   // naziv firme
+  orderNumber     String? // broj porudžbe
+  supplier        String // naziv firme
   supplierAddress String?
-  invoiceNumber   String?  // broj računa
+  invoiceNumber   String? // broj računa
   invoiceDate     DateTime?
 
   // Quantities & pricing
-  quantity        Int
-  unitPriceNet    Float    // cijena po jedinici bez PDV
-  vatRate         Float    @default(21) // PDV %
-  vatAmount       Float    @default(0) // iznos PDV
-  totalNet        Float    // ukupno bez PDV
-  totalGross      Float    // ukupno sa PDV
+  quantity     Int
+  unitPriceNet Float // cijena po jedinici bez PDV
+  vatRate      Float @default(21) // PDV %
+  vatAmount    Float @default(0) // iznos PDV
+  totalNet     Float // ukupno bez PDV
+  totalGross   Float // ukupno sa PDV
 
   // Payment
-  paymentMethod   String?  // CARD | CASH | INVOICE | TRANSFER
-  paid            Boolean  @default(false)
-  paidDate       DateTime?
+  paymentMethod String? // CARD | CASH | INVOICE | TRANSFER
+  paid          Boolean   @default(false)
+  paidDate      DateTime?
 
-  notes           String?
-  purchasedBy     String?
-  createdAt       DateTime @default(now())
+  notes       String?
+  purchasedBy String?
+  createdAt   DateTime @default(now())
 
   @@index([partId])
   @@index([supplier])
@@ -632,22 +632,22 @@ model PartPurchase {
 // Part Consumption — utrošak rezervnih dijelova
 // =====================================================
 model PartConsumption {
-  id              String   @id @default(cuid())
-  partId          String?
-  partNumber      String   // denormalized
-  partName        String   // denormalized
+  id         String  @id @default(cuid())
+  partId     String?
+  partNumber String // denormalized
+  partName   String // denormalized
 
-  equipmentId     String?
-  equipmentCode   String?  // na kojem vozilu je korišteno
+  equipmentId      String?
+  equipmentCode    String? // na kojem vozilu je korišteno
   maintenanceLogId String? // povezano sa maintenance log
 
-  quantity        Int      @default(1)
-  unitPriceNet    Float?   // cijena bez PDV u trenutku utroška
-  totalCost       Float?   // ukupni trošak
+  quantity     Int    @default(1)
+  unitPriceNet Float? // cijena bez PDV u trenutku utroška
+  totalCost    Float? // ukupni trošak
 
-  consumedBy      String?  // ko je uzeo dio
-  consumedAt      DateTime @default(now())
-  notes           String?
+  consumedBy String? // ko je uzeo dio
+  consumedAt DateTime @default(now())
+  notes      String?
 
   @@index([partId])
   @@index([equipmentId])
@@ -658,63 +658,63 @@ model PartConsumption {
 // ADR.OPS.B.005 - Incident/Accident Reporting (SMS)
 // =====================================================
 model Incident {
-  id                String   @id @default(cuid())
-  incidentNumber    String   @unique  // npr. "INC-2026-001"
+  id             String @id @default(cuid())
+  incidentNumber String @unique // npr. "INC-2026-001"
 
   // Tip incidenta
-  incidentType      String   // GSE_AIRCRAFT | GSE_PERSON | GSE_INFRASTRUCTURE | GSE_GSE | FOD | SPILL | OTHER
-  severity          String   @default("MINOR") // MINOR | MAJOR | SERIOUS | ACCIDENT
-  smorRequired      Boolean  @default(false) // Safety Mandatory Occurrence Reporting
+  incidentType String // GSE_AIRCRAFT | GSE_PERSON | GSE_INFRASTRUCTURE | GSE_GSE | FOD | SPILL | OTHER
+  severity     String  @default("MINOR") // MINOR | MAJOR | SERIOUS | ACCIDENT
+  smorRequired Boolean @default(false) // Safety Mandatory Occurrence Reporting
 
   // Lokacija i vrijeme
-  location          String   // npr. "Stand A1", "Taxiway B", "Apron 3"
-  zone              String?  // APRON | TAXIWAY | RUNWAY | SERVICE_ROAD | TERMINAL
-  occurredAt        DateTime
+  location   String // npr. "Stand A1", "Taxiway B", "Apron 3"
+  zone       String? // APRON | TAXIWAY | RUNWAY | SERVICE_ROAD | TERMINAL
+  occurredAt DateTime
 
   // Uslovi
-  weather           String?  // SUNNY | CLOUDY | RAIN | FOG | SNOW | STORM
-  visibility        String?  // GOOD | MODERATE | POOR | LVP
-  surfaceCondition  String?  // DRY | WET | ICY | SNOW
+  weather          String? // SUNNY | CLOUDY | RAIN | FOG | SNOW | STORM
+  visibility       String? // GOOD | MODERATE | POOR | LVP
+  surfaceCondition String? // DRY | WET | ICY | SNOW
 
   // GSE uključeno
-  equipmentId       String?
-  equipmentCode     String?
-  equipmentName     String?
+  equipmentId   String?
+  equipmentCode String?
+  equipmentName String?
 
   // Osobe uključene
-  operatorCardId    String?
-  operatorName      String?
+  operatorCardId String?
+  operatorName   String?
 
   // Opis
-  description       String   // šta se desilo
-  immediateAction   String?  // šta je odmah urađeno
+  description     String // šta se desilo
+  immediateAction String? // šta je odmah urađeno
 
   // Root cause analysis
-  rootCause         String?
+  rootCause           String?
   contributingFactors String?
 
   // Corrective actions
-  correctiveActions String?  // šta je urađeno da se ne ponovi
-  preventiveActions String?  // šta će se urađiti ubuduće
+  correctiveActions String? // šta je urađeno da se ne ponovi
+  preventiveActions String? // šta će se urađiti ubuduće
 
   // Status
-  status            String   @default("OPEN") // OPEN | INVESTIGATING | RESOLVED | CLOSED
-  reportedBy        String
-  reportedByCardId  String?
-  reportedAt        DateTime @default(now())
+  status           String   @default("OPEN") // OPEN | INVESTIGATING | RESOLVED | CLOSED
+  reportedBy       String
+  reportedByCardId String?
+  reportedAt       DateTime @default(now())
 
   // Ozljede / šteta
-  injuriesReported  Boolean  @default(false)
-  injuryDetails     String?
-  damageEstimate    Float?   // procijenjena šteta u EUR
+  injuriesReported Boolean @default(false)
+  injuryDetails    String?
+  damageEstimate   Float? // procijenjena šteta u EUR
 
   // Notifikacije
-  authorityNotified String?  // ko je obaviješten (CAA, airport authority, police)
+  authorityNotified String? // ko je obaviješten (CAA, airport authority, police)
   notificationDate  DateTime?
 
-  notes             String?
-  createdAt         DateTime @default(now())
-  updatedAt         DateTime @updatedAt
+  notes     String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 
   @@index([incidentType])
   @@index([severity])
@@ -727,33 +727,33 @@ model Incident {
 // ADR.OPS.C.005 - Driver Authorization za Movement Area
 // =====================================================
 model DriverAuthorization {
-  id              String   @id @default(cuid())
-  employeeCardId  String   @unique
-  employeeName    String
+  id             String @id @default(cuid())
+  employeeCardId String @unique
+  employeeName   String
 
   // Kategorije dozvole
-  category1       Boolean  @default(false) // Airside (apron, service roads)
-  category2       Boolean  @default(false) // Maneuvering area (taxiway)
-  category3       Boolean  @default(false) // Runway (samo specijalno ovlašćeno)
+  category1 Boolean @default(false) // Airside (apron, service roads)
+  category2 Boolean @default(false) // Maneuvering area (taxiway)
+  category3 Boolean @default(false) // Runway (samo specijalno ovlašćeno)
 
   // Vozačka dozvola za airside
-  licenseNumber   String?  // broj airside driving permit
-  issuedAt        DateTime?
-  validUntil      DateTime? // datum isteka dozvole
-  issuedBy        String?  // ko je izdao
+  licenseNumber String? // broj airside driving permit
+  issuedAt      DateTime?
+  validUntil    DateTime? // datum isteka dozvole
+  issuedBy      String? // ko je izdao
 
   // Obuka
-  trainingCompleted Boolean @default(false)
-  trainingDate    DateTime?
-  trainingExpiry  DateTime? // datum isteka obuke
+  trainingCompleted Boolean   @default(false)
+  trainingDate      DateTime?
+  trainingExpiry    DateTime? // datum isteka obuke
 
   // Status
-  active          Boolean  @default(true)
-  suspendedAt     DateTime?
-  suspendReason   String?
+  active        Boolean   @default(true)
+  suspendedAt   DateTime?
+  suspendReason String?
 
-  createdAt       DateTime @default(now())
-  updatedAt       DateTime @updatedAt
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 
   @@index([employeeCardId])
   @@index([validUntil])
@@ -764,33 +764,33 @@ model DriverAuthorization {
 // Fuel / Charging Management — točenje goriva i punjenje
 // =====================================================
 model FuelLog {
-  id              String   @id @default(cuid())
-  equipmentId     String
-  equipmentCode   String
-  equipmentName   String
+  id            String @id @default(cuid())
+  equipmentId   String
+  equipmentCode String
+  equipmentName String
 
-  fuelType        String   // DIESEL | PETROL | ELECTRIC | HYBRID | LPG
-  amount          Float    // liters for fuel, kWh for electric
-  unit            String   @default("L") // L | kWh | kg
+  fuelType String // DIESEL | PETROL | ELECTRIC | HYBRID | LPG
+  amount   Float // liters for fuel, kWh for electric
+  unit     String @default("L") // L | kWh | kg
 
   // Stanje pre i posle
-  levelBefore     Float?   // % or liters before refueling
-  levelAfter      Float?   // % or liters after refueling
+  levelBefore Float? // % or liters before refueling
+  levelAfter  Float? // % or liters after refueling
 
   // Pump / charger info
-  pumpStation     String?  // npr. "Pump 1", "Charger A"
-  costPerUnit     Float?   // cijena po litri/kWh
-  totalCost       Float?   // ukupni trošak
+  pumpStation String? // npr. "Pump 1", "Charger A"
+  costPerUnit Float? // cijena po litri/kWh
+  totalCost   Float? // ukupni trošak
 
   // Ko je točio
-  operatorCardId  String
-  operatorName    String
+  operatorCardId String
+  operatorName   String
 
   // Vrijeme
-  fueledAt        DateTime @default(now())
-  notes           String?
+  fueledAt DateTime @default(now())
+  notes    String?
 
-  createdAt       DateTime @default(now())
+  createdAt DateTime @default(now())
 
   @@index([equipmentId])
   @@index([fueledAt])
@@ -801,14 +801,14 @@ model FuelLog {
 // GSE Parking Management — AHM 1115
 // =====================================================
 model ParkingConfirmation {
-  id              String   @id @default(cuid())
-  equipmentId     String
-  equipmentCode   String
-  equipmentName   String
+  id            String @id @default(cuid())
+  equipmentId   String
+  equipmentCode String
+  equipmentName String
 
   // Ko je parkirao
-  operatorCardId  String
-  operatorName    String
+  operatorCardId String
+  operatorName   String
 
   // Potvrde (AHM 1115 checklist)
   parkedAtDesignatedSpot Boolean @default(false)
@@ -819,20 +819,135 @@ model ParkingConfirmation {
   chocksPlaced           Boolean @default(false) // za avionsku opremu
 
   // Lokacija
-  parkingLocation String?  // npr. "Stand A1 - Position 3"
-  photoUrl        String?  // foto potvrda parkinga (base64 or URL)
+  parkingLocation String? // npr. "Stand A1 - Position 3"
+  photoUrl        String? // foto potvrda parkinga (base64 or URL)
 
   // Povezano sa check-in
-  assignmentId    String?
+  assignmentId String?
 
   // Status
-  allConfirmed    Boolean  @default(false) // sve potvrde da
-  issuesReported  String?  // ako nešto nije potvrđeno
+  allConfirmed   Boolean @default(false) // sve potvrde da
+  issuesReported String? // ako nešto nije potvrđeno
 
-  confirmedAt     DateTime @default(now())
-  createdAt       DateTime @default(now())
+  confirmedAt DateTime @default(now())
+  createdAt   DateTime @default(now())
 
   @@index([equipmentId])
   @@index([confirmedAt])
   @@index([operatorCardId])
+}
+
+// ============================================================================
+// DE-ICING / ANTI-ICING (ICAO Annex 3, AEA Recommendations, ISO 11076)
+// ============================================================================
+
+// Inventar tečnosti za zaleđivanje (Type I/II/III/IV)
+model DeicingFluid {
+  id              String    @id @default(cuid())
+  fluidType       String // TYPE_I | TYPE_II | TYPE_III | TYPE_IV
+  brandName       String // npr. "Kilfrost ABC-S Plus", "Clariant Safewing MP II"
+  manufacturer    String?
+  batchNumber     String   @unique // batch lot
+  quantityLiters  Float // količina u litrima
+  unitPrice       Float? // cijena po litru (EUR)
+  concentration   String? // npr. "50/50", "75/25", "100/0" (Type II/IV)
+  expiryDate      DateTime? // rok upotrebe
+  receivedAt      DateTime  @default(now())
+  storageLocation String? // npr. "Skladište B - Polica 3"
+  safetyDataSheet String? // SDS link / path
+  notes           String?
+
+  // Status
+  isExpired Boolean @default(false)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([fluidType])
+  @@index([batchNumber])
+  @@index([expiryDate])
+}
+
+// Operacija de-icing / anti-icing na avionu
+model DeicingRecord {
+  id String @id @default(cuid())
+
+  // Let / avion
+  flightNumber  String? // npr. "AY1234"
+  aircraftReg   String? // npr. "OH-LXA"
+  aircraftType  String? // npr. "A320", "B737-800"
+  standPosition String? // npr. "Stand 5"
+
+  // Operacija
+  operationType    String // DEICING | ANTI_ICING | BOTH
+  fluidType        String // TYPE_I | TYPE_II | TYPE_III | TYPE_IV
+  concentration    String? // 50/50 | 75/25 | 100/0 (Type II/IV)
+  fluidBatchNumber String? // batch tečnosti koja je korištena
+  fluidUsedLiters  Float // količina u litrima
+  applicationStart DateTime // početak aplikacije
+  applicationEnd   DateTime? // kraj aplikacije
+  durationMinutes  Int? // trajanje (auto-izračunato)
+
+  // Vremenski uslovi (ICAO Annex 3)
+  oat                    Float // Outside Air Temperature (°C)
+  precipitation          String? // NONE | SNOW | LIGHT_FREEZING_RAIN | FREEZING_DRIZZLE | RAIN_COLD_SOAK | FREEZING_FOG | COLD_SOAK
+  precipitationIntensity String? // LIGHT | MODERATE | HEAVY
+  windSpeed              Float? // m/s
+  windDirection          Int? // stepni
+  dewPoint               Float? // °C
+  visibility             Float? // m
+
+  // HOT (Holdover Time) — izračunato
+  holdoverTimeMinutes Int? // minuta (iz ISO 11076 tabele)
+  hotTableRef         String? // npr. "Type II 50/50, Snow, -3°C"
+
+  // Vozilo i osoblje
+  equipmentCode  String? // GSE-DEI-001
+  operatorName   String? // ko je operisao
+  operatorCardId String? // broj kartice
+  shift          String? // npr. "Morning", "Evening", "Night"
+
+  // Status aviona nakon operacije
+  inspectionResult      String? // CLEAN | CONTAMINATED | PARTIAL
+  postCheckBy           String? // ko je uradio post-check
+  reapplicationRequired Boolean @default(false)
+
+  // Napomene
+  notes String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([applicationStart])
+  @@index([flightNumber])
+  @@index([aircraftReg])
+  @@index([equipmentCode])
+  @@index([fluidType])
+}
+
+// Disposal records — environmental compliance (ISO 14001)
+model DeicingFluidDisposal {
+  id           String   @id @default(cuid())
+  disposalDate DateTime @default(now())
+
+  fluidType      String // TYPE_I | TYPE_II | TYPE_III | TYPE_IV
+  batchNumber    String?
+  quantityLiters Float // količina odbačena
+  disposalMethod String // RECYCLED | INCINERATED | TREATMENT_PLANT | COLLECTED_BY_VENDOR
+  vendorName     String? // ako je predato trećoj strani
+  vendorLicense  String? // dozvolta vendora
+  manifestNumber String? // prateći dokument
+
+  // Cijena disposal-a
+  disposalCost Float? // EUR
+
+  location String? // gde je odbačeno
+  notes    String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([disposalDate])
+  @@index([fluidType])
+  @@index([batchNumber])
 }

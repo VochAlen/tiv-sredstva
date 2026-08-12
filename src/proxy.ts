@@ -36,12 +36,15 @@ export async function proxy(request: NextRequest) {
 
   // Demo/Mock mode - nema pravog Supabase auth, koristi cookie-based session
   if (isDemoMode()) {
-    const sessionCookie = request.cookies.get('gse-session')
+    // Demo login setuje 'demo-session' cookie, auth-server.ts takođe čita 'demo-session'.
+    // Stari korisnici su možda imali 'gse-session' — podržavamo oba radi migracije.
+    const sessionCookie = request.cookies.get('demo-session') || request.cookies.get('gse-session')
     const isValid = isValidSessionCookie(sessionCookie?.value)
 
-    // Ako cookie postoji ali nije validan (stari cookie), obriši ga
+    // Ako cookie postoji ali nije validan (stari cookie), obriši oba
     if (sessionCookie && !isValid) {
       const response = NextResponse.redirect(new URL('/login', request.url))
+      response.cookies.delete('demo-session')
       response.cookies.delete('gse-session')
       return response
     }

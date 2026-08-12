@@ -68,7 +68,11 @@ export function IncidentsView() {
           <h2 className="text-lg font-semibold flex items-center gap-2"><AlertOctagon className="h-5 w-5" />Incident/Accident Reporting</h2>
           <p className="text-sm text-muted-foreground">ADR.OPS.B.005 — Safety Management System (SMS)</p>
         </div>
-        <Button onClick={() => setShowCreate(true)}><Plus className="h-4 w-4 mr-1.5" />Prijavi incident</Button>
+        <div className="flex gap-2">
+          <Button variant="outline" size="sm" onClick={() => window.open('/api/reports/incidents-summary?year=' + new Date().getFullYear() + (new Date().getMonth() + 1 ? '&month=' + (new Date().getMonth() + 1) : ''), '_blank')}><Download className="h-4 w-4 mr-1.5" />Mjesečni PDF</Button>
+          <Button variant="outline" size="sm" onClick={() => window.open('/api/reports/incidents-summary?year=' + new Date().getFullYear(), '_blank')}><Download className="h-4 w-4 mr-1.5" />Godišnji PDF</Button>
+          <Button onClick={() => setShowCreate(true)}><Plus className="h-4 w-4 mr-1.5" />Prijavi incident</Button>
+        </div>
       </div>
 
       {/* Stats */}
@@ -133,7 +137,10 @@ export function IncidentsView() {
                   {inc.rootCause && <div className="text-xs mt-1 p-1.5 bg-muted/30 rounded"><strong>Root cause:</strong> {inc.rootCause}</div>}
                   {inc.correctiveActions && <div className="text-xs text-emerald-700 mt-0.5"><strong>Korektivne akcije:</strong> {inc.correctiveActions}</div>}
                 </div>
-                <Button size="sm" variant="outline" onClick={() => setSelected(inc)}>Detalji</Button>
+                <div className="flex gap-1">
+                  <Button size="sm" variant="outline" onClick={() => window.open(`/api/reports/incident?id=${inc.id}`, '_blank')}><FileText className="h-4 w-4" /></Button>
+                  <Button size="sm" variant="outline" onClick={() => setSelected(inc)}>Detalji</Button>
+                </div>
               </div>
             </Card>
           ))}
