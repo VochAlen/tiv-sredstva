@@ -48,7 +48,13 @@ model Equipment {
   manualUrl           String?  // direct link to PDF manual
 
   // Access Control - admin može ograničiti ko može zadužiti sredstvo
-  restrictedAccess    Boolean  @default(false) // ako je true, samo autorizovani radnici mogu zadužiti
+  restrictedAccess    Boolean  @default(false)
+
+  // Fuel / Charging state
+  fuelType            String?  // DIESEL | PETROL | ELECTRIC | HYBRID | LPG
+  fuelLevel           Float?   // current level: % for electric, liters for fuel
+  fuelCapacity        Float?   // max capacity (liters or kWh)
+  lowFuelThreshold   Float    @default(20) // alert below this %
 
   // Periodic inspections (IATA AHM 1130)
   lastInspectionDate     DateTime?
@@ -646,4 +652,187 @@ model PartConsumption {
   @@index([partId])
   @@index([equipmentId])
   @@index([consumedAt])
+}
+
+// =====================================================
+// ADR.OPS.B.005 - Incident/Accident Reporting (SMS)
+// =====================================================
+model Incident {
+  id                String   @id @default(cuid())
+  incidentNumber    String   @unique  // npr. "INC-2026-001"
+
+  // Tip incidenta
+  incidentType      String   // GSE_AIRCRAFT | GSE_PERSON | GSE_INFRASTRUCTURE | GSE_GSE | FOD | SPILL | OTHER
+  severity          String   @default("MINOR") // MINOR | MAJOR | SERIOUS | ACCIDENT
+  smorRequired      Boolean  @default(false) // Safety Mandatory Occurrence Reporting
+
+  // Lokacija i vrijeme
+  location          String   // npr. "Stand A1", "Taxiway B", "Apron 3"
+  zone              String?  // APRON | TAXIWAY | RUNWAY | SERVICE_ROAD | TERMINAL
+  occurredAt        DateTime
+
+  // Uslovi
+  weather           String?  // SUNNY | CLOUDY | RAIN | FOG | SNOW | STORM
+  visibility        String?  // GOOD | MODERATE | POOR | LVP
+  surfaceCondition  String?  // DRY | WET | ICY | SNOW
+
+  // GSE uključeno
+  equipmentId       String?
+  equipmentCode     String?
+  equipmentName     String?
+
+  // Osobe uključene
+  operatorCardId    String?
+  operatorName      String?
+
+  // Opis
+  description       String   // šta se desilo
+  immediateAction   String?  // šta je odmah urađeno
+
+  // Root cause analysis
+  rootCause         String?
+  contributingFactors String?
+
+  // Corrective actions
+  correctiveActions String?  // šta je urađeno da se ne ponovi
+  preventiveActions String?  // šta će se urađiti ubuduće
+
+  // Status
+  status            String   @default("OPEN") // OPEN | INVESTIGATING | RESOLVED | CLOSED
+  reportedBy        String
+  reportedByCardId  String?
+  reportedAt        DateTime @default(now())
+
+  // Ozljede / šteta
+  injuriesReported  Boolean  @default(false)
+  injuryDetails     String?
+  damageEstimate    Float?   // procijenjena šteta u EUR
+
+  // Notifikacije
+  authorityNotified String?  // ko je obaviješten (CAA, airport authority, police)
+  notificationDate  DateTime?
+
+  notes             String?
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+
+  @@index([incidentType])
+  @@index([severity])
+  @@index([status])
+  @@index([occurredAt])
+  @@index([equipmentId])
+}
+
+// =====================================================
+// ADR.OPS.C.005 - Driver Authorization za Movement Area
+// =====================================================
+model DriverAuthorization {
+  id              String   @id @default(cuid())
+  employeeCardId  String   @unique
+  employeeName    String
+
+  // Kategorije dozvole
+  category1       Boolean  @default(false) // Airside (apron, service roads)
+  category2       Boolean  @default(false) // Maneuvering area (taxiway)
+  category3       Boolean  @default(false) // Runway (samo specijalno ovlašćeno)
+
+  // Vozačka dozvola za airside
+  licenseNumber   String?  // broj airside driving permit
+  issuedAt        DateTime?
+  validUntil      DateTime? // datum isteka dozvole
+  issuedBy        String?  // ko je izdao
+
+  // Obuka
+  trainingCompleted Boolean @default(false)
+  trainingDate    DateTime?
+  trainingExpiry  DateTime? // datum isteka obuke
+
+  // Status
+  active          Boolean  @default(true)
+  suspendedAt     DateTime?
+  suspendReason   String?
+
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  @@index([employeeCardId])
+  @@index([validUntil])
+  @@index([trainingExpiry])
+}
+
+// =====================================================
+// Fuel / Charging Management — točenje goriva i punjenje
+// =====================================================
+model FuelLog {
+  id              String   @id @default(cuid())
+  equipmentId     String
+  equipmentCode   String
+  equipmentName   String
+
+  fuelType        String   // DIESEL | PETROL | ELECTRIC | HYBRID | LPG
+  amount          Float    // liters for fuel, kWh for electric
+  unit            String   @default("L") // L | kWh | kg
+
+  // Stanje pre i posle
+  levelBefore     Float?   // % or liters before refueling
+  levelAfter      Float?   // % or liters after refueling
+
+  // Pump / charger info
+  pumpStation     String?  // npr. "Pump 1", "Charger A"
+  costPerUnit     Float?   // cijena po litri/kWh
+  totalCost       Float?   // ukupni trošak
+
+  // Ko je točio
+  operatorCardId  String
+  operatorName    String
+
+  // Vrijeme
+  fueledAt        DateTime @default(now())
+  notes           String?
+
+  createdAt       DateTime @default(now())
+
+  @@index([equipmentId])
+  @@index([fueledAt])
+  @@index([fuelType])
+}
+
+// =====================================================
+// GSE Parking Management — AHM 1115
+// =====================================================
+model ParkingConfirmation {
+  id              String   @id @default(cuid())
+  equipmentId     String
+  equipmentCode   String
+  equipmentName   String
+
+  // Ko je parkirao
+  operatorCardId  String
+  operatorName    String
+
+  // Potvrde (AHM 1115 checklist)
+  parkedAtDesignatedSpot Boolean @default(false)
+  handbrakeEngaged       Boolean @default(false)
+  ignitionOff            Boolean @default(false)
+  lightsOff              Boolean @default(false)
+  keyRemoved             Boolean @default(false)
+  chocksPlaced           Boolean @default(false) // za avionsku opremu
+
+  // Lokacija
+  parkingLocation String?  // npr. "Stand A1 - Position 3"
+  photoUrl        String?  // foto potvrda parkinga (base64 or URL)
+
+  // Povezano sa check-in
+  assignmentId    String?
+
+  // Status
+  allConfirmed    Boolean  @default(false) // sve potvrde da
+  issuesReported  String?  // ako nešto nije potvrđeno
+
+  confirmedAt     DateTime @default(now())
+  createdAt       DateTime @default(now())
+
+  @@index([equipmentId])
+  @@index([confirmedAt])
+  @@index([operatorCardId])
 }

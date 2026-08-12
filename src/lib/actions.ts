@@ -453,6 +453,13 @@ export async function checkOutEquipment(params: {
     }
   }
 
+  // ADR.OPS.C.005 - Provjeri Driver Authorization za Movement Area
+  const { checkDriverAuthorization } = await import('./actions-driver-auth')
+  const driverAuth = await checkDriverAuthorization(employeeCardId)
+  if (!driverAuth.authorized) {
+    return { ok: false, error: driverAuth.reason ?? 'Nemate važeću airside vozačku dozvolu' }
+  }
+
   // Upsert employee
   const { data: employee } = await supabase
     .from('employees')
@@ -595,6 +602,13 @@ async function checkOutPrisma(params: {
     if (!accessResult.allowed) {
       return { ok: false, error: accessResult.reason ?? 'Nemate dozvolu za ovo sredstvo' }
     }
+  }
+
+  // ADR.OPS.C.005 - Provjeri Driver Authorization
+  const { checkDriverAuthorization } = await import('./actions-driver-auth')
+  const driverAuth = await checkDriverAuthorization(employeeCardId)
+  if (!driverAuth.authorized) {
+    return { ok: false, error: driverAuth.reason ?? 'Nemate važeću airside vozačku dozvolu' }
   }
 
   const employee = await db.employee.upsert({
