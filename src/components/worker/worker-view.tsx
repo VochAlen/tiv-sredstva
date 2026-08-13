@@ -98,6 +98,7 @@ export function WorkerView({
   // Ako je otvoreno preko ?scan=XXX URL parametra (skener telefona)
   useEffect(() => {
     if (initialScan) {
+      // eslint-disable-next-line react-hooks/immutability
       handleScan(initialScan)
     }
   }, [initialScan])
