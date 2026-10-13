@@ -199,3 +199,21 @@ Ako zapnete, provjerite:
 3. Da li su Environment Variables ispravne (KORAK 4, tačka 8)
 
 Sve detaljne tehničke informacije su u `README.md` (za programere).
+
+
+---
+
+## Obavještenja, rokovi i cron (nove stavke)
+
+Dodajte u Vercel → Settings → Environment Variables:
+
+| Varijabla | Čemu služi |
+|-----------|-----------|
+| `SUPABASE_SERVICE_ROLE_KEY` | Supabase → Project Settings → API → *service_role*. **Tajna** — nikad sa `NEXT_PUBLIC_` prefiksom. Potrebna da cron i obavještenja čitaju postavke bez korisničke sesije. |
+| `CRON_SECRET` | Proizvoljan dug nasumičan niz. Vercel ga sam šalje cron rutama; bez njega rute su otvorene svima. |
+
+`vercel.json` zakazuje tri dnevna/sedmična zadatka (pregled rokova 06:00 UTC, kašnjenje dnevne inspekcije 07:00 UTC,
+dokumenti ponedjeljkom). Plan Hobby dozvoljava samo jedno pokretanje dnevno po zadatku — raspored je tome prilagođen.
+Kanal za obavještenja (Teams/Slack Incoming Webhook) dodaje admin u dashboardu: **Podešavanja → Obavještenja**.
+
+Pokrenite u Supabase SQL editoru (redom): `022_notification_triggers.sql`, `023_audit_trail.sql` (vidi `supabase/MIGRATIONS.md`).

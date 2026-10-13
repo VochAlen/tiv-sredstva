@@ -1,6 +1,7 @@
 'use client'
 
 import { useState, useTransition, useEffect } from 'react'
+import { DamageQuickFields, fallbackDamageDescription } from './damage-quick-fields'
 import {
   ArrowLeft,
   CheckCircle2,
@@ -77,6 +78,8 @@ function normalizeScan(raw: string): string {
   return v
 }
 
+const SHIFT_KEY = 'gse.worker.shift'
+
 export function WorkerView({
   initialScan,
   defaultEmployeeName = '',
@@ -95,6 +98,9 @@ export function WorkerView({
   const [notes, setNotes] = useState('')
   const [damageDescription, setDamageDescription] = useState('')
   const [damageSeverity, setDamageSeverity] = useState<'MINOR' | 'MAJOR' | 'CRITICAL'>('MINOR')
+  const [damageCategory, setDamageCategory] = useState('')
+  const [damagePhotos, setDamagePhotos] = useState<string[]>([])
+  const [reportDamageIn, setReportDamageIn] = useState(false)
   const [actionType, setActionType] = useState<'CHECK_OUT' | 'CHECK_IN'>('CHECK_OUT')
   const [isPending, startTransition] = useTransition()
   const [lookupLoading, setLookupLoading] = useState(false)
@@ -104,6 +110,32 @@ export function WorkerView({
   const [showFodDialog, setShowFodDialog] = useState(false)
   const [showWildlifeDialog, setShowWildlifeDialog] = useState(false)
   const [fitnessConfirmed, setFitnessConfirmed] = useState(false)
+  // Radnik zapamćen za smjenu (samo ovaj tab/uređaj, sessionStorage, ~10h)
+  const [remembered, setRemembered] = useState<{ cardId: string; name: string } | null>(null)
+  const [editingWorker, setEditingWorker] = useState(false)
+
+  useEffect(() => {
+    try {
+      const raw = sessionStorage.getItem(SHIFT_KEY)
+      if (!raw) return
+      const v = JSON.parse(raw)
+      if (v && typeof v.cardId === 'string' && typeof v.name === 'string' && typeof v.exp === 'number' && v.exp > Date.now()) {
+        setRemembered({ cardId: v.cardId, name: v.name })
+        setCardId(v.cardId)
+        setEmployeeName(v.name)
+      } else {
+        sessionStorage.removeItem(SHIFT_KEY)
+      }
+    } catch { /* sessionStorage nedostupan — radi se bez pamćenja */ }
+  }, [])
+
+  const forgetWorker = () => {
+    try { sessionStorage.removeItem(SHIFT_KEY) } catch { /* ignore */ }
+    setRemembered(null)
+    setEditingWorker(false)
+    setCardId('')
+    setEmployeeName('')
+  }
 
   // Ako je otvoreno preko ?scan=XXX URL parametra (skener telefona)
   useEffect(() => {
@@ -117,13 +149,17 @@ export function WorkerView({
   const reset = () => {
     setStep('scan')
     setEquipment(null)
-    setCardId(defaultEmployeeCardId)
-    setEmployeeName(defaultEmployeeName)
+    setCardId(remembered?.cardId ?? defaultEmployeeCardId)
+    setEmployeeName(remembered?.name ?? defaultEmployeeName)
+    setEditingWorker(false)
     setChecklist(DEFAULT_CHECKLIST.map((i) => ({ ...i })))
     setInspectionResult('OK')
     setNotes('')
     setDamageDescription('')
     setDamageSeverity('MINOR')
+    setDamageCategory('')
+    setDamagePhotos([])
+    setReportDamageIn(false)
     setActionType('CHECK_OUT')
     setAssignmentId(null)
     setFitnessConfirmed(false)
@@ -198,6 +234,10 @@ export function WorkerView({
     // ADR.OR.C.045 — bilježi se samo potvrda i vrijeme, bez zdravstvenih
     // podataka. Best-effort, ne blokira glavni tok ako loguje neuspješno.
     recordFitnessDeclaration({ employeeCardId: cardId, employeeName, confirmed: true }).catch(() => {})
+    try {
+      sessionStorage.setItem(SHIFT_KEY, JSON.stringify({ cardId: cardId.trim(), name: employeeName.trim(), exp: Date.now() + 10 * 3600 * 1000 }))
+      setRemembered({ cardId: cardId.trim(), name: employeeName.trim() })
+    } catch { /* ignore */ }
     if (actionType === 'CHECK_IN') {
       // CHECK_IN - ide direktno na success path (kraći proces)
       // ali ipak ide na inspect step da se potvrdi
@@ -222,8 +262,8 @@ export function WorkerView({
         toast.error(`Označili ste ${failedItems.length} neispravnih stavki, ali ste rezultat označili kao "Ispravno". Ispravite.`)
         return
       }
-      if (inspectionResult !== 'OK' && !damageDescription.trim()) {
-        toast.error('Obavezno unijeti opis oštećenja')
+      if (inspectionResult !== 'OK' && !damageDescription.trim() && !damageCategory && damagePhotos.length === 0) {
+        toast.error('Dodajte sliku, izaberite kategoriju ili upišite kratak opis kvara')
         return
       }
     }
@@ -235,7 +275,16 @@ export function WorkerView({
   // submit, quickCheckIn) mogu pozvati isti kod bez events-a.
   const submitInspect = (overrides?: { damageDescription?: string }) => {
     if (!equipment) return
-    const effectiveDamageDescription = overrides?.damageDescription ?? damageDescription
+    // Radnik ne mora ukucati ništa ako je dao sliku ili kategoriju (foto-prvo prijava)
+    const damageActive = actionType === 'CHECK_OUT' ? inspectionResult !== 'OK' : reportDamageIn
+    const typedDamage = overrides?.damageDescription ?? damageDescription
+    const effectiveDamageDescription =
+      typedDamage.trim() || (!overrides && damageActive && (damageCategory || damagePhotos.length > 0)
+        ? fallbackDamageDescription(damageCategory, damagePhotos.length)
+        : '')
+    const extras = damageActive && !overrides
+      ? { damageCategory: damageCategory || undefined, damagePhotos: damagePhotos.length ? damagePhotos : undefined }
+      : {}
 
     startTransition(async () => {
       try {
@@ -249,6 +298,7 @@ export function WorkerView({
             inspectionNotes: notes.trim() || undefined,
             damageDescription: inspectionResult !== 'OK' ? effectiveDamageDescription.trim() : undefined,
             damageSeverity,
+            ...extras,
           })
           setAssignmentId((res as any).assignmentId ?? null)
           if (res.ok) {
@@ -275,6 +325,7 @@ export function WorkerView({
             notes: notes.trim() || undefined,
             foundDamage: effectiveDamageDescription.trim() || undefined,
             damageSeverity,
+            ...extras,
           })
           if (res.ok) {
             setStep('success')
@@ -443,6 +494,18 @@ export function WorkerView({
               </CardTitle>
             </CardHeader>
             <CardContent className="space-y-3">
+              {remembered && !editingWorker ? (
+                <div className="flex items-center justify-between gap-3">
+                  <div className="min-w-0">
+                    <div className="font-medium truncate">{remembered.name}</div>
+                    <div className="text-xs text-muted-foreground font-mono">{remembered.cardId}</div>
+                  </div>
+                  <Button type="button" variant="outline" size="sm" onClick={forgetWorker}>
+                    Nisam ja
+                  </Button>
+                </div>
+              ) : (
+                <>
               <div className="space-y-1.5">
                 <Label htmlFor="cardId">Broj ID kartice *</Label>
                 <Input
@@ -465,6 +528,8 @@ export function WorkerView({
                   required
                 />
               </div>
+                </>
+              )}
             </CardContent>
           </Card>
 
@@ -593,16 +658,14 @@ export function WorkerView({
 
                   {inspectionResult !== 'OK' && (
                     <div className="space-y-3 mt-3 p-3 bg-destructive/5 border border-destructive/20 rounded-lg">
-                      <div className="space-y-1.5">
-                        <Label className="text-sm">Opis oštećenja *</Label>
-                        <Textarea
-                          value={damageDescription}
-                          onChange={(e) => setDamageDescription(e.target.value)}
-                          placeholder="Detaljno opišite šta je neispravno ili oštećeno..."
-                          rows={3}
-                          required
-                        />
-                      </div>
+                      <DamageQuickFields
+                        category={damageCategory}
+                        onCategory={setDamageCategory}
+                        photos={damagePhotos}
+                        onPhotos={setDamagePhotos}
+                        description={damageDescription}
+                        onDescription={setDamageDescription}
+                      />
                       <div className="space-y-1.5">
                         <Label className="text-sm">Težina oštećenja</Label>
                         <RadioGroup
@@ -682,29 +745,32 @@ export function WorkerView({
                   <div className="space-y-1.5">
                     <Label>Dali ste primijetili novo oštećenje?</Label>
                     <RadioGroup
-                      value={damageDescription.trim() ? 'yes' : 'no'}
+                      value={reportDamageIn ? 'yes' : 'no'}
                       onValueChange={(v) => {
-                        if (v === 'no') setDamageDescription('')
+                        setReportDamageIn(v === 'yes')
+                        if (v === 'no') { setDamageDescription(''); setDamageCategory(''); setDamagePhotos([]) }
                       }}
                       className="grid grid-cols-2 gap-2"
                     >
-                      <label className={`flex items-center gap-2 p-3 rounded-lg border-2 cursor-pointer ${!damageDescription.trim() ? 'border-emerald-500 bg-emerald-50' : 'border-border'}`}>
+                      <label className={`flex items-center gap-2 p-3 rounded-lg border-2 cursor-pointer ${!reportDamageIn ? 'border-emerald-500 bg-emerald-50' : 'border-border'}`}>
                         <RadioGroupItem value="no" />
                         <span className="text-sm font-medium">Ne, sve OK</span>
                       </label>
-                      <label className={`flex items-center gap-2 p-3 rounded-lg border-2 cursor-pointer ${damageDescription.trim() ? 'border-red-500 bg-red-50' : 'border-border'}`}>
+                      <label className={`flex items-center gap-2 p-3 rounded-lg border-2 cursor-pointer ${reportDamageIn ? 'border-red-500 bg-red-50' : 'border-border'}`}>
                         <RadioGroupItem value="yes" />
                         <span className="text-sm font-medium">Da, prijavljujem</span>
                       </label>
                     </RadioGroup>
 
-                    {damageDescription.trim() && (
+                    {reportDamageIn && (
                       <div className="space-y-2 mt-2 p-3 bg-destructive/5 border border-destructive/20 rounded-lg">
-                        <Textarea
-                          value={damageDescription}
-                          onChange={(e) => setDamageDescription(e.target.value)}
-                          placeholder="Opišite novo oštećenje..."
-                          rows={3}
+                        <DamageQuickFields
+                          category={damageCategory}
+                          onCategory={setDamageCategory}
+                          photos={damagePhotos}
+                          onPhotos={setDamagePhotos}
+                          description={damageDescription}
+                          onDescription={setDamageDescription}
                         />
                         <RadioGroup
                           value={damageSeverity}

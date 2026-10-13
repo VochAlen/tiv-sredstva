@@ -744,6 +744,9 @@ export async function getWebhooks() {
     triggerDamageResolved: w.trigger_damage_resolved,
     triggerOutOfService: w.trigger_out_of_service,
     triggerInspectionOverdue: w.trigger_inspection_overdue,
+    triggerNewDamage: w.trigger_new_damage ?? true,
+    triggerRepairAwaitingApproval: w.trigger_repair_awaiting_approval ?? true,
+    triggerExpiryDigest: w.trigger_expiry_digest ?? true,
     createdAt: new Date(w.created_at),
     updatedAt: new Date(w.updated_at),
   }))
@@ -1217,4 +1220,34 @@ export async function bulkImportEquipment(items: Array<{
 
   revalidatePath('/')
   return { ok: true, created, skipped, errors }
+}
+
+/** Šalje probnu poruku na jedan kanal (admin) da se provjeri da URL radi. */
+export async function sendTestWebhook(id: string): Promise<{ ok: boolean; error?: string }> {
+  await requireRole(['admin'])
+  let url: string | undefined
+  let type: string | undefined
+  if (isDemoMode()) {
+    const w = await db.webhookSetting.findUnique({ where: { id } })
+    url = w?.webhookUrl
+    type = w?.webhookType
+  } else {
+    const supabase = await createSupabaseClient()
+    const { data } = await supabase.from('webhook_settings').select('webhook_url,webhook_type').eq('id', id).maybeSingle()
+    url = data?.webhook_url
+    type = data?.webhook_type
+  }
+  if (!url) return { ok: false, error: 'Kanal nije pronađen' }
+  try {
+    const text = 'GSE Control — probna poruka. Ako ovo vidite, obavještenja rade.'
+    const res = await fetch(url, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(type === 'SLACK' || type === 'TEAMS' ? { text } : { message: text }),
+      signal: AbortSignal.timeout(5000),
+    })
+    return res.ok ? { ok: true } : { ok: false, error: `Kanal je odgovorio sa ${res.status}` }
+  } catch (e: any) {
+    return { ok: false, error: e?.message ?? 'Kanal nije dostupan' }
+  }
 }

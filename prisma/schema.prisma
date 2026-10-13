@@ -253,6 +253,9 @@ model WebhookSetting {
   triggerDamageResolved    Boolean  @default(false)
   triggerOutOfService      Boolean  @default(true)
   triggerInspectionOverdue Boolean  @default(true)
+  triggerNewDamage         Boolean  @default(true)
+  triggerRepairAwaitingApproval Boolean @default(true)
+  triggerExpiryDigest      Boolean  @default(true)
   createdAt                DateTime @default(now())
   updatedAt                DateTime @updatedAt
 }

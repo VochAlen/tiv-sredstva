@@ -7,7 +7,7 @@
 // razdvojene kopije bi vremenom počele da se razilaze.
 
 import { useState, useTransition } from 'react'
-import { Wrench, ShieldCheck, User, Calendar, CheckCircle2, Loader2, FileDown } from 'lucide-react'
+import { Wrench, ShieldCheck, User, Calendar, CheckCircle2, Loader2, FileDown, Image as ImageIcon } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import {
@@ -20,6 +20,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { toast } from 'sonner'
 import { CHECKLIST_CATEGORY_LABELS, CHECKLIST_CATEGORY_ORDER } from '@/lib/types'
 import { resolveDamageReport, acknowledgeDamage, markRepaired, approveRepair, getOpenDamages } from '@/lib/actions'
+import { getPhotosForDamage } from '@/lib/actions-advanced'
 import type { AppUser } from '@/lib/auth-server'
 
 export type DamageRow = Awaited<ReturnType<typeof getOpenDamages>>[number]
@@ -45,6 +46,21 @@ export function DamageRowCard({
   compact?: boolean
 }) {
   const [open, setOpen] = useState(false)
+  // Slike se učitavaju tek na klik (base64 je težak, ne vučemo ga za cijelu listu)
+  const [photos, setPhotos] = useState<string[] | null>(null)
+  const [photosLoading, setPhotosLoading] = useState(false)
+  const loadPhotos = async () => {
+    setPhotosLoading(true)
+    try {
+      const rows = await getPhotosForDamage(damage.id)
+      setPhotos(rows.map((r: any) => r.photoData as string))
+    } catch {
+      toast.error('Slike nisu učitane')
+      setPhotos([])
+    } finally {
+      setPhotosLoading(false)
+    }
+  }
   const [resolution, setResolution] = useState('')
   const [setAvailable, setSetAvailable] = useState(true)
   const [repairOpen, setRepairOpen] = useState(false)
@@ -173,6 +189,25 @@ export function DamageRowCard({
           </div>
           <div className="text-sm font-medium truncate">{damage.equipmentName}</div>
           <div className="text-sm text-muted-foreground mt-1">{damage.description}</div>
+          {photos === null ? (
+            <button
+              type="button"
+              onClick={loadPhotos}
+              disabled={photosLoading}
+              className="mt-1.5 inline-flex items-center gap-1 text-xs text-primary underline-offset-2 hover:underline"
+            >
+              {photosLoading ? <Loader2 className="h-3 w-3 animate-spin" /> : <ImageIcon className="h-3 w-3" />}
+              Prikaži slike
+            </button>
+          ) : photos.length > 0 ? (
+            <div className="mt-1.5 flex gap-2 flex-wrap">
+              {photos.map((src, i) => (
+                <img key={i} src={src} alt={`Slika kvara ${i + 1}`} className="h-24 w-24 rounded-md object-cover border" />
+              ))}
+            </div>
+          ) : (
+            <div className="mt-1.5 text-xs text-muted-foreground">Nema slika.</div>
+          )}
           {!compact && (
             <div className="text-xs text-muted-foreground mt-1.5 flex items-center gap-2 flex-wrap">
               <span className="flex items-center gap-1"><User className="h-3 w-3" />{damage.reportedByName}</span>

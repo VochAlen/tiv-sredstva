@@ -6,6 +6,9 @@
 
 import { db } from '@/lib/db'
 import { revalidatePath } from 'next/cache'
+import { after } from 'next/server'
+import { sendWebhookNotification } from '@/lib/webhook-notify'
+import { createServiceClient, hasServiceClient } from '@/lib/supabase/service'
 import { getChecklistForType, type ChecklistItem, type InspectionResult } from '@/lib/types'
 import { isDemoMode } from '@/lib/auth-mode'
 import { getCurrentUser, type AppUser } from '@/lib/auth-server'
@@ -416,6 +419,68 @@ export async function getAllDamages() {
 // MUTATION: CHECK-OUT (zaduživanje)
 // =====================================================
 
+// Kategorija i fotografije uz prijavu kvara. Best-effort: ako ovo ne uspije,
+// prijava kvara (i blokada sredstva) ostaje — to je važnije od slike.
+// Slike dolaze sa telefona već smanjene (JPEG data URL); ovdje se samo
+// strogo provjerava oblik i veličina jer je tok javan (bez logina).
+const MAX_DAMAGE_PHOTOS = 2
+const MAX_PHOTO_CHARS = 400_000 // ~300 KB binarno
+const VALID_DAMAGE_CATEGORIES = ['MEHANIKA', 'ELEKTRIKA', 'HIDRAULIKA', 'BEZBJEDNOST', 'OPSTE']
+
+async function saveDamageExtras(
+  damageId: string,
+  equipmentId: string,
+  category: string | undefined,
+  photos: string[] | undefined,
+  cardId: string,
+  name: string,
+  info?: { code: string; severity: string; description: string },
+) {
+  // Obavještenje radionici — poslije odgovora (after), da radnik ne čeka na Slack/Teams
+  if (info) {
+    const sev = info.severity === 'CRITICAL' ? 'KRITIČNO' : info.severity === 'MAJOR' ? 'veće' : 'manje'
+    const msg = `GSE Control — novi kvar (${sev}): ${info.code} — ${info.description.slice(0, 200)} (prijavio/la: ${name})`
+    try {
+      after(() => sendWebhookNotification('triggerNewDamage', msg, { equipmentCode: info.code, severity: info.severity }))
+    } catch {
+      /* after() nedostupan van request konteksta — obavještenje se preskače */
+    }
+  }
+  try {
+    const cat = category && VALID_DAMAGE_CATEGORIES.includes(category) ? category : null
+    const okPhotos = (photos ?? [])
+      .filter((p) => typeof p === 'string' && p.startsWith('data:image/jpeg;base64,') && p.length <= MAX_PHOTO_CHARS)
+      .slice(0, MAX_DAMAGE_PHOTOS)
+
+    if (isDemoMode()) {
+      if (cat) await db.damageReport.update({ where: { id: damageId }, data: { category: cat } })
+      for (const photoData of okPhotos) {
+        await db.equipmentPhoto.create({
+          data: { damageReportId: damageId, equipmentId, photoData, photoType: 'image/jpeg', takenByCardId: cardId, takenByName: name },
+        })
+      }
+      return
+    }
+    // Worker tok je anoniman, a RLS na equipment_photos traži prijavljenog korisnika
+    // (is_authenticated()). Zato upis ide preko service-role klijenta — na serveru, nakon
+    // stroge provjere oblika i veličine iznad. Bez ključa pokušava korisnički klijent.
+    const supabase = hasServiceClient() ? createServiceClient() : await createSupabaseClient()
+    if (cat) {
+      const { error } = await supabase.from('damage_reports').update({ category: cat }).eq('id', damageId)
+      if (error) console.error('damage category update failed:', error.message)
+    }
+    for (const photoData of okPhotos) {
+      const { error } = await supabase.from('equipment_photos').insert({
+        damage_report_id: damageId, equipment_id: equipmentId, photo_data: photoData,
+        photo_type: 'image/jpeg', taken_by_card_id: cardId, taken_by_name: name,
+      })
+      if (error) console.error('damage photo insert failed:', error.message)
+    }
+  } catch (e) {
+    console.error('saveDamageExtras failed (ignored):', e)
+  }
+}
+
 export async function checkOutEquipment(params: {
   equipmentCode: string
   employeeCardId: string
@@ -426,6 +491,8 @@ export async function checkOutEquipment(params: {
   shift?: string
   damageDescription?: string
   damageSeverity?: 'MINOR' | 'MAJOR' | 'CRITICAL'
+  damageCategory?: string
+  damagePhotos?: string[]
 }) {
   // checkOut je JAVNA akcija - radnici se identifikuju preko PIN-a/ID kartice
   // (ne zahtijeva auth login)
@@ -440,6 +507,8 @@ export async function checkOutEquipment(params: {
     shift,
     damageDescription,
     damageSeverity = 'MINOR',
+    damageCategory,
+    damagePhotos,
   } = params
 
   if (isDemoMode()) {
@@ -513,6 +582,7 @@ export async function checkOutEquipment(params: {
 
     if (!drError && dr) {
       damageReportId = dr.id
+      await saveDamageExtras(dr.id, equipment.id, damageCategory, damagePhotos, employeeCardId, employeeName, { code: equipment.code, severity: damageSeverity, description: damageDescription ?? '' })
     }
 
     // Bilo koja prijava oštećenja → OUT_OF_SERVICE
@@ -601,6 +671,8 @@ async function checkOutPrisma(params: {
   shift?: string
   damageDescription?: string
   damageSeverity?: 'MINOR' | 'MAJOR' | 'CRITICAL'
+  damageCategory?: string
+  damagePhotos?: string[]
 }) {
   const {
     equipmentCode,
@@ -612,6 +684,8 @@ async function checkOutPrisma(params: {
     shift,
     damageDescription,
     damageSeverity = 'MINOR',
+    damageCategory,
+    damagePhotos,
   } = params
 
   const equipment = await db.equipment.findUnique({ where: { code: equipmentCode } })
@@ -664,6 +738,7 @@ async function checkOutPrisma(params: {
       },
     })
     damageReportId = dr.id
+    await saveDamageExtras(dr.id, equipment.id, damageCategory, damagePhotos, employeeCardId, employeeName, { code: equipment.code, severity: damageSeverity, description: damageDescription ?? '' })
 
     await db.equipment.update({
       where: { id: equipment.id },
@@ -736,6 +811,8 @@ export async function checkInEquipment(params: {
   notes?: string
   foundDamage?: string
   damageSeverity?: 'MINOR' | 'MAJOR' | 'CRITICAL'
+  damageCategory?: string
+  damagePhotos?: string[]
 }) {
   // checkIn je JAVNA akcija - radnici se identifikuju preko PIN-a/ID kartice
 
@@ -743,7 +820,7 @@ export async function checkInEquipment(params: {
     return checkInPrisma(params)
   }
 
-  const { equipmentCode, employeeCardId, employeeName, notes, foundDamage, damageSeverity = 'MINOR' } = params
+  const { equipmentCode, employeeCardId, employeeName, notes, foundDamage, damageSeverity = 'MINOR', damageCategory, damagePhotos } = params
 
   const supabase = await createSupabaseClient()
   const { data: equipment, error } = await supabase
@@ -786,7 +863,10 @@ export async function checkInEquipment(params: {
       .select()
       .single()
 
-    if (dr) damageReportId = dr.id
+    if (dr) {
+      damageReportId = dr.id
+      await saveDamageExtras(dr.id, equipment.id, damageCategory, damagePhotos, employeeCardId, employeeName, { code: equipment.code, severity: damageSeverity, description: foundDamage ?? '' })
+    }
     inspectionResult = damageSeverity === 'CRITICAL' ? 'OUT_OF_SERVICE' : damageSeverity === 'MAJOR' ? 'MAJOR_DAMAGE' : 'MINOR_DAMAGE'
 
     if (damageSeverity === 'CRITICAL' || damageSeverity === 'MAJOR') {
@@ -833,8 +913,10 @@ async function checkInPrisma(params: {
   notes?: string
   foundDamage?: string
   damageSeverity?: 'MINOR' | 'MAJOR' | 'CRITICAL'
+  damageCategory?: string
+  damagePhotos?: string[]
 }) {
-  const { equipmentCode, employeeCardId, employeeName, notes, foundDamage, damageSeverity = 'MINOR' } = params
+  const { equipmentCode, employeeCardId, employeeName, notes, foundDamage, damageSeverity = 'MINOR', damageCategory, damagePhotos } = params
 
   const equipment = await db.equipment.findUnique({ where: { code: equipmentCode } })
   if (!equipment) return { ok: false, error: 'Sredstvo nije pronađeno' }
@@ -866,6 +948,7 @@ async function checkInPrisma(params: {
       },
     })
     damageReportId = dr.id
+    await saveDamageExtras(dr.id, equipment.id, damageCategory, damagePhotos, employeeCardId, employeeName, { code: equipment.code, severity: damageSeverity, description: foundDamage ?? '' })
     inspectionResult = damageSeverity === 'CRITICAL' ? 'OUT_OF_SERVICE' : damageSeverity === 'MAJOR' ? 'MAJOR_DAMAGE' : 'MINOR_DAMAGE'
 
     if (damageSeverity === 'CRITICAL' || damageSeverity === 'MAJOR') {
@@ -1177,14 +1260,17 @@ export async function markRepaired(params: {
 
   // Kategorija: iz prijave (izvedena iz čeklista) ili ručno odabrana za slobodne prijave
   let category: string | null = null
+  let equipmentCode = ''
   if (isDemoMode()) {
     const dr = await db.damageReport.findUnique({ where: { id: params.damageId } })
     if (!dr) return { ok: false, error: 'Prijava kvara nije pronađena' }
+    equipmentCode = dr.equipmentCode
     category = dr.category ?? params.category ?? null
   } else {
     const supabase = await createSupabaseClient()
-    const { data: dr } = await supabase.from('damage_reports').select('category').eq('id', params.damageId).maybeSingle()
+    const { data: dr } = await supabase.from('damage_reports').select('category,equipment_code').eq('id', params.damageId).maybeSingle()
     if (!dr) return { ok: false, error: 'Prijava kvara nije pronađena' }
+    equipmentCode = dr.equipment_code ?? ''
     category = dr.category ?? params.category ?? null
   }
   if (!category) return { ok: false, error: 'Odaberite kategoriju kvara' }
@@ -1207,6 +1293,9 @@ export async function markRepaired(params: {
       },
     })
     revalidatePath('/')
+    try {
+      after(() => sendWebhookNotification('triggerRepairAwaitingApproval', `GSE Control — popravka čeka odobrenje: ${equipmentCode} (popravio/la: ${user.full_name})`, { equipmentCode }))
+    } catch { /* after() nedostupan — preskoči */ }
     return { ok: true }
   }
 
@@ -1224,6 +1313,9 @@ export async function markRepaired(params: {
     .eq('id', params.damageId)
   if (error) return { ok: false, error: error.message }
   revalidatePath('/')
+  try {
+    after(() => sendWebhookNotification('triggerRepairAwaitingApproval', `GSE Control — popravka čeka odobrenje: ${equipmentCode} (popravio/la: ${user.full_name})`, { equipmentCode }))
+  } catch { /* after() nedostupan — preskoči */ }
   return { ok: true }
 }
 

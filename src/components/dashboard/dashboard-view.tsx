@@ -34,6 +34,8 @@ import {
   FileText,
   AlertTriangle,
   Bird,
+  ListChecks,
+  Bell,
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
@@ -131,6 +133,10 @@ import { SMSView } from './sms-view'
 import { AuditView } from './audit-view'
 import { DocumentControlView } from './document-control-view'
 import { FodWildlifeView } from './fod-wildlife-view'
+import { MyTasksView } from './my-tasks-view'
+import { NotificationsView } from './notifications-view'
+import { SkillsAdminView } from './skills-admin-view'
+import { roleAtLeast, type TaskRole } from '@/lib/my-tasks'
 
 // =====================================================
 // NAVIGACIJA — grupisana lista za sidebar (zamjena za staru liniju od
@@ -138,16 +144,17 @@ import { FodWildlifeView } from './fod-wildlife-view'
 // mijenja se samo kako se do njega dolazi.
 // =====================================================
 
-type NavItem = { value: string; label: string; icon: React.ComponentType<{ className?: string }> }
+type NavItem = { value: string; label: string; icon: React.ComponentType<{ className?: string }>; minRole?: TaskRole }
 type NavGroup = { label: string; items: NavItem[] }
 
 const NAV_GROUPS: NavGroup[] = [
   {
     label: 'Pregled',
     items: [
+      { value: 'mytasks', label: 'Moj zadatak', icon: ListChecks },
       { value: 'overview', label: 'Pregled', icon: Activity },
-      { value: 'statistics', label: 'Statistika', icon: TrendingUp },
-      { value: 'activity', label: 'Aktivnost', icon: Clock },
+      { value: 'statistics', label: 'Statistika', icon: TrendingUp, minRole: 'engineer' },
+      { value: 'activity', label: 'Aktivnost', icon: Clock, minRole: 'engineer' },
     ],
   },
   {
@@ -155,39 +162,52 @@ const NAV_GROUPS: NavGroup[] = [
     items: [
       { value: 'equipment', label: 'Sredstva', icon: Package },
       { value: 'damages', label: 'Oštećenja', icon: AlertOctagon },
-      { value: 'maintenance', label: 'Održavanje', icon: Wrench },
-      { value: 'qr', label: 'QR kodovi', icon: Printer },
+      { value: 'maintenance', label: 'Održavanje', icon: Wrench, minRole: 'engineer' },
+      { value: 'qr', label: 'QR kodovi', icon: Printer, minRole: 'engineer' },
     ],
   },
   {
     label: 'Sigurnost & regulativa',
     items: [
-      { value: 'adr', label: 'ADR.OPS.C.007', icon: ShieldCheck },
-      { value: 'crs', label: 'CRS', icon: Award },
-      { value: 'incidents', label: 'Incidenti', icon: AlertOctagon },
+      { value: 'adr', label: 'ADR.OPS.C.007', icon: ShieldCheck, minRole: 'engineer' },
+      { value: 'crs', label: 'CRS', icon: Award, minRole: 'engineer' },
+      { value: 'incidents', label: 'Incidenti', icon: AlertOctagon, minRole: 'engineer' },
       { value: 'fod-wildlife', label: 'FOD & Wildlife', icon: AlertTriangle },
-      { value: 'sms', label: 'SMS', icon: Shield },
-      { value: 'audit', label: 'Audit & Compliance', icon: ClipboardCheck },
-      { value: 'doc-control', label: 'Document Control', icon: FileText },
+      { value: 'sms', label: 'SMS', icon: Shield, minRole: 'engineer' },
+      { value: 'audit', label: 'Audit & Compliance', icon: ClipboardCheck, minRole: 'engineer' },
+      { value: 'doc-control', label: 'Document Control', icon: FileText, minRole: 'engineer' },
     ],
   },
   {
     label: 'Operacije',
     items: [
-      { value: 'scheduling', label: 'Servis & Dijelovi', icon: Calendar },
-      { value: 'driverauth', label: 'Driver Auth', icon: Car },
-      { value: 'fuelparking', label: 'Gorivo & Parking', icon: Fuel },
+      { value: 'scheduling', label: 'Servis & Dijelovi', icon: Calendar, minRole: 'engineer' },
+      { value: 'driverauth', label: 'Driver Auth', icon: Car, minRole: 'engineer' },
+      { value: 'fuelparking', label: 'Gorivo & Parking', icon: Fuel, minRole: 'engineer' },
       { value: 'deicing', label: 'De-icing', icon: Snowflake },
       { value: 'aero-inspection', label: 'Aerodrom Inspekcija', icon: Plane },
     ],
   },
   {
+    label: 'Podešavanja',
+    items: [
+      { value: 'skills-admin', label: 'Kvalifikacije radionice', icon: Wrench, minRole: 'admin' },
+      { value: 'notifications', label: 'Obavještenja', icon: Bell, minRole: 'admin' },
+    ],
+  },
+  {
     label: 'Izvještaji',
     items: [
-      { value: 'reports', label: 'Izvještaji', icon: Printer },
+      { value: 'reports', label: 'Izvještaji', icon: Printer, minRole: 'engineer' },
     ],
   },
 ]
+
+function visibleGroups(role: string): NavGroup[] {
+  return NAV_GROUPS
+    .map((g) => ({ ...g, items: g.items.filter((i) => !i.minRole || roleAtLeast(role, i.minRole)) }))
+    .filter((g) => g.items.length > 0)
+}
 
 const ROLE_LABELS: Record<string, string> = {
   admin: 'Administrator', engineer: 'Inženjer', operator: 'Operator',
@@ -209,7 +229,7 @@ type DamageRow = Awaited<ReturnType<typeof getOpenDamages>>[number]
 
 export function DashboardView({ currentUser }: { currentUser: AppUser }) {
   const { t } = useLang()
-  const [tab, setTab] = useState('overview')
+  const [tab, setTab] = useState('mytasks')
   const [equipment, setEquipment] = useState<EquipmentRow[]>([])
   const [active, setActive] = useState<ActiveAssignment[]>([])
   const [activity, setActivity] = useState<ActivityRow[]>([])
@@ -304,7 +324,7 @@ export function DashboardView({ currentUser }: { currentUser: AppUser }) {
         </SidebarHeader>
 
         <SidebarContent>
-          {NAV_GROUPS.map((group) => (
+          {visibleGroups(currentUser.role).map((group) => (
             <SidebarGroup key={group.label}>
               <SidebarGroupLabel>{group.label}</SidebarGroupLabel>
               <SidebarGroupContent>
@@ -356,6 +376,15 @@ export function DashboardView({ currentUser }: { currentUser: AppUser }) {
         <div className="flex-1 overflow-y-auto p-4 space-y-6">
           <HelpButton helpKey={tab} />
           <Tabs value={tab} onValueChange={setTab}>
+        <TabsContent value="mytasks" className="space-y-4">
+          <MyTasksView
+            role={currentUser.role}
+            fullName={currentUser.full_name}
+            damages={damages}
+            onOpenTab={setTab}
+          />
+        </TabsContent>
+
         <TabsContent value="overview" className="space-y-4">
           {/* Stats grid */}
           <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-3">
@@ -656,6 +685,14 @@ export function DashboardView({ currentUser }: { currentUser: AppUser }) {
 
         <TabsContent value="fod-wildlife" className="space-y-4">
           <FodWildlifeView />
+        </TabsContent>
+
+        <TabsContent value="skills-admin" className="space-y-4">
+          {currentUser.role === 'admin' && <SkillsAdminView />}
+        </TabsContent>
+
+        <TabsContent value="notifications" className="space-y-4">
+          {currentUser.role === 'admin' && <NotificationsView />}
         </TabsContent>
 
         <TabsContent value="reports" className="space-y-4">

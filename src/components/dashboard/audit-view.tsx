@@ -148,6 +148,7 @@ export function AuditView() {
           <p className="text-sm text-muted-foreground">ADR.OPS.D.005 · EASA Part-145.A.65 · CAPA · Compliance Matrix</p>
         </div>
         <div className="flex gap-2 flex-wrap">
+          <Button variant="outline" size="sm" onClick={() => window.open('/api/audit-export', '_blank')}><Download className="h-4 w-4 mr-1.5" />Trag izmjena CSV (admin)</Button>
           <Button variant="outline" size="sm" onClick={() => window.open('/api/reports/audit-program', '_blank')}><Download className="h-4 w-4 mr-1.5" />Program PDF</Button>
           <Button variant="outline" size="sm" onClick={() => window.open('/api/reports/audit-audits', '_blank')}><Download className="h-4 w-4 mr-1.5" />Auditi PDF</Button>
           <Button variant="outline" size="sm" onClick={() => window.open('/api/reports/audit-findings', '_blank')}><Download className="h-4 w-4 mr-1.5" />Nalazi PDF</Button>

@@ -2,11 +2,10 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { isDemoMode } from '@/lib/auth-mode'
 import { db } from '@/lib/db'
-import { createClientAsync as createSupabaseClient } from '@/lib/supabase/server'
+import { createServiceClient, hasServiceClient } from '@/lib/supabase/service'
 import { sendWebhookNotification } from '@/lib/webhook-notify'
 
-// Dodati u vercel.json:
-// { "crons": [{ "path": "/api/cron/inspection-overdue", "schedule": "0 7 * * *" }] }
+// Raspored je u vercel.json.
 // (07:00 UTC — prilagoditi vremenu prve smjene / prvog pokreta na LYTV, uzevsi u obzir DST)
 
 const REQUIRED_TYPES = ['RUNWAY', 'TAXIWAY', 'APRON']
@@ -15,6 +14,10 @@ export async function GET(request: NextRequest) {
   const authHeader = request.headers.get('authorization')
   if (process.env.CRON_SECRET && authHeader !== `Bearer ${process.env.CRON_SECRET}`) {
     return new NextResponse('Unauthorized', { status: 401 })
+  }
+
+  if (!isDemoMode() && !hasServiceClient()) {
+    return NextResponse.json({ error: 'SUPABASE_SERVICE_ROLE_KEY nije postavljen' }, { status: 503 })
   }
 
   const todayStart = new Date()
@@ -29,7 +32,8 @@ export async function GET(request: NextRequest) {
     })
     doneTypes = todaysInspections.map((i) => i.inspectionType)
   } else {
-    const supabase = await createSupabaseClient()
+    // cron nema korisničku sesiju → service-role
+    const supabase = createServiceClient()
     const { data } = await supabase
       .from('aerodrome_inspections')
       .select('inspection_type')

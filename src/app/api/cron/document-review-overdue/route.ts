@@ -1,10 +1,11 @@
 // src/app/api/cron/document-review-overdue/route.ts
 import { NextRequest, NextResponse } from 'next/server'
-import { getDocuments } from '@/lib/actions-document-control'
+import { isDemoMode } from '@/lib/auth-mode'
+import { db } from '@/lib/db'
+import { createServiceClient, hasServiceClient } from '@/lib/supabase/service'
 import { sendWebhookNotification } from '@/lib/webhook-notify'
 
-// Dodati u vercel.json:
-// { "crons": [{ "path": "/api/cron/document-review-overdue", "schedule": "0 6 * * 1" }] }
+// Raspored je u vercel.json.
 // (ponedjeljkom 06:00 UTC — sedmicna provjera je dovoljna za document review, za razliku
 // od dnevne aerodrome inspekcije koja treba dnevnu provjeru)
 //
@@ -19,7 +20,22 @@ export async function GET(request: NextRequest) {
     return new NextResponse('Unauthorized', { status: 401 })
   }
 
-  const docs = await getDocuments()
+  if (!isDemoMode() && !hasServiceClient()) {
+    return NextResponse.json({ error: 'SUPABASE_SERVICE_ROLE_KEY nije postavljen' }, { status: 503 })
+  }
+
+  // cron nema korisničku sesiju → direktan upit (service-role u Supabase modu)
+  let docs: any[]
+  if (isDemoMode()) {
+    docs = await db.controlledDocument.findMany({ where: { status: 'PUBLISHED' } })
+  } else {
+    const { data, error } = await createServiceClient()
+      .from('controlled_documents')
+      .select('doc_id,title,status,next_review_date')
+      .eq('status', 'PUBLISHED')
+    if (error) return NextResponse.json({ error: error.message }, { status: 500 })
+    docs = (data ?? []).map((d: any) => ({ docId: d.doc_id, title: d.title, status: d.status, nextReviewDate: d.next_review_date }))
+  }
   const today = new Date()
 
   const overdue = docs.filter(
