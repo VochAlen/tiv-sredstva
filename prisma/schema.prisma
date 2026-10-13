@@ -886,6 +886,7 @@ model FodReport {
   location String // npr. "Stand A1", "Taxiway B"
   itemType String @default("OTHER") // AIRCRAFT_PART | TOOL | CATERING | PERSONAL_ITEM | PAVEMENT | CONSTRUCTION | PLASTIC | OTHER
   description String
+  weather     String? // SUNNY | CLOUDY | RAIN | WIND | FOG | SNOW | ICE | STORM
 
   aircraftPartSuspected Boolean @default(false) // ako da - obavijestiti operatere aviona
   removed               Boolean @default(false)
@@ -925,6 +926,7 @@ model WildlifeReport {
   mapX        Float? // 0..1 (null = samo zona)
   mapY        Float?
   speciesCode String? // GALEB | GOLUB | ... | OTHER
+  weather     String? // SUNNY | CLOUDY | RAIN | WIND | FOG | SNOW | ICE | STORM
 
   actionTaken String? // npr. "Otjerano", "Prijavljeno nadleznom organu"
   damageDescription String?

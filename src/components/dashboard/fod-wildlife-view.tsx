@@ -1,7 +1,7 @@
 'use client'
 
 import { useEffect, useState } from 'react'
-import { AlertTriangle, Bird, Loader2, MapPin, User, Clock, Download, Plane } from 'lucide-react'
+import { AlertTriangle, BarChart3, Bird, Loader2, MapPin, User, Clock, Download, Plane } from 'lucide-react'
 import { Card, CardContent } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
@@ -16,6 +16,9 @@ import { FodEditDialog } from './fod-edit-dialog'
 import { WildlifeEditDialog, WILDLIFE_STATUS_LABELS } from './wildlife-edit-dialog'
 import { FOD_ITEM_TYPE_LABELS } from '@/lib/constants-export'
 import { WildlifeHeatmap } from './wildlife-heatmap'
+import { SafetyStatsView } from './safety-stats-view'
+import { WeatherIcon } from '@/components/weather-picker'
+import { weatherById } from '@/lib/weather-conditions'
 
 export function FodWildlifeView({ isAdmin = false }: { isAdmin?: boolean }) {
   const [tab, setTab] = useState('fod')
@@ -54,6 +57,7 @@ export function FodWildlifeView({ isAdmin = false }: { isAdmin?: boolean }) {
         <TabsList>
           <TabsTrigger value="fod"><AlertTriangle className="h-4 w-4 mr-1.5" />FOD {fodStats && <Badge variant="secondary" className="ml-1.5">{fodStats.total}</Badge>}</TabsTrigger>
           <TabsTrigger value="wildlife"><Bird className="h-4 w-4 mr-1.5" />Wildlife {wildlifeStats && <Badge variant="secondary" className="ml-1.5">{wildlifeStats.total}</Badge>}</TabsTrigger>
+          {isAdmin && <TabsTrigger value="stats"><BarChart3 className="h-4 w-4 mr-1.5" />Statistika</TabsTrigger>}
         </TabsList>
 
         <TabsContent value="fod" className="space-y-3 mt-3">
@@ -82,6 +86,7 @@ export function FodWildlifeView({ isAdmin = false }: { isAdmin?: boolean }) {
                     <div className="flex-1 min-w-0">
                       <div className="flex items-center gap-2 flex-wrap mb-1">
                         <Badge variant="secondary" className="text-xs">{FOD_ITEM_TYPE_LABELS[f.itemType] || f.itemType}</Badge>
+                        {f.weather && <Badge variant="outline" className="text-xs"><WeatherIcon id={f.weather} className="h-3 w-3 mr-1" />{weatherById(f.weather).label}</Badge>}
                         {f.aircraftPartSuspected && <Badge className="bg-red-100 text-red-800 text-xs"><Plane className="h-3 w-3 mr-0.5" />Sumnja — dio aviona</Badge>}
                         {f.removed ? <Badge className="bg-emerald-100 text-emerald-800 text-xs">Uklonjeno</Badge> : <Badge className="bg-amber-100 text-amber-800 text-xs">Nije uklonjeno</Badge>}
                         <Badge className={(f.status === 'CLOSED' ? 'bg-emerald-100 text-emerald-800' : f.status === 'IN_REVIEW' ? 'bg-blue-100 text-blue-800' : 'bg-amber-100 text-amber-800') + ' text-xs'}>
@@ -146,6 +151,7 @@ export function FodWildlifeView({ isAdmin = false }: { isAdmin?: boolean }) {
                       <div className="flex items-center gap-2 flex-wrap mb-1">
                         <Badge variant="secondary" className="text-xs">{w.species} × {w.count}</Badge>
                         {w.strike && <Badge className="bg-red-100 text-red-800 text-xs">Sudar</Badge>}
+                        {w.weather && <Badge variant="outline" className="text-xs"><WeatherIcon id={w.weather} className="h-3 w-3 mr-1" />{weatherById(w.weather).label}</Badge>}
                         <Badge className={(w.status === 'CLOSED' ? 'bg-emerald-100 text-emerald-800' : w.status === 'IN_REVIEW' ? 'bg-blue-100 text-blue-800' : 'bg-amber-100 text-amber-800') + ' text-xs'}>
                           {WILDLIFE_STATUS_LABELS[w.status ?? 'NEW'] ?? w.status}
                         </Badge>
@@ -165,6 +171,12 @@ export function FodWildlifeView({ isAdmin = false }: { isAdmin?: boolean }) {
             </div>
           )}
         </TabsContent>
+
+        {isAdmin && (
+          <TabsContent value="stats" className="mt-3">
+            <SafetyStatsView />
+          </TabsContent>
+        )}
       </Tabs>
     </div>
   )

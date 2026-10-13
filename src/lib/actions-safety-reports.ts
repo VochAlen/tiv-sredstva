@@ -12,6 +12,7 @@ import { isDemoMode } from '@/lib/auth-mode'
 import { getCurrentUser, type AppUser } from '@/lib/auth-server'
 import { createClientAsync as createSupabaseClient } from '@/lib/supabase/server'
 import { revalidatePath } from 'next/cache'
+import { isWeatherId } from '@/lib/weather-conditions'
 import { ZONE_IDS, SPECIES_IDS, speciesById, speciesGroupOf, zoneById, zoneLabel, zoneAt, fromNorm, approxPoint } from '@/lib/airport-map'
 
 async function requireRole(roles: Array<'operator' | 'engineer' | 'admin'>): Promise<AppUser> {
@@ -32,16 +33,19 @@ export async function createFodReport(params: {
   aircraftPartSuspected?: boolean
   removed?: boolean
   atcNotified?: boolean
+  weather?: string // SUNNY | CLOUDY | RAIN | WIND | FOG | SNOW | ICE | STORM
   foundByCardId?: string
   foundByName: string
 }) {
   // Javna funkcija — radnici prijavljuju FOD bez login-a (ADR.OPS.B.016(b)(1):
   // "personnel should be actively encouraged to identify and report...")
 
+  const weather = isWeatherId(params.weather) ? params.weather : null
+
   if (isDemoMode()) {
     const report = await db.fodReport.create({
       data: {
-        location: params.location, itemType: params.itemType, description: params.description,
+        location: params.location, itemType: params.itemType, description: params.description, weather,
         aircraftPartSuspected: params.aircraftPartSuspected ?? false,
         removed: params.removed ?? false, atcNotified: params.atcNotified ?? false,
         foundByCardId: params.foundByCardId ?? null, foundByName: params.foundByName,
@@ -55,13 +59,16 @@ export async function createFodReport(params: {
   // ID se generiše unaprijed (umjesto .select().single() čitanja nazad) jer je
   // SELECT na fod_reports ograničen na engineer+, a INSERT je namjerno javan.
   const id = crypto.randomUUID()
-  const { error } = await supabase.from('fod_reports').insert({
+  const fodRow = {
     id,
     location: params.location, item_type: params.itemType, description: params.description,
     aircraft_part_suspected: params.aircraftPartSuspected ?? false,
     removed: params.removed ?? false, atc_notified: params.atcNotified ?? false,
     found_by_card_id: params.foundByCardId ?? null, found_by_name: params.foundByName,
-  })
+  }
+  let { error } = await supabase.from('fod_reports').insert({ ...fodRow, weather })
+  // Migracija 031 još nije pokrenuta: prijava se ipak snima (bez vremenskih uslova)
+  if (error && /weather/i.test(error.message ?? '')) ({ error } = await supabase.from('fod_reports').insert(fodRow))
 
   if (error) throw error
   revalidatePath('/dashboard')
@@ -167,7 +174,7 @@ export async function getFodReports(params?: { limit?: number }) {
   return (data ?? []).map((f: any) => ({
     id: f.id, location: f.location, itemType: f.item_type, description: f.description,
     aircraftPartSuspected: f.aircraft_part_suspected, removed: f.removed, atcNotified: f.atc_notified,
-    removedAt: f.removed_at ? new Date(f.removed_at) : null, removedBy: f.removed_by ?? null,
+    removedAt: f.removed_at ? new Date(f.removed_at) : null, removedBy: f.removed_by ?? null, weather: f.weather ?? null,
     status: f.status ?? 'NEW', adminNotes: f.admin_notes ?? null, updatedBy: f.updated_by ?? null,
     foundByCardId: f.found_by_card_id, foundByName: f.found_by_name,
     foundAt: new Date(f.found_at), createdAt: new Date(f.created_at),
@@ -215,6 +222,7 @@ export async function createWildlifeReport(params: {
   mapX?: number // 0..1 (tačka dodirnuta na mapi); bez nje se koristi samo zona
   mapY?: number
   strike?: boolean
+  weather?: string // SUNNY | CLOUDY | RAIN | WIND | FOG | SNOW | ICE | STORM
   actionTaken?: string
   damageDescription?: string
   reportedByCardId?: string
@@ -235,11 +243,12 @@ export async function createWildlifeReport(params: {
   const mapX = zone ? inUnit(params.mapX) : null
   const mapY = zone ? inUnit(params.mapY) : null
   const hasPoint = mapX !== null && mapY !== null
+  const weather = isWeatherId(params.weather) ? params.weather : null
 
   if (isDemoMode()) {
     const report = await db.wildlifeReport.create({
       data: {
-        species, speciesCode, count, location, zone,
+        species, speciesCode, count, location, zone, weather,
         mapX: hasPoint ? mapX : null, mapY: hasPoint ? mapY : null,
         strike: params.strike ?? false, actionTaken: params.actionTaken ?? null,
         damageDescription: params.damageDescription ?? null,
@@ -260,11 +269,11 @@ export async function createWildlifeReport(params: {
     reported_by_card_id: params.reportedByCardId ?? null, reported_by_name: name,
   }
   let { error } = await supabase.from('wildlife_reports').insert({
-    ...legacy, species_code: speciesCode, zone,
+    ...legacy, species_code: speciesCode, zone, weather,
     map_x: hasPoint ? mapX : null, map_y: hasPoint ? mapY : null,
   })
-  // Migracija 030 još nije pokrenuta: prijava se ipak snima (bez mape), radnik ne smije ostati bez mogućnosti prijave
-  if (error && /species_code|map_x|map_y|zone/i.test(error.message ?? '')) {
+  // Migracije 030/031 još nisu pokrenute: prijava se ipak snima (bez mape/uslova), radnik ne smije ostati bez mogućnosti prijave
+  if (error && /species_code|map_x|map_y|zone|weather/i.test(error.message ?? '')) {
     ;({ error } = await supabase.from('wildlife_reports').insert(legacy))
   }
 
@@ -331,7 +340,7 @@ export async function getWildlifeReports(params?: { limit?: number }) {
   const supabase = await createSupabaseClient()
   const { data } = await supabase.from('wildlife_reports').select('*').order('observed_at', { ascending: false }).limit(limit)
   return (data ?? []).map((w: any) => ({
-    id: w.id, species: w.species, speciesCode: w.species_code ?? null, zone: w.zone ?? null, count: w.count, location: w.location, strike: w.strike,
+    id: w.id, species: w.species, speciesCode: w.species_code ?? null, zone: w.zone ?? null, weather: w.weather ?? null, count: w.count, location: w.location, strike: w.strike,
     actionTaken: w.action_taken, damageDescription: w.damage_description,
     status: w.status ?? 'NEW', adminNotes: w.admin_notes ?? null, updatedBy: w.updated_by ?? null,
     reportedByCardId: w.reported_by_card_id, reportedByName: w.reported_by_name,

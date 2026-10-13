@@ -23,6 +23,7 @@ import { toast } from 'sonner'
 import { createFodReport, createWildlifeReport } from '@/lib/actions-safety-reports'
 import { FOD_ITEM_TYPE_LABELS } from '@/lib/constants-export'
 import { AirportMap } from '@/components/airport-map'
+import { WeatherPicker } from '@/components/weather-picker'
 import { SPECIES, ZONES, toNorm, zoneById, type ZoneId } from '@/lib/airport-map'
 
 export function QuickReportDialog({
@@ -50,12 +51,13 @@ export function QuickReportDialog({
   const [speciesCode, setSpeciesCode] = useState('')
   const [zone, setZone] = useState<ZoneId | ''>('')
   const [point, setPoint] = useState<{ x: number; y: number } | null>(null)
+  const [weather, setWeather] = useState('')
   const [count, setCount] = useState('1')
   const [strike, setStrike] = useState(false)
 
   const reset = () => {
     setLocation(''); setItemType('OTHER'); setDescription(''); setAircraftPartSuspected(false); setRemoved(false); setFoundByName('')
-    setSpecies(''); setSpeciesCode(''); setZone(''); setPoint(null); setCount('1'); setStrike(false)
+    setSpecies(''); setSpeciesCode(''); setZone(''); setPoint(null); setWeather(''); setCount('1'); setStrike(false)
   }
 
   const handleSubmit = (e: React.FormEvent) => {
@@ -72,6 +74,10 @@ export function QuickReportDialog({
       toast.error('Opišite šta ste pronašli')
       return
     }
+    if (!weather) {
+      toast.error('Izaberite vremenske uslove')
+      return
+    }
     if (type === 'WILDLIFE') {
       if (!speciesCode) { toast.error('Izaberite vrstu životinje'); return }
       if (speciesCode === 'OTHER' && !species.trim()) { toast.error('Upišite vrstu životinje'); return }
@@ -83,7 +89,7 @@ export function QuickReportDialog({
         if (type === 'FOD') {
           await createFodReport({
             location, itemType, description, aircraftPartSuspected, removed,
-            foundByName,
+            foundByName, weather,
           })
           toast.success('FOD prijava poslana. Hvala!')
         } else {
@@ -91,7 +97,7 @@ export function QuickReportDialog({
             species: speciesCode === 'OTHER' ? species : (SPECIES.find((x) => x.id === speciesCode)?.label ?? species),
             speciesCode, count: parseInt(count) || 1, zone: zone || undefined,
             ...(point ? toNorm(point.x, point.y) : {}),
-            strike, reportedByName: foundByName,
+            strike, weather, reportedByName: foundByName,
           })
           toast.success('Prijava poslana. Hvala!')
         }
@@ -207,6 +213,11 @@ export function QuickReportDialog({
               </div>
             </>
           )}
+
+          <div className="space-y-1.5">
+            <Label>{type === 'WILDLIFE' ? '3. ' : ''}Vremenski uslovi *</Label>
+            <WeatherPicker value={weather} onChange={setWeather} />
+          </div>
 
           <div className="space-y-1.5">
             <Label>Vaše ime *</Label>
