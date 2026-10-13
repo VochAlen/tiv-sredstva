@@ -85,6 +85,74 @@ export async function markFodRemoved(id: string): Promise<{ ok: boolean; error?:
   return { ok: true }
 }
 
+/** Admin uređuje FOD prijavu i određuje status obrade. */
+export async function updateFodReport(
+  id: string,
+  patch: {
+    location?: string
+    itemType?: string
+    description?: string
+    aircraftPartSuspected?: boolean
+    atcNotified?: boolean
+    removed?: boolean
+    status?: (typeof WILDLIFE_STATUSES)[number]
+    adminNotes?: string | null
+  },
+): Promise<{ ok: boolean; error?: string }> {
+  const user = await requireRole(['admin'])
+  if (patch.status && !WILDLIFE_STATUSES.includes(patch.status)) return { ok: false, error: 'Nepoznat status' }
+  if (patch.location !== undefined && !patch.location.trim()) return { ok: false, error: 'Lokacija je obavezna' }
+  if (patch.description !== undefined && !patch.description.trim()) return { ok: false, error: 'Opis je obavezan' }
+
+  const notes = patch.adminNotes === undefined ? undefined : patch.adminNotes && patch.adminNotes.trim() ? patch.adminNotes.trim() : null
+  const now = new Date()
+
+  if (isDemoMode()) {
+    const cur = await db.fodReport.findUnique({ where: { id } })
+    if (!cur) return { ok: false, error: 'Prijava nije pronađena' }
+    const removedChange = patch.removed !== undefined && patch.removed !== cur.removed
+    await db.fodReport.update({
+      where: { id },
+      data: {
+        ...(patch.location !== undefined && { location: patch.location.trim() }),
+        ...(patch.itemType !== undefined && { itemType: patch.itemType }),
+        ...(patch.description !== undefined && { description: patch.description.trim() }),
+        ...(patch.aircraftPartSuspected !== undefined && { aircraftPartSuspected: patch.aircraftPartSuspected }),
+        ...(patch.atcNotified !== undefined && { atcNotified: patch.atcNotified }),
+        ...(patch.status !== undefined && { status: patch.status }),
+        ...(notes !== undefined && { adminNotes: notes }),
+        ...(removedChange && (patch.removed
+          ? { removed: true, removedAt: now, removedBy: user.full_name }
+          : { removed: false, removedAt: null, removedBy: null })),
+        updatedBy: user.full_name,
+      },
+    })
+  } else {
+    const supabase = await createSupabaseClient()
+    const row: Record<string, unknown> = { updated_by: user.full_name, updated_at: now.toISOString() }
+    if (patch.location !== undefined) row.location = patch.location.trim()
+    if (patch.itemType !== undefined) row.item_type = patch.itemType
+    if (patch.description !== undefined) row.description = patch.description.trim()
+    if (patch.aircraftPartSuspected !== undefined) row.aircraft_part_suspected = patch.aircraftPartSuspected
+    if (patch.atcNotified !== undefined) row.atc_notified = patch.atcNotified
+    if (patch.status !== undefined) row.status = patch.status
+    if (notes !== undefined) row.admin_notes = notes
+    if (patch.removed !== undefined) {
+      const { data: cur } = await supabase.from('fod_reports').select('removed').eq('id', id).maybeSingle()
+      if (!cur) return { ok: false, error: 'Prijava nije pronađena' }
+      if (cur.removed !== patch.removed) {
+        row.removed = patch.removed
+        row.removed_at = patch.removed ? now.toISOString() : null
+        row.removed_by = patch.removed ? user.full_name : null
+      }
+    }
+    const { error } = await supabase.from('fod_reports').update(row).eq('id', id)
+    if (error) return { ok: false, error: error.message }
+  }
+  revalidatePath('/dashboard')
+  return { ok: true }
+}
+
 export async function getFodReports(params?: { limit?: number }) {
   await requireRole(['engineer', 'admin'])
   const limit = params?.limit ?? 100
@@ -99,6 +167,7 @@ export async function getFodReports(params?: { limit?: number }) {
     id: f.id, location: f.location, itemType: f.item_type, description: f.description,
     aircraftPartSuspected: f.aircraft_part_suspected, removed: f.removed, atcNotified: f.atc_notified,
     removedAt: f.removed_at ? new Date(f.removed_at) : null, removedBy: f.removed_by ?? null,
+    status: f.status ?? 'NEW', adminNotes: f.admin_notes ?? null, updatedBy: f.updated_by ?? null,
     foundByCardId: f.found_by_card_id, foundByName: f.found_by_name,
     foundAt: new Date(f.found_at), createdAt: new Date(f.created_at),
   }))

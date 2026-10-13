@@ -12,6 +12,7 @@ import {
 import {
   getFodReports, markFodRemoved, getFodStats, getWildlifeReports, getWildlifeStats,
 } from '@/lib/actions-safety-reports'
+import { FodEditDialog } from './fod-edit-dialog'
 import { WildlifeEditDialog, WILDLIFE_STATUS_LABELS } from './wildlife-edit-dialog'
 import { FOD_ITEM_TYPE_LABELS } from '@/lib/constants-export'
 
@@ -82,8 +83,12 @@ export function FodWildlifeView({ isAdmin = false }: { isAdmin?: boolean }) {
                         <Badge variant="secondary" className="text-xs">{FOD_ITEM_TYPE_LABELS[f.itemType] || f.itemType}</Badge>
                         {f.aircraftPartSuspected && <Badge className="bg-red-100 text-red-800 text-xs"><Plane className="h-3 w-3 mr-0.5" />Sumnja — dio aviona</Badge>}
                         {f.removed ? <Badge className="bg-emerald-100 text-emerald-800 text-xs">Uklonjeno</Badge> : <Badge className="bg-amber-100 text-amber-800 text-xs">Nije uklonjeno</Badge>}
+                        <Badge className={(f.status === 'CLOSED' ? 'bg-emerald-100 text-emerald-800' : f.status === 'IN_REVIEW' ? 'bg-blue-100 text-blue-800' : 'bg-amber-100 text-amber-800') + ' text-xs'}>
+                          {WILDLIFE_STATUS_LABELS[f.status ?? 'NEW'] ?? f.status}
+                        </Badge>
                       </div>
                       <div className="text-sm">{f.description}</div>
+                      {f.adminNotes && <div className="text-xs text-muted-foreground mt-0.5">Napomena: {f.adminNotes}{f.updatedBy ? ` (${f.updatedBy})` : ''}</div>}
                       {f.removed && f.removedBy && (
                         <div className="text-xs text-muted-foreground mt-0.5">
                           Uklonio/la: {f.removedBy}{f.removedAt ? `, ${new Date(f.removedAt).toLocaleString('hr-HR')}` : ''}
@@ -95,6 +100,8 @@ export function FodWildlifeView({ isAdmin = false }: { isAdmin?: boolean }) {
                         <span className="flex items-center gap-1"><User className="h-3 w-3" />{f.foundByName}</span>
                       </div>
                     </div>
+                    <div className="flex gap-2 flex-wrap">
+                    {isAdmin && <FodEditDialog report={f} onSaved={load} />}
                     {!f.removed && (
                       <Button
                         size="sm"
@@ -107,6 +114,7 @@ export function FodWildlifeView({ isAdmin = false }: { isAdmin?: boolean }) {
                         Označi kao uklonjeno
                       </Button>
                     )}
+                    </div>
                   </div>
                 </Card>
               ))}

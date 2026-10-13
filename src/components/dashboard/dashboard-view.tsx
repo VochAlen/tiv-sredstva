@@ -1,7 +1,9 @@
 'use client'
 
-import { useEffect, useState, useTransition, useMemo } from 'react'
+import { useEffect, useRef, useState, useTransition, useMemo } from 'react'
 import { QRCodeSVG } from 'qrcode.react'
+import { printQrLabels, svgOf } from '@/lib/qr-print'
+import { deleteEquipment } from '@/lib/actions-admin-edit'
 import {
   Package,
   Search,
@@ -20,6 +22,7 @@ import {
   TrendingUp,
   Clock,
   Printer,
+  Trash2,
   RefreshCw,
   ChevronRight,
   Loader2,
@@ -636,7 +639,7 @@ export function DashboardView({ currentUser }: { currentUser: AppUser }) {
         </TabsContent>
 
         <TabsContent value="maintenance" className="space-y-4">
-          <MaintenanceView />
+          <MaintenanceView currentUser={currentUser} />
         </TabsContent>
 
         <TabsContent value="adr" className="space-y-4">
@@ -750,7 +753,7 @@ export function DashboardView({ currentUser }: { currentUser: AppUser }) {
         </TabsContent>
 
         <TabsContent value="qr" className="space-y-4">
-          <QrPrintView equipment={equipment} />
+          <QrPrintView equipment={equipment} isAdmin={currentUser.role === 'admin'} onChanged={load} />
         </TabsContent>
           </Tabs>
         </div>
@@ -934,6 +937,9 @@ function EditEquipmentDialog({
   const [notes, setNotes] = useState(equipment.notes ?? '')
   const [department, setDepartment] = useState<string>(equipment.department ?? 'TEHNICKA_SLUZBA')
   const [isPending, startTransition] = useTransition()
+  const qrBoxRef = useRef<HTMLDivElement>(null)
+  const [origin, setOrigin] = useState('')
+  useEffect(() => { setOrigin(window.location.origin) }, [])
 
   useEffect(() => {
     if (open) {
@@ -992,6 +998,7 @@ function EditEquipmentDialog({
                   {Object.entries(EQUIPMENT_TYPE_LABELS).map(([k, v]) => (
                     <SelectItem key={k} value={k}>{v}</SelectItem>
                   ))}
+                  {!(type in EQUIPMENT_TYPE_LABELS) && <SelectItem value={type}>{type}</SelectItem>}
                 </SelectContent>
               </Select>
             </div>
@@ -1018,6 +1025,21 @@ function EditEquipmentDialog({
           <div className="space-y-1.5">
             <Label htmlFor="edit-notes">Napomene</Label>
             <Textarea id="edit-notes" value={notes} onChange={(e) => setNotes(e.target.value)} rows={3} />
+          </div>
+          <div className="flex items-center gap-3 rounded-lg border p-3">
+            <div ref={qrBoxRef} className="shrink-0 bg-white p-1.5 rounded">
+              <QRCodeSVG value={`${origin}/?scan=${equipment.code}`} size={96} level="M" />
+            </div>
+            <div className="min-w-0 space-y-1.5 text-sm">
+              <div className="font-medium">QR kod: <span className="font-mono">{equipment.code}</span></div>
+              <p className="text-xs text-muted-foreground">Šifra se ne mijenja jer je odštampani QR vezan za nju.</p>
+              <Button
+                type="button" variant="outline" size="sm"
+                onClick={() => printQrLabels([{ svg: svgOf(qrBoxRef.current), code: equipment.code, name: equipment.name, location: equipment.location }])}
+              >
+                <Printer className="h-4 w-4 mr-1.5" />Štampaj QR
+              </Button>
+            </div>
           </div>
           <DialogFooter>
             <Button type="button" variant="outline" onClick={() => setOpen(false)}>Odustani</Button>
@@ -1274,20 +1296,43 @@ function DamageRowCard({
 // QR PRINT VIEW
 // =====================================================
 
-function QrPrintView({ equipment }: { equipment: EquipmentRow[] }) {
+function QrPrintView({ equipment, isAdmin, onChanged }: { equipment: EquipmentRow[]; isAdmin: boolean; onChanged: () => void }) {
   const [origin, setOrigin] = useState('')
+  const [search, setSearch] = useState('')
+  const gridRef = useRef<HTMLDivElement>(null)
+  const [, startTransition] = useTransition()
 
   useEffect(() => {
     if (typeof window !== 'undefined') setOrigin(window.location.origin)
   }, [])
 
-  const qrUrl = (code: string) => {
-    if (!origin) return `?scan=${code}`
-    return `${origin}/?scan=${code}`
-  }
+  const qrUrl = (code: string) => (origin ? `${origin}/?scan=${code}` : `?scan=${code}`)
 
-  const handlePrint = () => {
-    window.print()
+  const shown = equipment.filter((e) => {
+    const q = search.trim().toLowerCase()
+    return !q || `${e.code} ${e.name} ${e.location}`.toLowerCase().includes(q)
+  })
+
+  const labelFor = (e: EquipmentRow) => ({
+    svg: svgOf(gridRef.current?.querySelector<HTMLElement>(`[data-qr="${CSS.escape(e.code)}"]`) ?? null),
+    code: e.code,
+    name: e.name,
+    location: e.location,
+  })
+
+  const printOne = (e: EquipmentRow) => printQrLabels([labelFor(e)])
+  const printAll = () => printQrLabels(shown.map(labelFor))
+
+  const remove = (e: EquipmentRow) => {
+    if (!window.confirm(`Obrisati sredstvo ${e.code} (${e.name})?\nOvo se ne može poništiti. Sredstva sa historijom se ne brišu.`)) return
+    startTransition(async () => {
+      try {
+        const r = await deleteEquipment(e.id)
+        if (!r.ok) { toast.error(r.error ?? 'Brisanje nije uspjelo'); return }
+        toast.success(`Sredstvo ${e.code} obrisano`)
+        onChanged()
+      } catch (err: any) { toast.error(err?.message ?? 'Greška') }
+    })
   }
 
   return (
@@ -1302,28 +1347,37 @@ function QrPrintView({ equipment }: { equipment: EquipmentRow[] }) {
         </p>
       </CardHeader>
       <CardContent>
-        <Button onClick={handlePrint} className="mb-4">
-          <Printer className="h-4 w-4 mr-2" />
-          Štampaj sve
-        </Button>
+        <div className="flex flex-wrap gap-2 mb-4">
+          <Input className="max-w-xs" placeholder="Traži šifru, naziv, lokaciju…" value={search} onChange={(e) => setSearch(e.target.value)} />
+          <Button onClick={printAll} disabled={shown.length === 0}>
+            <Printer className="h-4 w-4 mr-2" />
+            Štampaj {search.trim() ? `prikazane (${shown.length})` : 'sve'}
+          </Button>
+        </div>
 
-        <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4 print:grid-cols-3 print:gap-2">
-          {equipment.map((e) => (
+        <div ref={gridRef} className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
+          {shown.map((e) => (
             <div
               key={e.id}
-              className="border-2 border-dashed border-gray-300 dark:border-gray-700 rounded-lg p-3 text-center print:break-inside-avoid"
+              className="border-2 border-dashed border-gray-300 dark:border-gray-700 rounded-lg p-3 text-center"
             >
-              <div className="flex justify-center mb-2">
-                <QRCodeSVG
-                  value={qrUrl(e.code)}
-                  size={140}
-                  level="M"
-                  includeMargin={false}
-                />
+              <div data-qr={e.code} className="flex justify-center mb-2 bg-white p-1.5 rounded w-fit mx-auto">
+                <QRCodeSVG value={qrUrl(e.code)} size={140} level="M" includeMargin={false} />
               </div>
               <div className="font-mono text-xs font-bold">{e.code}</div>
               <div className="text-[10px] text-muted-foreground line-clamp-2 mt-1">{e.name}</div>
               <div className="text-[10px] text-muted-foreground mt-1">{e.location}</div>
+              <div className="flex justify-center gap-1 mt-2">
+                <Button size="sm" variant="outline" aria-label={`Štampaj ${e.code}`} onClick={() => printOne(e)}>
+                  <Printer className="h-4 w-4" />
+                </Button>
+                {isAdmin && <EditEquipmentDialog equipment={e} onUpdated={onChanged} />}
+                {isAdmin && (
+                  <Button size="sm" variant="ghost" aria-label={`Obriši ${e.code}`} onClick={() => remove(e)}>
+                    <Trash2 className="h-4 w-4 text-red-600" />
+                  </Button>
+                )}
+              </div>
             </div>
           ))}
         </div>

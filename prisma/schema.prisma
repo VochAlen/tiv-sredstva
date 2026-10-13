@@ -880,6 +880,12 @@ model FodReport {
   removedBy             String?
   atcNotified           Boolean @default(false)
 
+  // Obrada prijave (admin)
+  status     String   @default("NEW") // NEW | IN_REVIEW | CLOSED
+  adminNotes String?
+  updatedBy  String?
+  updatedAt  DateTime @default(now()) @updatedAt
+
   foundByCardId String?
   foundByName   String
 

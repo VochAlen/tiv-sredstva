@@ -80,3 +80,8 @@ for (const t of ['equipment','equipment_manuals','driver_authorizations','equipm
   console.log('anon čita', t, '->', n)
 }
 await asRole('anon', () => db.exec(`insert into fitness_declarations(employee_card_id,employee_name,confirmed) values ('EMP-1011','Alen',true)`)); console.log('fitness insert anon OK')
+// --- FOD: status + uređivanje ---
+await asRole('authenticated', () => db.exec(`update fod_reports set status='IN_REVIEW', admin_notes='provjereno', description='ključ 17mm', removed=false, removed_at=null, removed_by=null, updated_by='Admin'`), adm)
+console.log('fod nakon izmjene', await q(`select status, description, removed from fod_reports`))
+let bad2=false; try { await db.exec(`update fod_reports set status='X'`) } catch { bad2=true } assert(bad2)
+console.log('FOD ADMIN OK')

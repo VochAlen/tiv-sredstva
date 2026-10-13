@@ -1,7 +1,7 @@
 'use client'
 
 import { useEffect, useState, useTransition } from 'react'
-import { Wrench, Plus, Loader2, Calendar, Award, FileText, Search, Download, AlertOctagon, User } from 'lucide-react'
+import { Wrench, Plus, Loader2, Calendar, Award, FileText, Search, Download, AlertOctagon, User, Pencil, Trash2 } from 'lucide-react'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
@@ -27,13 +27,18 @@ import {
   QUALIFICATION_LEVEL_LABELS,
 } from '@/lib/types-advanced'
 import { EQUIPMENT_TYPE_LABELS } from '@/lib/types'
+import { DamageRowCard } from '@/components/dashboard/damage-row-card'
+import { updateMaintenanceLog, updateQualification, deleteQualification, updateDamageReport } from '@/lib/actions-admin-edit'
+import type { AppUser } from '@/lib/auth-server'
+import { CHECKLIST_CATEGORY_ORDER, CHECKLIST_CATEGORY_LABELS } from '@/lib/types'
 import { getDamageUrgency, URGENCY_LABELS, URGENCY_COLORS, type DamageUrgency } from '@/lib/damage-urgency'
 
 type MaintenanceLog = Awaited<ReturnType<typeof getMaintenanceLogs>>[number]
 type Qualification = Awaited<ReturnType<typeof getQualifications>>[number]
 type OpenDamage = Awaited<ReturnType<typeof getOpenDamages>>[number]
 
-export function MaintenanceView() {
+export function MaintenanceView({ currentUser }: { currentUser: AppUser }) {
+  const isAdmin = currentUser.role === 'admin'
   const [tab, setTab] = useState<'faults' | 'logs' | 'qualifications'>('faults')
   const [damages, setDamages] = useState<OpenDamage[]>([])
   const [logs, setLogs] = useState<MaintenanceLog[]>([])
@@ -136,11 +141,11 @@ export function MaintenanceView() {
           <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
         </div>
       ) : tab === 'faults' ? (
-        <OpenFaultsList damages={damages} onChanged={load} />
+        <OpenFaultsList damages={damages} onChanged={load} currentUser={currentUser} />
       ) : tab === 'logs' ? (
-        <MaintenanceLogsList logs={logs} />
+        <MaintenanceLogsList logs={logs} isAdmin={isAdmin} onChanged={load} />
       ) : (
-        <QualificationsList qualifications={qualifications} />
+        <QualificationsList qualifications={qualifications} isAdmin={isAdmin} onChanged={load} />
       )}
     </div>
   )
@@ -152,8 +157,9 @@ const URGENCY_ORDER: Record<DamageUrgency, number> = { CRITICAL: 0, HIGH: 1, MED
 // (zaduživanje/razduživanje GSE) - automatski se pojavljuju ovdje, bez
 // dodatnog koraka, sortirane po hitnosti (najhitnije prvo), da
 // održavanje odmah vidi koje sredstvo i koji dio je u kvaru.
-function OpenFaultsList({ damages, onChanged }: { damages: OpenDamage[]; onChanged: () => void }) {
-  const [isPending, startTransition] = useTransition()
+function OpenFaultsList({ damages, onChanged, currentUser }: { damages: OpenDamage[]; onChanged: () => void; currentUser: AppUser }) {
+  const isAdmin = currentUser.role === 'admin'
+  const [editing, setEditing] = useState<OpenDamage | null>(null)
 
   const sorted = [...damages].sort((a, b) => {
     const ua = getDamageUrgency({ severity: a.severity, equipmentStatus: a.equipment?.status, status: a.status, createdAt: a.createdAt })
@@ -162,67 +168,93 @@ function OpenFaultsList({ damages, onChanged }: { damages: OpenDamage[]; onChang
     return new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
   })
 
-  const handleStatusChange = (damageId: string, newStatus: 'OPEN' | 'IN_REPAIR' | 'RESOLVED') => {
-    startTransition(async () => {
-      await updateDamageStatus({ damageId, status: newStatus })
-      toast.success('Status ažuriran')
-      onChanged()
-    })
-  }
-
   if (sorted.length === 0) {
     return (
       <Card>
         <CardContent className="py-10 text-center text-sm text-muted-foreground">
-          Sve sredstvo su ispravna — nema otvorenih prijava kvarova.
+          Sva sredstva su ispravna — nema otvorenih prijava kvarova.
         </CardContent>
       </Card>
     )
   }
 
+  // Ista kartica kao u "Neispravna sredstva": preuzmi → označi popravljeno → odobri (admin može i direktno riješiti)
   return (
     <div className="space-y-2">
       {sorted.map((d) => {
         const urgency = getDamageUrgency({ severity: d.severity, equipmentStatus: d.equipment?.status, status: d.status, createdAt: d.createdAt })
         return (
-          <Card key={d.id} className={urgency === 'CRITICAL' || urgency === 'HIGH' ? 'border-red-300' : ''}>
-            <CardContent className="p-3">
-              <div className="flex items-start justify-between gap-2">
-                <div className="flex-1 min-w-0">
-                  <div className="flex items-center gap-2 mb-1 flex-wrap">
-                    <Badge variant="outline" className="font-mono text-xs">{d.equipmentCode}</Badge>
-                    <Badge variant="outline" className="text-xs">{EQUIPMENT_TYPE_LABELS[d.equipment?.type as keyof typeof EQUIPMENT_TYPE_LABELS] ?? d.equipment?.type}</Badge>
-                    <Badge className={`text-xs font-semibold ${URGENCY_COLORS[urgency]}`}>Hitnost: {URGENCY_LABELS[urgency]}</Badge>
-                  </div>
-                  <div className="text-sm font-medium">{d.equipmentName}</div>
-                  <div className="text-sm text-muted-foreground mt-1">{d.description}</div>
-                  <div className="text-xs text-muted-foreground mt-1.5 flex items-center gap-2 flex-wrap">
-                    <span className="flex items-center gap-1"><User className="h-3 w-3" />{d.reportedByName}</span>
-                    <span className="flex items-center gap-1"><Calendar className="h-3 w-3" />{new Date(d.createdAt).toLocaleString('hr-HR')}</span>
-                  </div>
-                </div>
-                <Select
-                  value={d.status}
-                  onValueChange={(v) => handleStatusChange(d.id, v as 'OPEN' | 'IN_REPAIR' | 'RESOLVED')}
-                  disabled={isPending}
-                >
-                  <SelectTrigger className="h-8 w-[130px] text-xs"><SelectValue /></SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="OPEN">OPEN</SelectItem>
-                    <SelectItem value="IN_REPAIR">IN_REPAIR</SelectItem>
-                    <SelectItem value="RESOLVED">RESOLVED</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
-            </CardContent>
-          </Card>
+          <div key={d.id} className="space-y-1">
+            <div className="flex items-center gap-2 flex-wrap">
+              <Badge className={`text-xs font-semibold ${URGENCY_COLORS[urgency]}`}>Hitnost: {URGENCY_LABELS[urgency]}</Badge>
+              {isAdmin && (
+                <Button size="sm" variant="outline" className="h-7 ml-auto" onClick={() => setEditing(d)}>
+                  <Pencil className="h-3.5 w-3.5 mr-1" />Uredi prijavu
+                </Button>
+              )}
+            </div>
+            <DamageRowCard damage={d as any} onResolved={onChanged} currentUser={currentUser} />
+          </div>
         )
       })}
+      {editing && <EditDamageDialog damage={editing} onClose={() => setEditing(null)} onSaved={() => { setEditing(null); onChanged() }} />}
     </div>
   )
 }
 
-function MaintenanceLogsList({ logs }: { logs: MaintenanceLog[] }) {
+function EditDamageDialog({ damage, onClose, onSaved }: { damage: OpenDamage; onClose: () => void; onSaved: () => void }) {
+  const [description, setDescription] = useState(damage.description ?? '')
+  const [severity, setSeverity] = useState<string>(damage.severity)
+  const [category, setCategory] = useState<string>((damage as any).category ?? 'NONE')
+  const [pending, startTransition] = useTransition()
+  const save = () => startTransition(async () => {
+    const r = await updateDamageReport(damage.id, {
+      description, severity: severity as any, category: category === 'NONE' ? null : category,
+    })
+    if (!r.ok) { toast.error(r.error ?? 'Greška'); return }
+    toast.success('Prijava izmijenjena')
+    onSaved()
+  })
+  return (
+    <Dialog open onOpenChange={(o) => !o && onClose()}>
+      <DialogContent>
+        <DialogHeader>
+          <DialogTitle>Uredi prijavu kvara — {damage.equipmentCode}</DialogTitle>
+          <DialogDescription>Izmjena se bilježi u audit trag.</DialogDescription>
+        </DialogHeader>
+        <div className="space-y-3">
+          <div className="space-y-1"><Label>Opis</Label><Textarea rows={4} value={description} onChange={(e) => setDescription(e.target.value)} /></div>
+          <div className="grid grid-cols-2 gap-2">
+            <div className="space-y-1"><Label>Težina</Label>
+              <Select value={severity} onValueChange={setSeverity}>
+                <SelectTrigger><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="MINOR">Manje</SelectItem>
+                  <SelectItem value="MAJOR">Veće</SelectItem>
+                  <SelectItem value="CRITICAL">Kritično</SelectItem>
+                </SelectContent>
+              </Select></div>
+            <div className="space-y-1"><Label>Kategorija</Label>
+              <Select value={category} onValueChange={setCategory}>
+                <SelectTrigger><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="NONE">—</SelectItem>
+                  {CHECKLIST_CATEGORY_ORDER.map((c) => <SelectItem key={c} value={c}>{CHECKLIST_CATEGORY_LABELS[c]}</SelectItem>)}
+                </SelectContent>
+              </Select></div>
+          </div>
+        </div>
+        <DialogFooter>
+          <Button variant="outline" onClick={onClose}>Otkaži</Button>
+          <Button onClick={save} disabled={pending}>{pending && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}Snimi</Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  )
+}
+
+function MaintenanceLogsList({ logs, isAdmin, onChanged }: { logs: MaintenanceLog[]; isAdmin: boolean; onChanged: () => void }) {
+  const [editing, setEditing] = useState<MaintenanceLog | null>(null)
   const [search, setSearch] = useState('')
   const [typeFilter, setTypeFilter] = useState('ALL')
   const [statusFilter, setStatusFilter] = useState('ALL')
@@ -323,16 +355,99 @@ function MaintenanceLogsList({ logs }: { logs: MaintenanceLog[] }) {
                     </div>
                   )}
                 </div>
+                {isAdmin && (
+                  <Button size="sm" variant="outline" onClick={() => setEditing(log)}>
+                    <Pencil className="h-4 w-4 mr-1" />Uredi
+                  </Button>
+                )}
               </div>
             </Card>
           ))}
         </div>
       )}
+      {editing && <EditLogDialog log={editing} onClose={() => setEditing(null)} onSaved={() => { setEditing(null); onChanged() }} />}
     </div>
   )
 }
 
-function QualificationsList({ qualifications }: { qualifications: Qualification[] }) {
+
+function EditLogDialog({ log, onClose, onSaved }: { log: MaintenanceLog; onClose: () => void; onSaved: () => void }) {
+  const d10 = (v: any) => (v ? new Date(v).toISOString().slice(0, 10) : '')
+  const [maintenanceType, setMaintenanceType] = useState<string>(log.maintenanceType)
+  const [status, setStatus] = useState<string>(log.status)
+  const [description, setDescription] = useState(log.description ?? '')
+  const [performedBy, setPerformedBy] = useState(log.performedBy ?? '')
+  const [certificateNumber, setCertificateNumber] = useState(log.certificateNumber ?? '')
+  const [partsReplaced, setPartsReplaced] = useState(log.partsReplaced ?? '')
+  const [cost, setCost] = useState(log.cost != null ? String(log.cost) : '')
+  const [durationHours, setDurationHours] = useState(log.durationHours != null ? String(log.durationHours) : '')
+  const [nextDueDate, setNextDueDate] = useState(d10(log.nextDueDate))
+  const [pending, startTransition] = useTransition()
+  const num = (v: string) => (v.trim() === '' ? null : Number(v.replace(',', '.')))
+  const save = () => {
+    const c = num(cost), h = num(durationHours)
+    if ((c !== null && !Number.isFinite(c)) || (h !== null && !Number.isFinite(h))) { toast.error('Trošak i trajanje moraju biti brojevi'); return }
+    startTransition(async () => {
+      const r = await updateMaintenanceLog(log.id, {
+        maintenanceType: maintenanceType as any, status: status as any, description, performedBy,
+        certificateNumber, partsReplaced, cost: c, durationHours: h, nextDueDate: nextDueDate || null,
+      })
+      if (!r.ok) { toast.error(r.error ?? 'Greška'); return }
+      toast.success('Zapis izmijenjen')
+      onSaved()
+    })
+  }
+  return (
+    <Dialog open onOpenChange={(o) => !o && onClose()}>
+      <DialogContent className="max-w-lg max-h-[90vh] overflow-y-auto">
+        <DialogHeader>
+          <DialogTitle>Uredi zapis — {log.equipmentCode}</DialogTitle>
+          <DialogDescription>Zapisi se ne brišu: za poništenje postavite status „Otkazano“. Izmjena ide u audit trag.</DialogDescription>
+        </DialogHeader>
+        <div className="space-y-3">
+          <div className="grid grid-cols-2 gap-2">
+            <div className="space-y-1"><Label>Tip</Label>
+              <Select value={maintenanceType} onValueChange={setMaintenanceType}>
+                <SelectTrigger><SelectValue /></SelectTrigger>
+                <SelectContent>{Object.entries(MAINTENANCE_TYPE_LABELS).map(([k, v]) => <SelectItem key={k} value={k}>{v}</SelectItem>)}</SelectContent>
+              </Select></div>
+            <div className="space-y-1"><Label>Status</Label>
+              <Select value={status} onValueChange={setStatus}>
+                <SelectTrigger><SelectValue /></SelectTrigger>
+                <SelectContent>{Object.entries(MAINTENANCE_STATUS_LABELS).map(([k, v]) => <SelectItem key={k} value={k}>{v}</SelectItem>)}</SelectContent>
+              </Select></div>
+          </div>
+          <div className="space-y-1"><Label>Opis</Label><Textarea rows={3} value={description} onChange={(e) => setDescription(e.target.value)} /></div>
+          <div className="grid grid-cols-2 gap-2">
+            <div className="space-y-1"><Label>Izvršio</Label><Input value={performedBy} onChange={(e) => setPerformedBy(e.target.value)} /></div>
+            <div className="space-y-1"><Label>Broj certifikata</Label><Input value={certificateNumber} onChange={(e) => setCertificateNumber(e.target.value)} /></div>
+            <div className="space-y-1"><Label>Trošak (€)</Label><Input inputMode="decimal" value={cost} onChange={(e) => setCost(e.target.value)} /></div>
+            <div className="space-y-1"><Label>Trajanje (h)</Label><Input inputMode="decimal" value={durationHours} onChange={(e) => setDurationHours(e.target.value)} /></div>
+            <div className="space-y-1 col-span-2"><Label>Sljedeći rok</Label><Input type="date" value={nextDueDate} onChange={(e) => setNextDueDate(e.target.value)} /></div>
+          </div>
+          <div className="space-y-1"><Label>Zamijenjeni dijelovi</Label><Input value={partsReplaced} onChange={(e) => setPartsReplaced(e.target.value)} /></div>
+        </div>
+        <DialogFooter>
+          <Button variant="outline" onClick={onClose}>Otkaži</Button>
+          <Button onClick={save} disabled={pending}>{pending && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}Snimi</Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  )
+}
+
+function QualificationsList({ qualifications, isAdmin, onChanged }: { qualifications: Qualification[]; isAdmin: boolean; onChanged: () => void }) {
+  const [editing, setEditing] = useState<Qualification | null>(null)
+  const [, startDel] = useTransition()
+  const remove = (q: Qualification) => {
+    if (!window.confirm(`Obrisati kvalifikaciju ${q.employeeName} (${EQUIPMENT_TYPE_LABELS[q.equipmentType as keyof typeof EQUIPMENT_TYPE_LABELS] ?? q.equipmentType})?`)) return
+    startDel(async () => {
+      const r = await deleteQualification(q.id)
+      if (!r.ok) { toast.error(r.error ?? 'Greška'); return }
+      toast.success('Kvalifikacija obrisana')
+      onChanged()
+    })
+  }
   const [search, setSearch] = useState('')
   const [typeFilter, setTypeFilter] = useState('ALL')
   const [statusFilter, setStatusFilter] = useState('ALL')
@@ -480,13 +595,64 @@ function QualificationsList({ qualifications }: { qualifications: Qualification[
                       {q.certificateNumber && <span>Certifikat: {q.certificateNumber}</span>}
                     </div>
                   </div>
+                  {isAdmin && (
+                    <div className="flex gap-1">
+                      <Button size="sm" variant="outline" onClick={() => setEditing(q)}><Pencil className="h-4 w-4 mr-1" />Uredi</Button>
+                      <Button size="sm" variant="outline" aria-label="Obriši" onClick={() => remove(q)}><Trash2 className="h-4 w-4" /></Button>
+                    </div>
+                  )}
                 </div>
               </Card>
             )
           })}
         </div>
       )}
+      {editing && <EditQualificationDialog q={editing} onClose={() => setEditing(null)} onSaved={() => { setEditing(null); onChanged() }} />}
     </div>
+  )
+}
+
+function EditQualificationDialog({ q, onClose, onSaved }: { q: Qualification; onClose: () => void; onSaved: () => void }) {
+  const d10 = (v: any) => (v ? new Date(v).toISOString().slice(0, 10) : '')
+  const [level, setLevel] = useState<string>(q.qualificationLevel)
+  const [trainedAt, setTrainedAt] = useState(d10(q.trainedAt))
+  const [validUntil, setValidUntil] = useState(d10(q.validUntil))
+  const [certifiedBy, setCertifiedBy] = useState(q.certifiedBy ?? '')
+  const [certificateNumber, setCertificateNumber] = useState(q.certificateNumber ?? '')
+  const [pending, startTransition] = useTransition()
+  const save = () => startTransition(async () => {
+    const r = await updateQualification(q.id, {
+      qualificationLevel: level as any, trainedAt: trainedAt || null, validUntil: validUntil || null,
+      certifiedBy, certificateNumber,
+    })
+    if (!r.ok) { toast.error(r.error ?? 'Greška'); return }
+    toast.success('Kvalifikacija izmijenjena')
+    onSaved()
+  })
+  return (
+    <Dialog open onOpenChange={(o) => !o && onClose()}>
+      <DialogContent>
+        <DialogHeader>
+          <DialogTitle>Uredi kvalifikaciju — {q.employeeName}</DialogTitle>
+          <DialogDescription>{EQUIPMENT_TYPE_LABELS[q.equipmentType as keyof typeof EQUIPMENT_TYPE_LABELS] ?? q.equipmentType} · {q.employeeCardId}</DialogDescription>
+        </DialogHeader>
+        <div className="grid grid-cols-2 gap-2">
+          <div className="space-y-1 col-span-2"><Label>Nivo</Label>
+            <Select value={level} onValueChange={setLevel}>
+              <SelectTrigger><SelectValue /></SelectTrigger>
+              <SelectContent>{Object.entries(QUALIFICATION_LEVEL_LABELS).map(([k, v]) => <SelectItem key={k} value={k}>{v}</SelectItem>)}</SelectContent>
+            </Select></div>
+          <div className="space-y-1"><Label>Obučen</Label><Input type="date" value={trainedAt} onChange={(e) => setTrainedAt(e.target.value)} /></div>
+          <div className="space-y-1"><Label>Važi do</Label><Input type="date" value={validUntil} onChange={(e) => setValidUntil(e.target.value)} /></div>
+          <div className="space-y-1"><Label>Certifikovao</Label><Input value={certifiedBy} onChange={(e) => setCertifiedBy(e.target.value)} /></div>
+          <div className="space-y-1"><Label>Broj certifikata</Label><Input value={certificateNumber} onChange={(e) => setCertificateNumber(e.target.value)} /></div>
+        </div>
+        <DialogFooter>
+          <Button variant="outline" onClick={onClose}>Otkaži</Button>
+          <Button onClick={save} disabled={pending}>{pending && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}Snimi</Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
   )
 }
 

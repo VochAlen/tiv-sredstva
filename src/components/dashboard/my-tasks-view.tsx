@@ -4,7 +4,10 @@ import { useEffect, useMemo, useState } from 'react'
 import { CheckCircle2, ChevronRight, Loader2 } from 'lucide-react'
 import { formatExpiryLine, type ExpiryItem } from '@/lib/expiry'
 import { Card, CardContent } from '@/components/ui/card'
-import { getDailyInspectionStatus } from '@/lib/actions-adr'
+import { getInspectableEquipment } from '@/lib/actions-daily-inspection'
+import { DailyInspectionDialog } from './daily-inspection-dialog'
+import { Button } from '@/components/ui/button'
+import { ClipboardCheck } from 'lucide-react'
 import { getExpiringSoon } from '@/lib/actions-expiry'
 import { getFodReports, getWildlifeReports } from '@/lib/actions-safety-reports'
 import { roleAtLeast, computeMyTasks, type TaskDamage, type MyTask } from '@/lib/my-tasks'
@@ -26,7 +29,9 @@ export function MyTasksView({
   damages: TaskDamage[]
   onOpenTab: (tab: string) => void
 }) {
-  const [inspections, setInspections] = useState<Awaited<ReturnType<typeof getDailyInspectionStatus>> | null>(null)
+  const [inspections, setInspections] = useState<Awaited<ReturnType<typeof getInspectableEquipment>> | null>(null)
+  const [inspectOpen, setInspectOpen] = useState(false)
+  const [reload, setReload] = useState(0)
 
   const [openFod, setOpenFod] = useState(0)
   const [newWildlife, setNewWildlife] = useState(0)
@@ -40,11 +45,11 @@ export function MyTasksView({
 
   useEffect(() => {
     let cancelled = false
-    getDailyInspectionStatus()
+    getInspectableEquipment()
       .then((r) => { if (!cancelled) setInspections(r) })
       .catch(() => { if (!cancelled) setInspections([]) })
     return () => { cancelled = true }
-  }, [])
+  }, [reload])
 
   const tasks = useMemo(
     () => computeMyTasks(role, damages, inspections ?? [], openFod, newWildlife),
@@ -54,6 +59,15 @@ export function MyTasksView({
   return (
     <div className="space-y-3 max-w-2xl">
       <p className="text-sm text-muted-foreground">Zdravo, {fullName.split(' ')[0]}. Ovo čeka vas:</p>
+
+      <Button size="lg" className="w-full" onClick={() => setInspectOpen(true)}>
+        <ClipboardCheck className="h-5 w-5 mr-2" />Pokreni dnevni pregled vozila
+      </Button>
+      <DailyInspectionDialog
+        open={inspectOpen}
+        onOpenChange={setInspectOpen}
+        onDone={() => { setInspections(null); setReload((n) => n + 1) }}
+      />
 
       {inspections === null && (
         <div className="flex items-center gap-2 text-sm text-muted-foreground py-4">
@@ -85,7 +99,7 @@ export function MyTasksView({
         <button
           key={t.key}
           type="button"
-          onClick={() => onOpenTab(t.tab)}
+          onClick={() => (t.action === 'inspect' ? setInspectOpen(true) : onOpenTab(t.tab))}
           className={`w-full text-left rounded-lg border border-l-4 p-4 flex items-center gap-4 min-h-16 active:scale-[0.99] transition ${TONE[t.tone]}`}
         >
           <div className="text-3xl font-bold tabular-nums w-12 text-center">{t.count}</div>

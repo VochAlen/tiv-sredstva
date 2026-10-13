@@ -20,9 +20,19 @@ para je fiksan i ne smije se mijenjati:
 | 12 | 023_audit_trail.sql |
 | 13 | 024_fod_removal.sql |
 | 14 | 025_wildlife_admin.sql |
+| 15 | 026_fod_admin.sql |
+| 16 | 027_daily_inspection_rpc.sql |
 
 Fajlovi **nisu** preimenovani namjerno: ako ste ih već pokretali ručno po broju, preimenovanje
 ništa ne popravlja a pravi zabunu. Duplirani brojevi smetaju samo Supabase CLI-ju (`supabase db push`),
 koji traži jedinstvenu numeričku verziju — ako ga počnete koristiti, preimenovanje se radi jednom,
 zajedno sa `supabase migration repair`. Sve migracije su pisane da se mogu bezbjedno pokrenuti
 ponovo (`if not exists` / `drop ... if exists`).
+
+## Fajlovi izvan `migrations/` (ne pokreću se automatski)
+
+U `supabase/` postoje i stari samostalni SQL fajlovi sa brojevima koji se sudaraju sa gornjim
+(`020_department_and_daily_inspection_security.sql`, `021_prg0302_surface_maintenance.sql`,
+`022_fence_patrol_public.sql`, `seed-real-fleet.sql`). Oni nisu dio gornjeg niza; pokreću se samo
+ručno i samo ako ih već niste pokrenuli. Funkciju `fn_create_daily_inspection` sada postavlja
+migracija 027, pa ručno pokretanje `020_department_and_daily_inspection_security.sql` više nije potrebno.

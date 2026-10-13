@@ -23,6 +23,7 @@ export interface MyTask {
   detail: string
   count: number
   tab: string
+  action?: 'inspect'
   tone: 'red' | 'amber' | 'blue'
 }
 
@@ -113,6 +114,7 @@ export function computeMyTasks(
       detail: list(pending.map((i) => i.code)),
       count: pending.length,
       tab: 'adr',
+      action: 'inspect',
       tone: 'blue',
     })
   }
