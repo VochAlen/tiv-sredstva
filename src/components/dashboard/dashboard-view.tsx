@@ -5,6 +5,7 @@ import { QRCodeSVG } from 'qrcode.react'
 import { printQrLabels, svgOf } from '@/lib/qr-print'
 import { RestrictionBadges } from '@/components/restriction-badges'
 import { DamageRowCard } from '@/components/dashboard/damage-row-card'
+import { UsersAdminView } from '@/components/dashboard/users-admin-view'
 import { DailyListView, DailyStatsView, EquipmentReportView, InspectionLogView } from '@/components/dashboard/daily-reports-view'
 import { OverviewDetailTable, type OverviewKind } from '@/components/dashboard/overview-detail-table'
 import { deleteEquipment } from '@/lib/actions-admin-edit'
@@ -40,6 +41,7 @@ import {
   ClipboardCheck,
   ClipboardList,
   CalendarDays,
+  Users,
   FileText,
   AlertTriangle,
   Bird,
@@ -204,6 +206,7 @@ const NAV_GROUPS: NavGroup[] = [
   {
     label: 'Podešavanja',
     items: [
+      { value: 'users-admin', label: 'Korisnici i prava', icon: Users, minRole: 'admin' },
       { value: 'skills-admin', label: 'Kvalifikacije radionice', icon: Wrench, minRole: 'admin' },
       { value: 'notifications', label: 'Obavještenja', icon: Bell, minRole: 'admin' },
     ],
@@ -518,6 +521,10 @@ export function DashboardView({ currentUser }: { currentUser: AppUser }) {
 
         <TabsContent value="daily-list" className="space-y-4">
           <DailyListView initialDate={dailyDate} />
+        </TabsContent>
+
+        <TabsContent value="users-admin" className="space-y-4">
+          <UsersAdminView />
         </TabsContent>
 
         <TabsContent value="inspection-log" className="space-y-4">

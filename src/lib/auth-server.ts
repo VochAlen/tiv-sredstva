@@ -45,6 +45,9 @@ export async function getCurrentUser(): Promise<AppUser | null> {
     }
   }
 
+  // Deaktiviran nalog (admin ga je isključio) više ne smije koristiti aplikaciju
+  if (profile.active === false) return null
+
   return {
     id: profile.id,
     email: profile.email,

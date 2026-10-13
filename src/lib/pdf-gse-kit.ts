@@ -107,15 +107,15 @@ export function drawTableHead(c: Ctx, y: number, cols: Array<{ label: string; x:
 }
 
 /** Prazan okvir za ručna zapažanja + potpisi + podnožje. */
-export function drawRemarksAndFooter(c: Ctx, o: { boxTop: number; boxBottom: number; generatedBy: string; generatedAt: string; right?: string }) {
-  c.T('ZAPAZANJA / REMARKS', M, o.boxTop - 6, 7.5, c.bold, NAVY)
+export function drawRemarksAndFooter(c: Ctx, o: { boxTop: number; boxBottom: number; generatedBy: string; generatedAt: string; right?: string; remarksTitle?: string; sigLabels?: [string, string] }) {
+  c.T(o.remarksTitle ?? 'ZAPAZANJA / REMARKS', M, o.boxTop - 6, 7.5, c.bold, NAVY)
   c.page.drawRectangle({ x: M, y: o.boxBottom, width: W - 2 * M, height: o.boxTop - 12 - o.boxBottom, borderColor: LINE, borderWidth: 0.8 })
   for (let ly = o.boxTop - 12 - 13; ly > o.boxBottom + 3; ly -= 13) {
     c.page.drawLine({ start: { x: M + 6, y: ly }, end: { x: W - M - 6, y: ly }, thickness: 0.4, color: LINE })
   }
   const sigY = 62
   const half = (W - 2 * M - 30) / 2
-  ;([['Pregledao / Checked by (ime i potpis)', M], ['Sef sluzbe / Approved by (potpis i pecat)', M + half + 30]] as Array<[string, number]>).forEach(([label, x]) => {
+  ;([[o.sigLabels?.[0] ?? 'Pregledao / Checked by (ime i potpis)', M], [o.sigLabels?.[1] ?? 'Sef sluzbe / Approved by (potpis i pecat)', M + half + 30]] as Array<[string, number]>).forEach(([label, x]) => {
     c.page.drawLine({ start: { x, y: sigY }, end: { x: x + half, y: sigY }, thickness: 0.6, color: INK })
     c.T(label, x, sigY - 9, 6.5, c.font, MUTED)
   })

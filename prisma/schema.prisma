@@ -16,6 +16,7 @@ model Employee {
   name       String
   department String   @default("Ramp")
   role       String   @default("Operator")
+  airport    String   @default("TIVAT") // TIVAT | PODGORICA
   active     Boolean  @default(true)
   pin        String? // 4-digit PIN for no-login worker identification
   idCardQr   String? // QR kod na ID kartici
