@@ -22,6 +22,8 @@ import {
 import { toast } from 'sonner'
 import { createFodReport, createWildlifeReport } from '@/lib/actions-safety-reports'
 import { FOD_ITEM_TYPE_LABELS } from '@/lib/constants-export'
+import { AirportMap } from '@/components/airport-map'
+import { SPECIES, ZONES, toNorm, zoneById, type ZoneId } from '@/lib/airport-map'
 
 export function QuickReportDialog({
   open,
@@ -44,28 +46,36 @@ export function QuickReportDialog({
   const [foundByName, setFoundByName] = useState('')
 
   // Wildlife polja
-  const [species, setSpecies] = useState('')
+  const [species, setSpecies] = useState('') // slobodan tekst, samo za "Ostalo"
+  const [speciesCode, setSpeciesCode] = useState('')
+  const [zone, setZone] = useState<ZoneId | ''>('')
+  const [point, setPoint] = useState<{ x: number; y: number } | null>(null)
   const [count, setCount] = useState('1')
   const [strike, setStrike] = useState(false)
 
   const reset = () => {
     setLocation(''); setItemType('OTHER'); setDescription(''); setAircraftPartSuspected(false); setRemoved(false); setFoundByName('')
-    setSpecies(''); setCount('1'); setStrike(false)
+    setSpecies(''); setSpeciesCode(''); setZone(''); setPoint(null); setCount('1'); setStrike(false)
   }
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault()
-    if (!location.trim() || !foundByName.trim()) {
-      toast.error('Popunite lokaciju i ime')
+    if (type === 'FOD' && !location.trim()) {
+      toast.error('Popunite lokaciju')
+      return
+    }
+    if (!foundByName.trim()) {
+      toast.error('Unesite vaše ime')
       return
     }
     if (type === 'FOD' && !description.trim()) {
       toast.error('Opišite šta ste pronašli')
       return
     }
-    if (type === 'WILDLIFE' && !species.trim()) {
-      toast.error('Unesite vrstu životinje')
-      return
+    if (type === 'WILDLIFE') {
+      if (!speciesCode) { toast.error('Izaberite vrstu životinje'); return }
+      if (speciesCode === 'OTHER' && !species.trim()) { toast.error('Upišite vrstu životinje'); return }
+      if (!zone) { toast.error('Označite lokaciju: dodirnite mapu ili izaberite zonu'); return }
     }
 
     startTransition(async () => {
@@ -78,8 +88,10 @@ export function QuickReportDialog({
           toast.success('FOD prijava poslana. Hvala!')
         } else {
           await createWildlifeReport({
-            species, count: parseInt(count) || 1, location, strike,
-            reportedByName: foundByName,
+            species: speciesCode === 'OTHER' ? species : (SPECIES.find((x) => x.id === speciesCode)?.label ?? species),
+            speciesCode, count: parseInt(count) || 1, zone: zone || undefined,
+            ...(point ? toNorm(point.x, point.y) : {}),
+            strike, reportedByName: foundByName,
           })
           toast.success('Prijava poslana. Hvala!')
         }
@@ -93,7 +105,7 @@ export function QuickReportDialog({
 
   return (
     <Dialog open={open} onOpenChange={(v) => { onOpenChange(v); if (!v) reset() }}>
-      <DialogContent className="max-w-sm">
+      <DialogContent className={type === 'WILDLIFE' ? 'max-w-xl max-h-[92vh] overflow-y-auto' : 'max-w-sm'}>
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
             {type === 'FOD' ? <AlertTriangle className="h-5 w-5 text-amber-600" /> : <Bird className="h-5 w-5 text-emerald-600" />}
@@ -102,15 +114,17 @@ export function QuickReportDialog({
           <DialogDescription>
             {type === 'FOD'
               ? 'Kratka prijava — bez skeniranja opreme. Koristi se za sve strane predmete na manevarskim/apron površinama.'
-              : 'Kratka prijava opažanja ili sudara sa divljom životinjom.'}
+              : 'Izaberite vrstu i dodirnite mjesto na mapi. Gotovo za par sekundi.'}
           </DialogDescription>
         </DialogHeader>
 
         <form onSubmit={handleSubmit} className="space-y-3">
-          <div className="space-y-1.5">
-            <Label>Lokacija *</Label>
-            <Input value={location} onChange={(e) => setLocation(e.target.value)} placeholder="npr. Stand A1, Taxiway B" required />
-          </div>
+          {type === 'FOD' && (
+            <div className="space-y-1.5">
+              <Label>Lokacija *</Label>
+              <Input value={location} onChange={(e) => setLocation(e.target.value)} placeholder="npr. Stand A1, Taxiway B" required />
+            </div>
+          )}
 
           {type === 'FOD' ? (
             <>
@@ -138,20 +152,59 @@ export function QuickReportDialog({
             </>
           ) : (
             <>
-              <div className="grid grid-cols-2 gap-2">
-                <div className="space-y-1.5">
-                  <Label>Vrsta *</Label>
-                  <Input value={species} onChange={(e) => setSpecies(e.target.value)} placeholder="npr. galeb, lisica" required />
+              <div className="space-y-1.5">
+                <Label>1. Vrsta *</Label>
+                <div className="grid grid-cols-2 sm:grid-cols-3 gap-1.5">
+                  {SPECIES.map((sp) => (
+                    <button
+                      key={sp.id}
+                      type="button"
+                      onClick={() => setSpeciesCode(sp.id)}
+                      className={`min-h-11 rounded-lg border-2 px-2 text-sm font-semibold text-left flex items-center gap-2 ${speciesCode === sp.id ? 'border-primary bg-primary/10' : 'border-border'}`}
+                    >
+                      <span className="h-3 w-3 rounded-full flex-shrink-0" style={{ background: sp.color }} />
+                      <span className="leading-tight">{sp.short}</span>
+                    </button>
+                  ))}
                 </div>
+                {speciesCode === 'OTHER' && (
+                  <Input value={species} onChange={(e) => setSpecies(e.target.value)} placeholder="Koja vrsta? (npr. kornjača, zmija)" />
+                )}
+              </div>
+
+              <div className="space-y-1.5">
+                <Label>2. Gdje? * <span className="font-normal text-muted-foreground">dodirnite mapu ili izaberite zonu</span></Label>
+                <AirportMap
+                  mode="pick"
+                  selectedZone={zone || null}
+                  point={point}
+                  onPick={({ x, y, zone: z }) => { setPoint({ x, y }); setZone(z) }}
+                />
+                <div className="grid grid-cols-3 gap-1.5">
+                  {ZONES.map((z) => (
+                    <button
+                      key={z.id}
+                      type="button"
+                      onClick={() => { setZone(z.id); setPoint(null) }}
+                      className={`min-h-11 rounded-lg border-2 px-2 text-sm font-semibold ${zone === z.id ? 'border-primary bg-primary/10' : 'border-border'}`}
+                    >
+                      {z.short}
+                    </button>
+                  ))}
+                </div>
+                {zone && <p className="text-xs text-muted-foreground">Izabrano: <b>{zoneById(zone)?.label}</b>{point ? ' (tačka označena na mapi)' : ''}</p>}
+              </div>
+
+              <div className="grid grid-cols-2 gap-2 items-end">
                 <div className="space-y-1.5">
                   <Label>Broj jedinki</Label>
                   <Input type="number" min="1" value={count} onChange={(e) => setCount(e.target.value)} />
                 </div>
+                <label className="flex items-center gap-2 text-sm cursor-pointer p-2 border rounded min-h-10">
+                  <input type="checkbox" checked={strike} onChange={(e) => setStrike(e.target.checked)} className="h-4 w-4" />
+                  Sudar sa vazduhoplovom
+                </label>
               </div>
-              <label className="flex items-center gap-2 text-sm cursor-pointer p-2 border rounded">
-                <input type="checkbox" checked={strike} onChange={(e) => setStrike(e.target.checked)} className="h-4 w-4" />
-                Došlo je do sudara sa vazduhoplovom
-              </label>
             </>
           )}
 

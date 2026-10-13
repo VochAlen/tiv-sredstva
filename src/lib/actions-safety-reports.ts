@@ -12,6 +12,7 @@ import { isDemoMode } from '@/lib/auth-mode'
 import { getCurrentUser, type AppUser } from '@/lib/auth-server'
 import { createClientAsync as createSupabaseClient } from '@/lib/supabase/server'
 import { revalidatePath } from 'next/cache'
+import { ZONE_IDS, SPECIES_IDS, speciesById, speciesGroupOf, zoneById, zoneLabel, zoneAt, fromNorm, approxPoint } from '@/lib/airport-map'
 
 async function requireRole(roles: Array<'operator' | 'engineer' | 'admin'>): Promise<AppUser> {
   const user = await getCurrentUser()
@@ -207,23 +208,42 @@ export async function getFodStats() {
 
 export async function createWildlifeReport(params: {
   species: string
+  speciesCode?: string
   count?: number
-  location: string
+  location?: string
+  zone?: string // RWY_1 | RWY_2 | RWY_3 | TWY | APRON | SURROUNDING
+  mapX?: number // 0..1 (tačka dodirnuta na mapi); bez nje se koristi samo zona
+  mapY?: number
   strike?: boolean
   actionTaken?: string
   damageDescription?: string
   reportedByCardId?: string
   reportedByName: string
 }) {
-  // Javna funkcija — radnici prijavljuju opažanje/sudar bez login-a
+  // Javna funkcija — radnici prijavljuju opažanje/sudar bez login-a, zato se SVE validira ovdje
+
+  const zone = params.zone && (ZONE_IDS as string[]).includes(params.zone) ? params.zone : null
+  const speciesCode = params.speciesCode && SPECIES_IDS.includes(params.speciesCode) ? params.speciesCode : null
+  const species = (params.species ?? '').trim().slice(0, 80) || (speciesCode && speciesCode !== 'OTHER' ? speciesById(speciesCode).label : '')
+  if (!species) throw new Error('Vrsta je obavezna')
+  const location = (params.location ?? '').trim().slice(0, 120) || (zone ? zoneLabel(zone) : '')
+  if (!location) throw new Error('Lokacija je obavezna')
+  const name = (params.reportedByName ?? '').trim().slice(0, 100)
+  if (!name) throw new Error('Ime je obavezno')
+  const count = Math.min(Math.max(Math.trunc(params.count ?? 1) || 1, 1), 9999)
+  const inUnit = (v: unknown) => (typeof v === 'number' && Number.isFinite(v) && v >= 0 && v <= 1 ? Math.round(v * 10000) / 10000 : null)
+  const mapX = zone ? inUnit(params.mapX) : null
+  const mapY = zone ? inUnit(params.mapY) : null
+  const hasPoint = mapX !== null && mapY !== null
 
   if (isDemoMode()) {
     const report = await db.wildlifeReport.create({
       data: {
-        species: params.species, count: params.count ?? 1, location: params.location,
+        species, speciesCode, count, location, zone,
+        mapX: hasPoint ? mapX : null, mapY: hasPoint ? mapY : null,
         strike: params.strike ?? false, actionTaken: params.actionTaken ?? null,
         damageDescription: params.damageDescription ?? null,
-        reportedByCardId: params.reportedByCardId ?? null, reportedByName: params.reportedByName,
+        reportedByCardId: params.reportedByCardId ?? null, reportedByName: name,
       },
     })
     revalidatePath('/dashboard')
@@ -232,17 +252,72 @@ export async function createWildlifeReport(params: {
 
   const supabase = await createSupabaseClient()
   const id = crypto.randomUUID()
-  const { error } = await supabase.from('wildlife_reports').insert({
+  const legacy = {
     id,
-    species: params.species, count: params.count ?? 1, location: params.location,
+    species, count, location,
     strike: params.strike ?? false, action_taken: params.actionTaken ?? null,
     damage_description: params.damageDescription ?? null,
-    reported_by_card_id: params.reportedByCardId ?? null, reported_by_name: params.reportedByName,
+    reported_by_card_id: params.reportedByCardId ?? null, reported_by_name: name,
+  }
+  let { error } = await supabase.from('wildlife_reports').insert({
+    ...legacy, species_code: speciesCode, zone,
+    map_x: hasPoint ? mapX : null, map_y: hasPoint ? mapY : null,
   })
+  // Migracija 030 još nije pokrenuta: prijava se ipak snima (bez mape), radnik ne smije ostati bez mogućnosti prijave
+  if (error && /species_code|map_x|map_y|zone/i.test(error.message ?? '')) {
+    ;({ error } = await supabase.from('wildlife_reports').insert(legacy))
+  }
 
   if (error) throw error
   revalidatePath('/dashboard')
   return { ok: true, id }
+}
+
+// Tačke za heatmapu (engineer+). Prijave bez tačke dobijaju mjesto unutar svoje zone; bez zone se broje kao "nepozicionirane".
+export interface WildlifeMapPoint { id: string; x: number; y: number; count: number; strike: boolean; speciesId: string; zone: string; approx: boolean; observedAt: string }
+export async function getWildlifeMapPoints(params?: { days?: number | null }): Promise<{ points: WildlifeMapPoint[]; unplaced: number }> {
+  await requireRole(['engineer', 'admin'])
+  const days = params?.days ?? null
+  const since = days ? new Date(Date.now() - days * 86400000) : null
+
+  type Raw = { id: string; species: string; speciesCode: string | null; count: number | null; strike: boolean | null; zone: string | null; mapX: number | null; mapY: number | null; observedAt: Date }
+  let rows: Raw[] = []
+  if (isDemoMode()) {
+    const r = await db.wildlifeReport.findMany({
+      where: since ? { observedAt: { gte: since } } : undefined,
+      orderBy: { observedAt: 'desc' }, take: 5000,
+    })
+    rows = r.map((w) => ({ id: w.id, species: w.species, speciesCode: w.speciesCode, count: w.count, strike: w.strike, zone: w.zone, mapX: w.mapX, mapY: w.mapY, observedAt: w.observedAt }))
+  } else {
+    const supabase = await createSupabaseClient()
+    for (let from = 0; from < 5000; from += 1000) {
+      let q = supabase.from('wildlife_reports').select('id,species,species_code,count,strike,zone,map_x,map_y,observed_at').order('observed_at', { ascending: false }).range(from, from + 999)
+      if (since) q = q.gte('observed_at', since.toISOString())
+      const { data, error } = await q
+      if (error) throw new Error(error.message)
+      for (const w of data ?? []) {
+        rows.push({ id: w.id, species: w.species, speciesCode: w.species_code ?? null, count: w.count, strike: w.strike, zone: w.zone ?? null, mapX: w.map_x === null ? null : Number(w.map_x), mapY: w.map_y === null ? null : Number(w.map_y), observedAt: new Date(w.observed_at) })
+      }
+      if (!data || data.length < 1000) break
+    }
+  }
+
+  const points: WildlifeMapPoint[] = []
+  let unplaced = 0
+  for (const w of rows) {
+    const sp = speciesGroupOf(w.speciesCode, w.species)
+    const base = { id: w.id, count: Math.max(1, w.count ?? 1), strike: !!w.strike, speciesId: sp.id, observedAt: w.observedAt.toISOString() }
+    if (w.mapX !== null && w.mapY !== null) {
+      const { x, y } = fromNorm(w.mapX, w.mapY)
+      points.push({ ...base, x, y, zone: w.zone ?? zoneAt(x, y), approx: false })
+    } else if (w.zone && zoneById(w.zone)) {
+      const { x, y } = approxPoint(w.id, w.zone)
+      points.push({ ...base, x, y, zone: w.zone, approx: true })
+    } else {
+      unplaced++
+    }
+  }
+  return { points, unplaced }
 }
 
 export async function getWildlifeReports(params?: { limit?: number }) {
@@ -256,7 +331,7 @@ export async function getWildlifeReports(params?: { limit?: number }) {
   const supabase = await createSupabaseClient()
   const { data } = await supabase.from('wildlife_reports').select('*').order('observed_at', { ascending: false }).limit(limit)
   return (data ?? []).map((w: any) => ({
-    id: w.id, species: w.species, count: w.count, location: w.location, strike: w.strike,
+    id: w.id, species: w.species, speciesCode: w.species_code ?? null, zone: w.zone ?? null, count: w.count, location: w.location, strike: w.strike,
     actionTaken: w.action_taken, damageDescription: w.damage_description,
     status: w.status ?? 'NEW', adminNotes: w.admin_notes ?? null, updatedBy: w.updated_by ?? null,
     reportedByCardId: w.reported_by_card_id, reportedByName: w.reported_by_name,

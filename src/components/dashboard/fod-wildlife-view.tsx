@@ -15,6 +15,7 @@ import {
 import { FodEditDialog } from './fod-edit-dialog'
 import { WildlifeEditDialog, WILDLIFE_STATUS_LABELS } from './wildlife-edit-dialog'
 import { FOD_ITEM_TYPE_LABELS } from '@/lib/constants-export'
+import { WildlifeHeatmap } from './wildlife-heatmap'
 
 export function FodWildlifeView({ isAdmin = false }: { isAdmin?: boolean }) {
   const [tab, setTab] = useState('fod')
@@ -129,6 +130,8 @@ export function FodWildlifeView({ isAdmin = false }: { isAdmin?: boolean }) {
               <StatCard label="Sudari" value={wildlifeStats.strikes} tone="red" />
             </div>
           )}
+
+          <WildlifeHeatmap refreshKey={wildlifeReports.length} />
 
           {loading ? (
             <div className="flex items-center justify-center py-12"><Loader2 className="h-6 w-6 animate-spin text-muted-foreground" /></div>

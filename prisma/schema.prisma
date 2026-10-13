@@ -920,6 +920,12 @@ model WildlifeReport {
   location String
   strike   Boolean @default(false) // da li je bio sudar sa vazduhoplovom
 
+  // Lokacija na mapi aerodroma (heatmapa)
+  zone        String? // RWY_1 | RWY_2 | RWY_3 | TWY | APRON | SURROUNDING
+  mapX        Float? // 0..1 (null = samo zona)
+  mapY        Float?
+  speciesCode String? // GALEB | GOLUB | ... | OTHER
+
   actionTaken String? // npr. "Otjerano", "Prijavljeno nadleznom organu"
   damageDescription String?
 
