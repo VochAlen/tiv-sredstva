@@ -85,14 +85,19 @@ export async function addFuelLog(params: {
   }
 
   const supabase = await createSupabaseClient()
-  const { data, error } = await supabase.from('fuel_logs').insert({
+  // ID se generiše unaprijed (umjesto .select().single() čitanja nazad) jer
+  // SELECT na fuel_logs je ograničen na authenticated (migracija 017), a ovu
+  // funkciju namjerno zovu i neprijavljeni radnici (anon INSERT i dalje dozvoljen).
+  const id = crypto.randomUUID()
+  const { error } = await supabase.from('fuel_logs').insert({
+    id,
     equipment_id: params.equipmentId, equipment_code: params.equipmentCode, equipment_name: params.equipmentName,
     fuel_type: params.fuelType, amount: params.amount, unit: params.unit ?? 'L',
     level_before: params.levelBefore ?? null, level_after: params.levelAfter ?? null,
     pump_station: params.pumpStation ?? null, cost_per_unit: params.costPerUnit ?? null,
     total_cost: params.totalCost ?? null, operator_card_id: params.operatorCardId,
     operator_name: params.operatorName, notes: params.notes ?? null,
-  }).select().single()
+  })
 
   if (error) throw error
 
@@ -101,7 +106,7 @@ export async function addFuelLog(params: {
   }
 
   revalidatePath('/dashboard')
-  return { ok: true, id: data?.id }
+  return { ok: true, id }
 }
 
 export async function getFuelStats() {
@@ -113,7 +118,12 @@ export async function getFuelStats() {
       db.fuelLog.aggregate({ where: { fuelType: 'DIESEL' }, _sum: { amount: true, totalCost: true } }),
       db.fuelLog.aggregate({ where: { fuelType: 'ELECTRIC' }, _sum: { amount: true, totalCost: true } }),
     ])
-    const lowFuel = await db.equipment.count({ where: { fuelLevel: { lt: db.equipment.fields.lowFuelThreshold } } })
+    // Napomena: Prisma ne podržava poređenje dvije kolone unutar `where` (nema
+    // `db.equipment.fields.X`), pa se filtrira u JS-u nakon učitavanja.
+    const allEquipmentForFuel = await db.equipment.findMany({ select: { fuelLevel: true, lowFuelThreshold: true } })
+    const lowFuel = allEquipmentForFuel.filter(
+      (e) => (e.fuelLevel ?? 0) < (e.lowFuelThreshold ?? 20)
+    ).length
 
     return {
       totalEntries: logs,
@@ -214,7 +224,11 @@ export async function addParkingConfirmation(params: {
   }
 
   const supabase = await createSupabaseClient()
-  const { data, error } = await supabase.from('parking_confirmations').insert({
+  // ID se generiše unaprijed iz istog razloga kao u addFuelLog (vidi komentar
+  // tamo) — SELECT na parking_confirmations je ograničen na authenticated.
+  const id = crypto.randomUUID()
+  const { error } = await supabase.from('parking_confirmations').insert({
+    id,
     equipment_id: params.equipmentId, equipment_code: params.equipmentCode, equipment_name: params.equipmentName,
     operator_card_id: params.operatorCardId, operator_name: params.operatorName,
     parked_at_designated_spot: params.parkedAtDesignatedSpot, handbrake_engaged: params.handbrakeEngaged,
@@ -222,11 +236,11 @@ export async function addParkingConfirmation(params: {
     chocks_placed: params.chocksPlaced ?? false, parking_location: params.parkingLocation ?? null,
     photo_url: params.photoUrl ?? null, assignment_id: params.assignmentId ?? null,
     all_confirmed: allConfirmed, issues_reported: issues,
-  }).select().single()
+  })
 
   if (error) throw error
   revalidatePath('/dashboard')
-  return { ok: true, id: data?.id, allConfirmed }
+  return { ok: true, id, allConfirmed }
 }
 
 export async function getParkingStats() {

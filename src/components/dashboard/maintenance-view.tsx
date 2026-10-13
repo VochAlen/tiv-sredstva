@@ -1,7 +1,7 @@
 'use client'
 
 import { useEffect, useState, useTransition } from 'react'
-import { Wrench, Plus, Loader2, Calendar, Award, FileText, Search, Download } from 'lucide-react'
+import { Wrench, Plus, Loader2, Calendar, Award, FileText, Search, Download, AlertOctagon, User } from 'lucide-react'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
@@ -19,37 +19,50 @@ import {
   getMaintenanceLogs, createMaintenanceLog,
   getQualifications, createQualification,
 } from '@/lib/actions-advanced'
+import { getOpenDamages, updateDamageStatus } from '@/lib/actions'
+import { getInspectionAlerts } from '@/lib/actions-advanced'
+import { filterDueThisMonth, type InspectionAlertLike } from '@/lib/maintenance-due'
 import {
   MAINTENANCE_TYPE_LABELS, MAINTENANCE_STATUS_LABELS, MAINTENANCE_STATUS_COLORS,
   QUALIFICATION_LEVEL_LABELS,
 } from '@/lib/types-advanced'
 import { EQUIPMENT_TYPE_LABELS } from '@/lib/types'
+import { getDamageUrgency, URGENCY_LABELS, URGENCY_COLORS, type DamageUrgency } from '@/lib/damage-urgency'
 
 type MaintenanceLog = Awaited<ReturnType<typeof getMaintenanceLogs>>[number]
 type Qualification = Awaited<ReturnType<typeof getQualifications>>[number]
+type OpenDamage = Awaited<ReturnType<typeof getOpenDamages>>[number]
 
 export function MaintenanceView() {
-  const [tab, setTab] = useState<'logs' | 'qualifications'>('logs')
+  const [tab, setTab] = useState<'faults' | 'logs' | 'qualifications'>('faults')
+  const [damages, setDamages] = useState<OpenDamage[]>([])
   const [logs, setLogs] = useState<MaintenanceLog[]>([])
   const [qualifications, setQualifications] = useState<Qualification[]>([])
+  const [inspectionAlerts, setInspectionAlerts] = useState<InspectionAlertLike[]>([])
   const [loading, setLoading] = useState(true)
   const [isPending, startTransition] = useTransition()
 
   const load = async () => {
     setLoading(true)
     try {
-      const [l, q] = await Promise.all([
+      const [d, l, q, ia] = await Promise.all([
+        getOpenDamages(),
         getMaintenanceLogs(),
         getQualifications(),
+        getInspectionAlerts(),
       ])
+      setDamages(d)
       setLogs(l)
       setQualifications(q)
+      setInspectionAlerts(ia)
     } catch (e) {
       console.error(e)
     } finally {
       setLoading(false)
     }
   }
+
+  const dueThisMonth = filterDueThisMonth(inspectionAlerts)
 
   useEffect(() => { load() }, [])
 
@@ -66,11 +79,42 @@ export function MaintenanceView() {
           </p>
         </div>
         <div className="flex gap-2">
-          {tab === 'logs' ? <AddMaintenanceDialog onCreated={load} /> : <AddQualificationDialog onCreated={load} />}
+          {tab === 'logs' ? <AddMaintenanceDialog onCreated={load} /> : tab === 'qualifications' ? <AddQualificationDialog onCreated={load} /> : null}
         </div>
       </div>
 
+      {dueThisMonth.length > 0 && (
+        <Card className="border-amber-300 bg-amber-50/50">
+          <CardHeader className="pb-2">
+            <CardTitle className="text-sm flex items-center gap-2">
+              <Calendar className="h-4 w-4 text-amber-700" />
+              Dospijeva ovog mjeseca ({dueThisMonth.length})
+            </CardTitle>
+          </CardHeader>
+          <CardContent className="pt-0">
+            <div className="flex flex-wrap gap-2">
+              {dueThisMonth.slice(0, 12).map((a) => (
+                <div
+                  key={a.id}
+                  className={`flex items-center gap-2 px-2.5 py-1.5 rounded-lg text-xs border ${a.status === 'OVERDUE' ? 'bg-red-100 border-red-300 text-red-800' : 'bg-amber-100 border-amber-300 text-amber-800'}`}
+                >
+                  <span className="font-mono font-semibold">{a.code}</span>
+                  <span>{a.status === 'OVERDUE' ? `isteklo ${Math.abs(a.daysUntilDue ?? 0)}d` : `za ${a.daysUntilDue}d`}</span>
+                </div>
+              ))}
+            </div>
+          </CardContent>
+        </Card>
+      )}
+
       <div className="flex gap-2 border-b">
+        <button
+          onClick={() => setTab('faults')}
+          className={`px-4 py-2 text-sm font-medium border-b-2 transition ${tab === 'faults' ? 'border-primary text-primary' : 'border-transparent text-muted-foreground hover:text-foreground'}`}
+        >
+          <AlertOctagon className="h-4 w-4 inline mr-1.5" />
+          Prijave kvarova ({damages.length})
+        </button>
         <button
           onClick={() => setTab('logs')}
           className={`px-4 py-2 text-sm font-medium border-b-2 transition ${tab === 'logs' ? 'border-primary text-primary' : 'border-transparent text-muted-foreground hover:text-foreground'}`}
@@ -91,11 +135,89 @@ export function MaintenanceView() {
         <div className="flex items-center justify-center py-12">
           <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
         </div>
+      ) : tab === 'faults' ? (
+        <OpenFaultsList damages={damages} onChanged={load} />
       ) : tab === 'logs' ? (
         <MaintenanceLogsList logs={logs} />
       ) : (
         <QualificationsList qualifications={qualifications} />
       )}
+    </div>
+  )
+}
+
+const URGENCY_ORDER: Record<DamageUrgency, number> = { CRITICAL: 0, HIGH: 1, MEDIUM: 2, LOW: 3 }
+
+// Prijave kvarova koje je osoblje unijelo prilikom jutarnjeg pregleda
+// (zaduživanje/razduživanje GSE) - automatski se pojavljuju ovdje, bez
+// dodatnog koraka, sortirane po hitnosti (najhitnije prvo), da
+// održavanje odmah vidi koje sredstvo i koji dio je u kvaru.
+function OpenFaultsList({ damages, onChanged }: { damages: OpenDamage[]; onChanged: () => void }) {
+  const [isPending, startTransition] = useTransition()
+
+  const sorted = [...damages].sort((a, b) => {
+    const ua = getDamageUrgency({ severity: a.severity, equipmentStatus: a.equipment?.status, status: a.status, createdAt: a.createdAt })
+    const ub = getDamageUrgency({ severity: b.severity, equipmentStatus: b.equipment?.status, status: b.status, createdAt: b.createdAt })
+    if (URGENCY_ORDER[ua] !== URGENCY_ORDER[ub]) return URGENCY_ORDER[ua] - URGENCY_ORDER[ub]
+    return new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
+  })
+
+  const handleStatusChange = (damageId: string, newStatus: 'OPEN' | 'IN_REPAIR' | 'RESOLVED') => {
+    startTransition(async () => {
+      await updateDamageStatus({ damageId, status: newStatus })
+      toast.success('Status ažuriran')
+      onChanged()
+    })
+  }
+
+  if (sorted.length === 0) {
+    return (
+      <Card>
+        <CardContent className="py-10 text-center text-sm text-muted-foreground">
+          Sve sredstvo su ispravna — nema otvorenih prijava kvarova.
+        </CardContent>
+      </Card>
+    )
+  }
+
+  return (
+    <div className="space-y-2">
+      {sorted.map((d) => {
+        const urgency = getDamageUrgency({ severity: d.severity, equipmentStatus: d.equipment?.status, status: d.status, createdAt: d.createdAt })
+        return (
+          <Card key={d.id} className={urgency === 'CRITICAL' || urgency === 'HIGH' ? 'border-red-300' : ''}>
+            <CardContent className="p-3">
+              <div className="flex items-start justify-between gap-2">
+                <div className="flex-1 min-w-0">
+                  <div className="flex items-center gap-2 mb-1 flex-wrap">
+                    <Badge variant="outline" className="font-mono text-xs">{d.equipmentCode}</Badge>
+                    <Badge variant="outline" className="text-xs">{EQUIPMENT_TYPE_LABELS[d.equipment?.type as keyof typeof EQUIPMENT_TYPE_LABELS] ?? d.equipment?.type}</Badge>
+                    <Badge className={`text-xs font-semibold ${URGENCY_COLORS[urgency]}`}>Hitnost: {URGENCY_LABELS[urgency]}</Badge>
+                  </div>
+                  <div className="text-sm font-medium">{d.equipmentName}</div>
+                  <div className="text-sm text-muted-foreground mt-1">{d.description}</div>
+                  <div className="text-xs text-muted-foreground mt-1.5 flex items-center gap-2 flex-wrap">
+                    <span className="flex items-center gap-1"><User className="h-3 w-3" />{d.reportedByName}</span>
+                    <span className="flex items-center gap-1"><Calendar className="h-3 w-3" />{new Date(d.createdAt).toLocaleString('hr-HR')}</span>
+                  </div>
+                </div>
+                <Select
+                  value={d.status}
+                  onValueChange={(v) => handleStatusChange(d.id, v as 'OPEN' | 'IN_REPAIR' | 'RESOLVED')}
+                  disabled={isPending}
+                >
+                  <SelectTrigger className="h-8 w-[130px] text-xs"><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="OPEN">OPEN</SelectItem>
+                    <SelectItem value="IN_REPAIR">IN_REPAIR</SelectItem>
+                    <SelectItem value="RESOLVED">RESOLVED</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+            </CardContent>
+          </Card>
+        )
+      })}
     </div>
   )
 }

@@ -837,6 +837,71 @@ model ParkingConfirmation {
   @@index([operatorCardId])
 }
 
+// =====================================================
+// ADR.OPS.B.016 — Foreign Object Debris (FOD) kontrolni program
+// =====================================================
+model FodReport {
+  id String @id @default(cuid())
+
+  location String // npr. "Stand A1", "Taxiway B"
+  itemType String @default("OTHER") // AIRCRAFT_PART | TOOL | CATERING | PERSONAL_ITEM | PAVEMENT | CONSTRUCTION | PLASTIC | OTHER
+  description String
+
+  aircraftPartSuspected Boolean @default(false) // ako da - obavijestiti operatere aviona
+  removed               Boolean @default(true)
+  atcNotified           Boolean @default(false)
+
+  foundByCardId String?
+  foundByName   String
+
+  foundAt   DateTime @default(now())
+  createdAt DateTime @default(now())
+
+  @@index([foundAt])
+  @@index([location])
+}
+
+// =====================================================
+// ADR.OPS.B.020 — Wildlife strike hazard reduction
+// =====================================================
+model WildlifeReport {
+  id String @id @default(cuid())
+
+  species  String
+  count    Int     @default(1)
+  location String
+  strike   Boolean @default(false) // da li je bio sudar sa vazduhoplovom
+
+  actionTaken String? // npr. "Otjerano", "Prijavljeno nadleznom organu"
+  damageDescription String?
+
+  reportedByCardId String?
+  reportedByName   String
+
+  observedAt DateTime @default(now())
+  createdAt  DateTime @default(now())
+
+  @@index([observedAt])
+  @@index([species])
+}
+
+// =====================================================
+// ADR.OR.C.045 — Fitness for duty (alkohol/psihoaktivne supstance)
+// Bilježi se SAMO potvrda (da/ne) i vrijeme, nikada zdravstveni podatak.
+// =====================================================
+model FitnessDeclaration {
+  id String @id @default(cuid())
+
+  employeeCardId String?
+  employeeName   String
+  confirmed      Boolean @default(true)
+
+  declaredAt DateTime @default(now())
+
+  @@index([declaredAt])
+  @@index([employeeCardId])
+}
+
 // ============================================================================
 // DE-ICING / ANTI-ICING (ICAO Annex 3, AEA Recommendations, ISO 11076)
 // ============================================================================

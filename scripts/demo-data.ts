@@ -27,12 +27,12 @@ async function main() {
   })
 
   // Zaduži 4 sredstva
-  const toAssign = ['GSE-TOW-001', 'GSE-BLT-001', 'GSE-PB-001', 'GSE-BUS-001']
+  const toAssign = ['TOW-02', 'BLT-01', 'PBK-01', 'BUS-01']
   for (const code of toAssign) {
     const eq = await db.equipment.findUnique({ where: { code } })
     if (!eq) continue
     await db.equipment.update({ where: { id: eq.id }, data: { status: 'ASSIGNED' } })
-    const emp = code === 'GSE-TOW-001' ? emp1 : code === 'GSE-BLT-001' ? emp2 : code === 'GSE-PB-001' ? emp3 : emp2
+    const emp = code === 'TOW-02' ? emp1 : code === 'BLT-01' ? emp2 : code === 'PBK-01' ? emp3 : emp2
     await db.assignment.create({
       data: {
         equipmentId: eq.id,
@@ -52,11 +52,11 @@ async function main() {
 
   // 2. Kreiraj nekoliko damage reports
   const damages = [
-    { code: 'GSE-GPU-003', sev: 'MAJOR', desc: 'Oštećen kabel za napajanje aviona, izloženi provodnici na dijelu oko konektora', status: 'OPEN', emp: emp1 },
-    { code: 'GSE-BLT-002', sev: 'MINOR', desc: 'Manja ogrebotina na bočnoj strani karoserije, ne utiče na funkcionalnost', status: 'IN_REPAIR', emp: emp2 },
-    { code: 'GSE-STR-001', sev: 'CRITICAL', desc: 'Hidraulična pumpa za podizanje stepenica ne radi - vozilo ne može podići stepenice', status: 'OPEN', emp: emp3 },
-    { code: 'GSE-DLY-001', sev: 'MINOR', desc: 'Pričvršćivač za LD3 kontejner blago savijen', status: 'OPEN', emp: emp1 },
-    { code: 'GSE-TOW-002', sev: 'MAJOR', desc: 'Curenje hidrauličnog ulja iz zadnje osovine', status: 'IN_REPAIR', emp: emp3 },
+    { code: 'GPU-04', sev: 'MAJOR', desc: 'Oštećen kabel za napajanje aviona, izloženi provodnici na dijelu oko konektora', status: 'OPEN', emp: emp1 },
+    { code: 'BLT-03', sev: 'MINOR', desc: 'Manja ogrebotina na bočnoj strani karoserije, ne utiče na funkcionalnost', status: 'IN_REPAIR', emp: emp2 },
+    { code: 'STR-01', sev: 'CRITICAL', desc: 'Hidraulična pumpa za podizanje stepenica ne radi - vozilo ne može podići stepenice', status: 'OPEN', emp: emp3 },
+    { code: 'DLY-01', sev: 'MINOR', desc: 'Pričvršćivač za LD3 kontejner blago savijen', status: 'OPEN', emp: emp1 },
+    { code: 'TOW-07', sev: 'MAJOR', desc: 'Curenje hidrauličnog ulja iz zadnje osovine', status: 'IN_REPAIR', emp: emp3 },
   ]
 
   for (const d of damages) {
@@ -83,7 +83,7 @@ async function main() {
   }
 
   // 3. Jedno riješeno oštećenje (istorija)
-  const eqBLT3 = await db.equipment.findUnique({ where: { code: 'GSE-BLT-003' } })
+  const eqBLT3 = await db.equipment.findUnique({ where: { code: 'BLT-04' } })
   if (eqBLT3) {
     await db.damageReport.create({
       data: {
@@ -105,16 +105,16 @@ async function main() {
 
   // 4. Dodaj nešto istorije aktivnosti (check-in / check-out u prošlosti)
   const historyItems = [
-    { code: 'GSE-TOW-002', action: 'CHECK_IN', emp: emp1, result: 'OK', notes: 'Sve OK', hoursAgo: 28 },
-    { code: 'GSE-TOW-002', action: 'CHECK_OUT', emp: emp1, result: 'OK', notes: '', hoursAgo: 36 },
-    { code: 'GSE-BLT-001', action: 'CHECK_IN', emp: emp3, result: 'OK', notes: 'Sve u redu', hoursAgo: 50 },
-    { code: 'GSE-BLT-001', action: 'CHECK_OUT', emp: emp3, result: 'OK', notes: '', hoursAgo: 58 },
-    { code: 'GSE-GPU-001', action: 'CHECK_IN', emp: emp2, result: 'MINOR_DAMAGE', notes: 'Primijećena manja ogrebotina', hoursAgo: 72 },
-    { code: 'GSE-GPU-001', action: 'CHECK_OUT', emp: emp2, result: 'OK', notes: '', hoursAgo: 80 },
-    { code: 'GSE-BUS-002', action: 'CHECK_IN', emp: emp1, result: 'OK', notes: '', hoursAgo: 100 },
-    { code: 'GSE-BUS-002', action: 'CHECK_OUT', emp: emp1, result: 'OK', notes: '', hoursAgo: 108 },
-    { code: 'GSE-PB-002', action: 'CHECK_IN', emp: emp3, result: 'OK', notes: '', hoursAgo: 130 },
-    { code: 'GSE-PB-002', action: 'CHECK_OUT', emp: emp3, result: 'OK', notes: '', hoursAgo: 140 },
+    { code: 'TOW-07', action: 'CHECK_IN', emp: emp1, result: 'OK', notes: 'Sve OK', hoursAgo: 28 },
+    { code: 'TOW-07', action: 'CHECK_OUT', emp: emp1, result: 'OK', notes: '', hoursAgo: 36 },
+    { code: 'BLT-01', action: 'CHECK_IN', emp: emp3, result: 'OK', notes: 'Sve u redu', hoursAgo: 50 },
+    { code: 'BLT-01', action: 'CHECK_OUT', emp: emp3, result: 'OK', notes: '', hoursAgo: 58 },
+    { code: 'GPU-03', action: 'CHECK_IN', emp: emp2, result: 'MINOR_DAMAGE', notes: 'Primijećena manja ogrebotina', hoursAgo: 72 },
+    { code: 'GPU-03', action: 'CHECK_OUT', emp: emp2, result: 'OK', notes: '', hoursAgo: 80 },
+    { code: 'BUS-01', action: 'CHECK_IN', emp: emp1, result: 'OK', notes: '', hoursAgo: 100 },
+    { code: 'BUS-01', action: 'CHECK_OUT', emp: emp1, result: 'OK', notes: '', hoursAgo: 108 },
+    { code: 'PBK-02', action: 'CHECK_IN', emp: emp3, result: 'OK', notes: '', hoursAgo: 130 },
+    { code: 'PBK-02', action: 'CHECK_OUT', emp: emp3, result: 'OK', notes: '', hoursAgo: 140 },
   ]
 
   for (const h of historyItems) {

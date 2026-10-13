@@ -32,6 +32,8 @@ import {
   Shield,
   ClipboardCheck,
   FileText,
+  AlertTriangle,
+  Bird,
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
@@ -65,9 +67,23 @@ import {
 import {
   Tabs,
   TabsContent,
-  TabsList,
-  TabsTrigger,
 } from '@/components/ui/tabs'
+import {
+  Sidebar,
+  SidebarContent,
+  SidebarFooter,
+  SidebarGroup,
+  SidebarGroupContent,
+  SidebarGroupLabel,
+  SidebarHeader,
+  SidebarInset,
+  SidebarMenu,
+  SidebarMenuBadge,
+  SidebarMenuButton,
+  SidebarMenuItem,
+  SidebarProvider,
+  SidebarTrigger,
+} from '@/components/ui/sidebar'
 import { Textarea } from '@/components/ui/textarea'
 import { toast } from 'sonner'
 import {
@@ -92,6 +108,11 @@ import {
 } from '@/lib/actions'
 import type { AppUser } from '@/lib/auth-server'
 import { useLang } from '@/lib/lang-context'
+import type { TranslationKey } from '@/lib/i18n'
+import { getDamageUrgency, URGENCY_LABELS, URGENCY_COLORS } from '@/lib/damage-urgency'
+import { getInspectionAlerts } from '@/lib/actions-advanced'
+import { filterDueThisMonth, type InspectionAlertLike } from '@/lib/maintenance-due'
+import { HelpButton } from '@/components/ui/help-button'
 import { StatisticsView } from './statistics-view'
 import { ReportsView } from './reports-view'
 import { MaintenanceView } from './maintenance-view'
@@ -107,6 +128,77 @@ import { AerodromeInspectionView } from './aerodrome-inspection-view'
 import { SMSView } from './sms-view'
 import { AuditView } from './audit-view'
 import { DocumentControlView } from './document-control-view'
+import { FodWildlifeView } from './fod-wildlife-view'
+
+// =====================================================
+// NAVIGACIJA — grupisana lista za sidebar (zamjena za staru liniju od
+// 20 tabova). Čisto UI podaci: sadržaj (Tabs/TabsContent) ostaje isti,
+// mijenja se samo kako se do njega dolazi.
+// =====================================================
+
+type NavItem = { value: string; label: string; icon: React.ComponentType<{ className?: string }> }
+type NavGroup = { label: string; items: NavItem[] }
+
+const NAV_GROUPS: NavGroup[] = [
+  {
+    label: 'Pregled',
+    items: [
+      { value: 'overview', label: 'Pregled', icon: Activity },
+      { value: 'statistics', label: 'Statistika', icon: TrendingUp },
+      { value: 'activity', label: 'Aktivnost', icon: Clock },
+    ],
+  },
+  {
+    label: 'Oprema',
+    items: [
+      { value: 'equipment', label: 'Sredstva', icon: Package },
+      { value: 'damages', label: 'Oštećenja', icon: AlertOctagon },
+      { value: 'maintenance', label: 'Održavanje', icon: Wrench },
+      { value: 'qr', label: 'QR kodovi', icon: Printer },
+    ],
+  },
+  {
+    label: 'Sigurnost & regulativa',
+    items: [
+      { value: 'adr', label: 'ADR.OPS.C.007', icon: ShieldCheck },
+      { value: 'crs', label: 'CRS', icon: Award },
+      { value: 'incidents', label: 'Incidenti', icon: AlertOctagon },
+      { value: 'fod-wildlife', label: 'FOD & Wildlife', icon: AlertTriangle },
+      { value: 'sms', label: 'SMS', icon: Shield },
+      { value: 'audit', label: 'Audit & Compliance', icon: ClipboardCheck },
+      { value: 'doc-control', label: 'Document Control', icon: FileText },
+    ],
+  },
+  {
+    label: 'Operacije',
+    items: [
+      { value: 'scheduling', label: 'Servis & Dijelovi', icon: Calendar },
+      { value: 'driverauth', label: 'Driver Auth', icon: Car },
+      { value: 'fuelparking', label: 'Gorivo & Parking', icon: Fuel },
+      { value: 'deicing', label: 'De-icing', icon: Snowflake },
+      { value: 'aero-inspection', label: 'Aerodrom Inspekcija', icon: Plane },
+    ],
+  },
+  {
+    label: 'Izvještaji',
+    items: [
+      { value: 'reports', label: 'Izvještaji', icon: Printer },
+    ],
+  },
+]
+
+const ROLE_LABELS: Record<string, string> = {
+  admin: 'Administrator', engineer: 'Inženjer', operator: 'Operator',
+}
+
+// Samo ovih 8 stavki je i prije redizajna bilo prevedeno preko t() (jezički
+// toggle) - ostale su uvijek bile hardkodirane na hrvatskom/bosanskom, isto
+// kao i sada. Nema regresije u odnosu na prethodno ponašanje.
+const NAV_T_KEYS: Partial<Record<string, TranslationKey>> = {
+  overview: 'dash.overview', equipment: 'dash.equipment', damages: 'dash.damages',
+  statistics: 'dash.statistics', maintenance: 'dash.maintenance', reports: 'dash.reports',
+  activity: 'dash.activity', qr: 'dash.qr',
+}
 
 type EquipmentRow = Awaited<ReturnType<typeof getAllEquipment>>[number]
 type ActiveAssignment = Awaited<ReturnType<typeof getActiveAssignments>>[number]
@@ -121,6 +213,7 @@ export function DashboardView({ currentUser }: { currentUser: AppUser }) {
   const [activity, setActivity] = useState<ActivityRow[]>([])
   const [damages, setDamages] = useState<DamageRow[]>([])
   const [allDamages, setAllDamages] = useState<DamageRow[]>([])
+  const [inspectionAlerts, setInspectionAlerts] = useState<InspectionAlertLike[]>([])
   const [loading, setLoading] = useState(true)
 
   // filters
@@ -131,18 +224,20 @@ export function DashboardView({ currentUser }: { currentUser: AppUser }) {
   const load = async () => {
     setLoading(true)
     try {
-      const [eq, ac, act, od, ad] = await Promise.all([
+      const [eq, ac, act, od, ad, ia] = await Promise.all([
         getAllEquipment(),
         getActiveAssignments(),
         getRecentActivity(100),
         getOpenDamages(),
         getAllDamages(),
+        getInspectionAlerts(),
       ])
       setEquipment(eq)
       setActive(ac)
       setActivity(act)
       setDamages(od)
       setAllDamages(ad)
+      setInspectionAlerts(ia)
     } catch (e) {
       toast.error('Greška pri učitavanju podataka')
     } finally {
@@ -181,103 +276,84 @@ export function DashboardView({ currentUser }: { currentUser: AppUser }) {
     return { total, available, assigned, oos, maint, openDamages }
   }, [equipment, damages])
 
-  return (
-    <div className="space-y-6">
-      <Tabs value={tab} onValueChange={setTab}>
-        <div className="flex items-center justify-between gap-2 flex-wrap">
-          <TabsList className="flex-wrap h-auto">
-            <TabsTrigger value="overview">
-              <Activity className="h-4 w-4 mr-1.5" />
-              {t('dash.overview')}
-            </TabsTrigger>
-            <TabsTrigger value="equipment">
-              <Package className="h-4 w-4 mr-1.5" />
-              {t('dash.equipment')}
-            </TabsTrigger>
-            <TabsTrigger value="damages">
-              <AlertOctagon className="h-4 w-4 mr-1.5" />
-              {t('dash.damages')}
-              {stats.openDamages > 0 && (
-                <Badge variant="destructive" className="ml-1.5 h-5 px-1.5 text-xs">
-                  {stats.openDamages}
-                </Badge>
-              )}
-            </TabsTrigger>
-            <TabsTrigger value="statistics">
-              <TrendingUp className="h-4 w-4 mr-1.5" />
-              {t('dash.statistics')}
-            </TabsTrigger>
-            <TabsTrigger value="maintenance">
-              <Wrench className="h-4 w-4 mr-1.5" />
-              {t('dash.maintenance')}
-            </TabsTrigger>
-            <TabsTrigger value="adr">
-              <ShieldCheck className="h-4 w-4 mr-1.5" />
-              ADR.OPS.C.007
-            </TabsTrigger>
-            <TabsTrigger value="crs">
-              <Award className="h-4 w-4 mr-1.5" />
-              CRS
-            </TabsTrigger>
-            <TabsTrigger value="scheduling">
-              <Calendar className="h-4 w-4 mr-1.5" />
-              Servis & Dijelovi
-            </TabsTrigger>
-            <TabsTrigger value="incidents">
-              <AlertOctagon className="h-4 w-4 mr-1.5" />
-              Incidenti
-            </TabsTrigger>
-            <TabsTrigger value="driverauth">
-              <Car className="h-4 w-4 mr-1.5" />
-              Driver Auth
-            </TabsTrigger>
-            <TabsTrigger value="fuelparking">
-              <Fuel className="h-4 w-4 mr-1.5" />
-              Gorivo & Parking
-            </TabsTrigger>
-            <TabsTrigger value="deicing">
-              <Snowflake className="h-4 w-4 mr-1.5" />
-              De-icing
-            </TabsTrigger>
-            <TabsTrigger value="aero-inspection">
-              <Plane className="h-4 w-4 mr-1.5" />
-              Aerodrom Inspekcija
-            </TabsTrigger>
-            <TabsTrigger value="sms">
-              <Shield className="h-4 w-4 mr-1.5" />
-              SMS
-            </TabsTrigger>
-            <TabsTrigger value="audit">
-              <ClipboardCheck className="h-4 w-4 mr-1.5" />
-              Audit & Compliance
-            </TabsTrigger>
-            <TabsTrigger value="doc-control">
-              <FileText className="h-4 w-4 mr-1.5" />
-              Document Control
-            </TabsTrigger>
-            <TabsTrigger value="reports">
-              <Printer className="h-4 w-4 mr-1.5" />
-              {t('dash.reports')}
-            </TabsTrigger>
-            <TabsTrigger value="activity">
-              <Clock className="h-4 w-4 mr-1.5" />
-              {t('dash.activity')}
-            </TabsTrigger>
-            <TabsTrigger value="qr">
-              <Printer className="h-4 w-4 mr-1.5" />
-              {t('dash.qr')}
-            </TabsTrigger>
-          </TabsList>
+  const dueThisMonth = useMemo(() => filterDueThisMonth(inspectionAlerts), [inspectionAlerts])
 
-          <div className="flex gap-2">
+  const activeNavLabel = useMemo(() => {
+    for (const g of NAV_GROUPS) {
+      const found = g.items.find((i) => i.value === tab)
+      if (found) return NAV_T_KEYS[found.value] ? t(NAV_T_KEYS[found.value]!) : found.label
+    }
+    return ''
+  }, [tab, t])
+
+  return (
+    <SidebarProvider>
+      <Sidebar collapsible="icon">
+        <SidebarHeader>
+          <div className="flex items-center gap-2 px-1 py-1">
+            <div className="h-7 w-7 rounded-md bg-primary text-primary-foreground flex items-center justify-center flex-shrink-0">
+              <Plane className="h-4 w-4" />
+            </div>
+            <div className="min-w-0 group-data-[collapsible=icon]:hidden">
+              <div className="text-sm font-semibold leading-tight truncate">GSE Control</div>
+              <div className="text-[10px] text-muted-foreground leading-tight truncate">Aerodrom Tivat · LYTV</div>
+            </div>
+          </div>
+        </SidebarHeader>
+
+        <SidebarContent>
+          {NAV_GROUPS.map((group) => (
+            <SidebarGroup key={group.label}>
+              <SidebarGroupLabel>{group.label}</SidebarGroupLabel>
+              <SidebarGroupContent>
+                <SidebarMenu>
+                  {group.items.map((item) => (
+                    <SidebarMenuItem key={item.value}>
+                      <SidebarMenuButton
+                        isActive={tab === item.value}
+                        onClick={() => setTab(item.value)}
+                        tooltip={NAV_T_KEYS[item.value] ? t(NAV_T_KEYS[item.value]!) : item.label}
+                      >
+                        <item.icon />
+                        <span>{NAV_T_KEYS[item.value] ? t(NAV_T_KEYS[item.value]!) : item.label}</span>
+                      </SidebarMenuButton>
+                      {item.value === 'damages' && stats.openDamages > 0 && (
+                        <SidebarMenuBadge className="bg-red-500 text-white">{stats.openDamages}</SidebarMenuBadge>
+                      )}
+                    </SidebarMenuItem>
+                  ))}
+                </SidebarMenu>
+              </SidebarGroupContent>
+            </SidebarGroup>
+          ))}
+        </SidebarContent>
+
+        <SidebarFooter>
+          <div className="px-2 py-1.5 text-xs group-data-[collapsible=icon]:hidden">
+            <div className="font-medium truncate">{currentUser.full_name}</div>
+            <div className="text-muted-foreground truncate">{ROLE_LABELS[currentUser.role] ?? currentUser.role}</div>
+          </div>
+        </SidebarFooter>
+      </Sidebar>
+
+      <SidebarInset>
+        <div className="flex items-center justify-between gap-2 border-b bg-background px-4 py-2.5 sticky top-0 z-10">
+          <div className="flex items-center gap-2 min-w-0">
+            <SidebarTrigger />
+            <h1 className="text-base font-semibold truncate">{activeNavLabel}</h1>
+          </div>
+          <div className="flex gap-2 flex-shrink-0">
             <Button variant="outline" size="sm" onClick={load} disabled={loading}>
               <RefreshCw className={`h-4 w-4 mr-1.5 ${loading ? 'animate-spin' : ''}`} />
-              {t('dash.refresh')}
+              <span className="hidden sm:inline">{t('dash.refresh')}</span>
             </Button>
             {currentUser.role === 'admin' && <AddEquipmentDialog onCreated={load} />}
           </div>
         </div>
 
+        <div className="flex-1 overflow-y-auto p-4 space-y-6">
+          <HelpButton helpKey={tab} />
+          <Tabs value={tab} onValueChange={setTab}>
         <TabsContent value="overview" className="space-y-4">
           {/* Stats grid */}
           <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-3">
@@ -288,6 +364,37 @@ export function DashboardView({ currentUser }: { currentUser: AppUser }) {
             <StatCard label={t('dash.maintenance')} value={stats.maint} icon={Wrench} tone="purple" />
             <StatCard label={t('dash.openDamages')} value={stats.openDamages} icon={AlertOctagon} tone="red" />
           </div>
+
+          {/* Dospijeva ovog mjeseca - preventivno planiranje umjesto reaktivnog */}
+          {dueThisMonth.length > 0 && (
+            <Card className="border-amber-300 bg-amber-50/50">
+              <CardHeader>
+                <CardTitle className="text-base flex items-center gap-2">
+                  <Calendar className="h-4 w-4 text-amber-700" />
+                  Dospijeva ovog mjeseca ({dueThisMonth.length})
+                </CardTitle>
+                <p className="text-xs text-muted-foreground">
+                  Periodične inspekcije (IATA AHM 1130) koje dospijevaju ovaj mjesec ili su već istekle - planiraj unaprijed
+                </p>
+              </CardHeader>
+              <CardContent>
+                <div className="flex flex-wrap gap-2">
+                  {dueThisMonth.slice(0, 12).map((a) => (
+                    <div
+                      key={a.id}
+                      className={`flex items-center gap-2 px-2.5 py-1.5 rounded-lg text-xs border ${a.status === 'OVERDUE' ? 'bg-red-100 border-red-300 text-red-800' : 'bg-amber-100 border-amber-300 text-amber-800'}`}
+                    >
+                      <span className="font-mono font-semibold">{a.code}</span>
+                      <span>{a.status === 'OVERDUE' ? `isteklo ${Math.abs(a.daysUntilDue ?? 0)}d` : `za ${a.daysUntilDue}d`}</span>
+                    </div>
+                  ))}
+                  {dueThisMonth.length > 12 && (
+                    <span className="text-xs text-muted-foreground self-center">+ {dueThisMonth.length - 12} više — vidi Statistika tab</span>
+                  )}
+                </div>
+              </CardContent>
+            </Card>
+          )}
 
           {/* Active assignments + Open damages */}
           <div className="grid lg:grid-cols-2 gap-4">
@@ -545,6 +652,10 @@ export function DashboardView({ currentUser }: { currentUser: AppUser }) {
           <DocumentControlView />
         </TabsContent>
 
+        <TabsContent value="fod-wildlife" className="space-y-4">
+          <FodWildlifeView />
+        </TabsContent>
+
         <TabsContent value="reports" className="space-y-4">
           <ReportsView />
         </TabsContent>
@@ -602,8 +713,10 @@ export function DashboardView({ currentUser }: { currentUser: AppUser }) {
         <TabsContent value="qr" className="space-y-4">
           <QrPrintView equipment={equipment} />
         </TabsContent>
-      </Tabs>
-    </div>
+          </Tabs>
+        </div>
+      </SidebarInset>
+    </SidebarProvider>
   )
 }
 
@@ -963,6 +1076,13 @@ function DamageRowCard({
     RESOLVED: 'bg-emerald-100 text-emerald-800',
   }[damage.status] ?? 'bg-gray-100'
 
+  const urgency = getDamageUrgency({
+    severity: damage.severity,
+    equipmentStatus: damage.equipment?.status,
+    status: damage.status,
+    createdAt: damage.createdAt,
+  })
+
   const handleResolve = (e: React.FormEvent) => {
     e.preventDefault()
     if (!resolution.trim()) {
@@ -998,6 +1118,11 @@ function DamageRowCard({
             <Badge variant="outline" className="font-mono text-xs">{damage.equipmentCode}</Badge>
             <Badge className={`text-xs ${severityBadge}`}>{damage.severity}</Badge>
             <Badge className={`text-xs ${statusBadge}`}>{damage.status}</Badge>
+            {damage.status !== 'RESOLVED' && (
+              <Badge variant="outline" className={`text-xs font-semibold ${URGENCY_COLORS[urgency]}`}>
+                Hitnost: {URGENCY_LABELS[urgency]}
+              </Badge>
+            )}
           </div>
           <div className="text-sm font-medium truncate">{damage.equipmentName}</div>
           <div className="text-sm text-muted-foreground mt-1">{damage.description}</div>

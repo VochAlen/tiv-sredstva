@@ -47,6 +47,15 @@ export interface Stats {
   mtbfHours: number
   mttrHours: number
   utilizationRate: number
+  availabilityRate: number
+  totalMaintenanceCost: number
+}
+
+export interface TopFailingEquipment {
+  equipmentCode: string
+  equipmentName: string
+  equipmentType: string
+  damageCount: number
 }
 
 export interface ActivityByDay {

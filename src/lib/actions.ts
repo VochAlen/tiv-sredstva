@@ -6,7 +6,7 @@
 
 import { db } from '@/lib/db'
 import { revalidatePath } from 'next/cache'
-import { DEFAULT_CHECKLIST, type ChecklistItem, type InspectionResult } from '@/lib/types'
+import { getChecklistForType, type ChecklistItem, type InspectionResult } from '@/lib/types'
 import { isDemoMode } from '@/lib/auth-mode'
 import { getCurrentUser, type AppUser } from '@/lib/auth-server'
 import { createClientAsync as createSupabaseClient } from "@/lib/supabase/server"
@@ -502,7 +502,48 @@ export async function checkOutEquipment(params: {
       })
       .eq('id', equipment.id)
 
-    const { error: assignErr1 } = await supabase.from('assignments').insert({
+    const { data: blockedAssignRow, error: assignErr1 } = await supabase
+      .from('assignments')
+      .insert({
+        equipment_id: equipment.id,
+        equipment_code: equipment.code,
+        equipment_name: equipment.name,
+        employee_id: employee?.id ?? null,
+        employee_card_id: employeeCardId,
+        employee_name: employeeName,
+        action: 'CHECK_OUT',
+        inspection_result: inspectionResult,
+        inspection_notes: inspectionNotes ?? null,
+        checklist_json: JSON.stringify(checklist),
+        shift: shift ?? null,
+        damage_report_id: damageReportId,
+      })
+      .select('id')
+      .single()
+    if (assignErr1) {
+      console.error('Assignment insert (blocked) failed:', assignErr1)
+      return { ok: false, error: 'Greška pri bilježenju zaduženja u bazi' }
+    }
+
+    revalidatePath('/')
+    return {
+      ok: false,
+      error: 'Sredstvo ne može biti zaduženo zbog oštećenja. Status promijenjen u OUT_OF_SERVICE.',
+      damageReportId,
+      assignmentId: blockedAssignRow?.id,
+    }
+  }
+
+  // Sve OK - dozvoli zaduživanje
+  const { error: eqUpdateErr } = await supabase.from('equipment').update({ status: 'ASSIGNED' }).eq('id', equipment.id)
+  if (eqUpdateErr) {
+    console.error('Equipment status update failed:', eqUpdateErr)
+    return { ok: false, error: 'Greška pri ažuriranju statusa opreme' }
+  }
+
+  const { data: assignRow2, error: assignErr2 } = await supabase
+    .from('assignments')
+    .insert({
       equipment_id: equipment.id,
       equipment_code: equipment.code,
       equipment_name: equipment.name,
@@ -516,47 +557,15 @@ export async function checkOutEquipment(params: {
       shift: shift ?? null,
       damage_report_id: damageReportId,
     })
-    if (assignErr1) {
-      console.error('Assignment insert (blocked) failed:', assignErr1)
-      return { ok: false, error: 'Greška pri bilježenju zaduženja u bazi' }
-    }
-
-    revalidatePath('/')
-    return {
-      ok: false,
-      error: 'Sredstvo ne može biti zaduženo zbog oštećenja. Status promijenjen u OUT_OF_SERVICE.',
-      damageReportId,
-    }
-  }
-
-  // Sve OK - dozvoli zaduživanje
-  const { error: eqUpdateErr } = await supabase.from('equipment').update({ status: 'ASSIGNED' }).eq('id', equipment.id)
-  if (eqUpdateErr) {
-    console.error('Equipment status update failed:', eqUpdateErr)
-    return { ok: false, error: 'Greška pri ažuriranju statusa opreme' }
-  }
-
-  const { error: assignErr2 } = await supabase.from('assignments').insert({
-    equipment_id: equipment.id,
-    equipment_code: equipment.code,
-    equipment_name: equipment.name,
-    employee_id: employee?.id ?? null,
-    employee_card_id: employeeCardId,
-    employee_name: employeeName,
-    action: 'CHECK_OUT',
-    inspection_result: inspectionResult,
-    inspection_notes: inspectionNotes ?? null,
-    checklist_json: JSON.stringify(checklist),
-    shift: shift ?? null,
-    damage_report_id: damageReportId,
-  })
+    .select('id')
+    .single()
   if (assignErr2) {
     console.error('Assignment insert failed:', assignErr2)
     return { ok: false, error: 'Greška pri bilježenju zaduženja u bazi' }
   }
 
   revalidatePath('/')
-  return { ok: true, damageReportId }
+  return { ok: true, damageReportId, assignmentId: assignRow2?.id }
 }
 
 // Prisma fallback za Demo Mode
@@ -642,7 +651,7 @@ async function checkOutPrisma(params: {
       },
     })
 
-    await db.assignment.create({
+    const blockedAssignment = await db.assignment.create({
       data: {
         equipmentId: equipment.id,
         equipmentCode: equipment.code,
@@ -664,6 +673,7 @@ async function checkOutPrisma(params: {
       ok: false,
       error: 'Sredstvo ne može biti zaduženo zbog oštećenja. Status promijenjen u OUT_OF_SERVICE.',
       damageReportId,
+      assignmentId: blockedAssignment.id,
     }
   }
 
@@ -672,7 +682,7 @@ async function checkOutPrisma(params: {
     data: { status: 'ASSIGNED' },
   })
 
-  await db.assignment.create({
+  const createdAssignment = await db.assignment.create({
     data: {
       equipmentId: equipment.id,
       equipmentCode: equipment.code,
@@ -690,7 +700,7 @@ async function checkOutPrisma(params: {
   })
 
   revalidatePath('/')
-  return { ok: true, damageReportId }
+  return { ok: true, damageReportId, assignmentId: createdAssignment.id }
 }
 
 // =====================================================
@@ -782,7 +792,7 @@ export async function checkInEquipment(params: {
     action: 'CHECK_IN',
     inspection_result: inspectionResult,
     inspection_notes: notes ?? null,
-    checklist_json: JSON.stringify(DEFAULT_CHECKLIST.map((i) => ({ ...i, passed: true }))),
+    checklist_json: JSON.stringify(getChecklistForType(equipment.type).map((i) => ({ ...i, passed: true }))),
     damage_report_id: damageReportId,
   })
   if (checkInAssignErr) {
@@ -865,7 +875,7 @@ async function checkInPrisma(params: {
       action: 'CHECK_IN',
       inspectionResult,
       inspectionNotes: notes ?? null,
-      checklistJson: JSON.stringify(DEFAULT_CHECKLIST.map((i) => ({ ...i, passed: true }))),
+      checklistJson: JSON.stringify(getChecklistForType(equipment.type).map((i) => ({ ...i, passed: true }))),
       damageReportId,
     },
   })

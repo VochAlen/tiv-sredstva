@@ -2,7 +2,8 @@
 /* eslint-disable @typescript-eslint/no-require-imports */
 /**
  * GSE Control - Seed skripta (JavaScript verzija - radi sa Node.js bez tsx/bun)
- * Ubacuje mock podatke u SQLite bazu.
+ * STVARNI GSE inventar Aerodroma Tivat (avg. 2026) + kvalifikacije/dozvole
+ * bez kojih checkOutEquipment odbija svako zaduživanje.
  *
  * Upotreba:
  *   node scripts/seed.js
@@ -14,63 +15,230 @@ const { PrismaClient } = require('@prisma/client')
 const db = new PrismaClient()
 
 const equipment = [
-  { code: 'GSE-TOW-001', name: 'Tow Tractor Goldhofer AST-2', type: 'TOW_TRACTOR', serialNumber: 'GH-2019-045', location: 'Stand B12', status: 'AVAILABLE' },
-  { code: 'GSE-TOW-002', name: 'Tow Tractor Douglas KT-15', type: 'TOW_TRACTOR', serialNumber: 'DK-2021-082', location: 'Stand B14', status: 'AVAILABLE' },
-  { code: 'GSE-TOW-003', name: 'Tow Tractor JBT AeroTech', type: 'TOW_TRACTOR', serialNumber: 'JBT-2020-117', location: 'Maintenance Hangar', status: 'MAINTENANCE', notes: 'Zamjena hidraulike' },
-  { code: 'GSE-GPU-001', name: 'GPU ITW GSE 1400', type: 'GPU', serialNumber: 'ITW-2018-011', location: 'Stand A1', status: 'AVAILABLE' },
-  { code: 'GSE-GPU-002', name: 'GPU Textron GSE 90kVA', type: 'GPU', serialNumber: 'TX-2022-034', location: 'Stand A3', status: 'AVAILABLE' },
-  { code: 'GSE-GPU-003', name: 'GPU Houchin Diesel', type: 'GPU', serialNumber: 'HC-2017-008', location: 'Stand C5', status: 'OUT_OF_SERVICE', notes: 'Oštećen kabel' },
-  { code: 'GSE-BLT-001', name: 'Belt Loader TLD TB-150', type: 'BELT_LOADER', serialNumber: 'TLD-2019-201', location: 'Stand A2', status: 'AVAILABLE' },
-  { code: 'GSE-BLT-002', name: 'Belt Loader Mallaghan BL-7', type: 'BELT_LOADER', serialNumber: 'MG-2020-145', location: 'Stand B11', status: 'AVAILABLE' },
-  { code: 'GSE-BLT-003', name: 'Belt Loader NMC WDS50', type: 'BELT_LOADER', serialNumber: 'NMC-2023-008', location: 'Stand C2', status: 'AVAILABLE' },
-  { code: 'GSE-PB-001', name: 'Pushback Goldhofer AST-1X', type: 'PUSHBACK', serialNumber: 'GH-2020-019', location: 'Head-of-stand A', status: 'AVAILABLE' },
-  { code: 'GSE-PB-002', name: 'Pushback Douglas KPD-40', type: 'PUSHBACK', serialNumber: 'DK-2021-022', location: 'Head-of-stand B', status: 'AVAILABLE' },
-  { code: 'GSE-STR-001', name: 'Passenger Stairs TLD PS-30', type: 'STAIRS', serialNumber: 'TLD-2018-088', location: 'Remote Stand R3', status: 'AVAILABLE' },
-  { code: 'GSE-STR-002', name: 'Passenger Stairs Mallaghan', type: 'STAIRS', serialNumber: 'MG-2019-045', location: 'Remote Stand R5', status: 'AVAILABLE' },
-  { code: 'GSE-DLY-001', name: 'Cargo Dolly CD-10T', type: 'DOLLY', serialNumber: 'CD-2017-301', location: 'Cargo Area', status: 'AVAILABLE' },
-  { code: 'GSE-DLY-002', name: 'Container Dolly PMC', type: 'DOLLY', serialNumber: 'CD-2020-122', location: 'Cargo Area', status: 'AVAILABLE' },
-  { code: 'GSE-LAV-001', name: 'Lavatory Service Truck', type: 'LAVATORY', serialNumber: 'LS-2019-007', location: 'Service Road S1', status: 'AVAILABLE' },
-  { code: 'GSE-WTR-001', name: 'Potable Water Truck 5000L', type: 'WATER', serialNumber: 'PW-2021-014', location: 'Service Road S2', status: 'AVAILABLE' },
-  { code: 'GSE-BUS-001', name: 'Passenger Bus Cobus 3000', type: 'BUS', serialNumber: 'CB-2018-002', location: 'Bus Stop 1', status: 'AVAILABLE' },
-  { code: 'GSE-BUS-002', name: 'Passenger Bus Cobus 3000', type: 'BUS', serialNumber: 'CB-2019-005', location: 'Bus Stop 2', status: 'AVAILABLE' },
+  { code: 'GPU-01', name: 'GUINAULT GA 100 V 40', type: 'GPU', serialNumber: 'Int.br. 15 (T)', location: 'Platforma - stajanka', status: 'AVAILABLE', department: 'TEHNICKA_SLUZBA' }, // god. 2004
+  { code: 'GPU-02', name: 'HITZINGER GPU 90 MDE 18', type: 'GPU', serialNumber: 'Int.br. 70 (T)', location: 'Platforma - stajanka', status: 'OUT_OF_SERVICE', department: 'TEHNICKA_SLUZBA', notes: 'Oštećen izlazni kabl za napajanje - čeka rezervni dio' }, // god. 2011
+  { code: 'GPU-03', name: 'BERTOLI 18D/90TE', type: 'GPU', serialNumber: 'Int.br. 60 (T)', location: 'Platforma - stajanka', status: 'AVAILABLE', department: 'TEHNICKA_SLUZBA' }, // god. 2024
+  { code: 'GPU-04', name: 'BERTOLI 18D/90TE', type: 'GPU', serialNumber: 'Int.br. 61 (T)', location: 'Platforma - stajanka', status: 'AVAILABLE', department: 'TEHNICKA_SLUZBA' }, // god. 2024
+  { code: 'STA-01', name: 'GUINAULT 500 GS 250 – MAX V 4', type: 'AIR_STARTER', serialNumber: 'Int.br. 37 (T)', location: 'Platforma - stajanka', status: 'AVAILABLE', department: 'TEHNICKA_SLUZBA' }, // god. 2008
+  { code: 'TOW-01', name: 'IMT 539', type: 'TOW_TRACTOR', serialNumber: 'Int.br. 1 (H)', location: 'Radionica GSE / Platforma', status: 'MAINTENANCE', department: 'TEHNICKA_SLUZBA', notes: 'Redovni godišnji servis motora' }, // god. 1980
+  { code: 'TOW-02', name: 'IMT 539', type: 'TOW_TRACTOR', serialNumber: 'Int.br. 3 (H)', location: 'Radionica GSE / Platforma', status: 'AVAILABLE', department: 'TEHNICKA_SLUZBA', notes: 'Bez kabine' }, // god. 1980
+  { code: 'TOW-03', name: 'IMT 539', type: 'TOW_TRACTOR', serialNumber: 'Int.br. 5 (H)', location: 'Radionica GSE / Platforma', status: 'AVAILABLE', department: 'TEHNICKA_SLUZBA', notes: 'Bez kabine' }, // god. 1980
+  { code: 'TOW-04', name: 'IMT 539', type: 'TOW_TRACTOR', serialNumber: 'Int.br. 6 (T)', location: 'Radionica GSE / Platforma', status: 'AVAILABLE', department: 'TEHNICKA_SLUZBA', notes: 'Sa kabinom' }, // god. 1980
+  { code: 'TOW-05', name: 'IMT 539', type: 'TOW_TRACTOR', serialNumber: 'Int.br. 34 (H)', location: 'Radionica GSE / Platforma', status: 'AVAILABLE', department: 'TEHNICKA_SLUZBA', notes: 'Bez kabine' }, // god. 2008
+  { code: 'TOW-06', name: 'IMT 539', type: 'TOW_TRACTOR', serialNumber: 'Int.br. 35 (H)', location: 'Radionica GSE / Platforma', status: 'AVAILABLE', department: 'TEHNICKA_SLUZBA', notes: 'Sa kabinom' }, // god. 2008
+  { code: 'TOW-07', name: 'Agromehanika AGT 835 TS - sa kabinom', type: 'TOW_TRACTOR', serialNumber: 'Int.br. 38 (T)', location: 'Radionica GSE / Platforma', status: 'AVAILABLE', department: 'SLUZBA_PO' }, // god. 2014
+  { code: 'TOW-08', name: 'Agromehanika AGT 850 TS - sa kabinom', type: 'TOW_TRACTOR', serialNumber: 'Int.br. 39 (T)', location: 'Radionica GSE / Platforma', status: 'AVAILABLE', department: 'SLUZBA_PO' }, // god. 2014
+  { code: 'TOW-09', name: 'Agromehanika AGT 835 TS - sa kabinom', type: 'TOW_TRACTOR', serialNumber: 'Int.br. 40 (H)', location: 'Radionica GSE / Platforma', status: 'AVAILABLE', department: 'SLUZBA_PO' }, // god. 2014
+  { code: 'TOW-10', name: 'Agromehanika AGT 835 TS - bez kabine', type: 'TOW_TRACTOR', serialNumber: 'Int.br. 41 (H)', location: 'Radionica GSE / Platforma', status: 'AVAILABLE', department: 'SLUZBA_PO' }, // god. 2014
+  { code: 'TOW-11', name: 'Agromehanika AGT 835 TS - bez kabine', type: 'TOW_TRACTOR', serialNumber: 'Int.br. 42 (H)', location: 'Radionica GSE / Platforma', status: 'AVAILABLE', department: 'SLUZBA_PO' }, // god. 2014
+  { code: 'TOW-12', name: 'Agromehanika AGT 835 TS - bez kabine', type: 'TOW_TRACTOR', serialNumber: 'Int.br. 50 (H)', location: 'Radionica GSE / Platforma', status: 'AVAILABLE', department: 'SLUZBA_PO' }, // god. 2014
+  { code: 'TOW-13', name: 'Agromehanika AGT 835 TS - bez kabine', type: 'TOW_TRACTOR', serialNumber: 'Int.br. 51 (H)', location: 'Radionica GSE / Platforma', status: 'AVAILABLE', department: 'SLUZBA_PO' }, // god. 2014
+  { code: 'TOW-14', name: 'Agromehanika AGT 835 TS - bez kabine', type: 'TOW_TRACTOR', serialNumber: 'Int.br. 52 (H)', location: 'Radionica GSE / Platforma', status: 'AVAILABLE', department: 'SLUZBA_PO' }, // god. 2014
+  { code: 'TOW-15', name: 'AVRO GSE ST 470 E', type: 'TOW_TRACTOR', serialNumber: 'Int.br. 84 (H)', location: 'Radionica GSE / Platforma', status: 'AVAILABLE', department: 'SLUZBA_PO' }, // god. 2026 - NOVO
+  { code: 'TOW-16', name: 'AVRO GSE ST 470 E', type: 'TOW_TRACTOR', serialNumber: 'Int.br. 85 (H)', location: 'Radionica GSE / Platforma', status: 'AVAILABLE', department: 'SLUZBA_PO' }, // god. 2026 - NOVO
+  { code: 'TOW-17', name: 'AVRO GSE ST 470 E', type: 'TOW_TRACTOR', serialNumber: 'Int.br. 86 (H)', location: 'Radionica GSE / Platforma', status: 'AVAILABLE', department: 'SLUZBA_PO' }, // god. 2026 - NOVO
+  { code: 'TOW-18', name: 'AVRO GSE ST 470 E', type: 'TOW_TRACTOR', serialNumber: 'Int.br. 87 (H)', location: 'Radionica GSE / Platforma', status: 'AVAILABLE', department: 'SLUZBA_PO' }, // god. 2026 - NOVO
+  { code: 'TOW-19', name: 'AVRO GSE ST 470 E', type: 'TOW_TRACTOR', serialNumber: 'Int.br. 88 (H)', location: 'Radionica GSE / Platforma', status: 'AVAILABLE', department: 'SLUZBA_PO' }, // god. 2026 - NOVO
+  { code: 'TOW-20', name: 'Rakovica - sa kabinom', type: 'TOW_TRACTOR', serialNumber: 'Int.br. 17 (T)', location: 'Radionica GSE / Platforma', status: 'AVAILABLE', department: 'SLUZBA_PO' }, // god. 1993
+  { code: 'TOW-21', name: 'SOLIS Indija Solis – sa kabinom', type: 'TOW_TRACTOR', serialNumber: 'Int.br. 53 (T)', location: 'Radionica GSE / Platforma', status: 'AVAILABLE', department: 'SLUZBA_PO' }, // god. 2019
+  { code: 'BLT-01', name: 'AVIOGEI NS 450', type: 'BELT_LOADER', serialNumber: 'Int.br. 64 (H)', location: 'Platforma A', status: 'AVAILABLE', department: 'SLUZBA_PO' }, // god. 2011
+  { code: 'BLT-02', name: 'AVIOGEI NS 450', type: 'BELT_LOADER', serialNumber: 'Int.br. 63 (H)', location: 'Platforma A', status: 'MAINTENANCE', department: 'SLUZBA_PO', notes: 'Zamjena trake u toku' }, // god. 2011
+  { code: 'BLT-03', name: 'AVIOGEI NS 450', type: 'BELT_LOADER', serialNumber: 'Int.br. 30 (H)', location: 'Platforma A', status: 'AVAILABLE', department: 'SLUZBA_PO' }, // god. 2005
+  { code: 'BLT-04', name: 'AVIOGEI NS 450', type: 'BELT_LOADER', serialNumber: 'Int.br. 29 (H)', location: 'Platforma A', status: 'AVAILABLE', department: 'SLUZBA_PO' }, // god. 2005
+  { code: 'BLT-05', name: 'AVIOGEI NS 450 L', type: 'BELT_LOADER', serialNumber: 'Int.br. 65 (H)', location: 'Platforma A', status: 'AVAILABLE', department: 'SLUZBA_PO' }, // god. 2018
+  { code: 'BLT-06', name: 'AVIOGEI NS 450 L', type: 'BELT_LOADER', serialNumber: 'Int.br. 66 (H)', location: 'Platforma A', status: 'AVAILABLE', department: 'SLUZBA_PO' }, // god. 2018
+  { code: 'BLT-07', name: 'AVIOGEI NS 450 L', type: 'BELT_LOADER', serialNumber: 'Int.br. 67 (H)', location: 'Platforma A', status: 'AVAILABLE', department: 'SLUZBA_PO' }, // god. 2018
+  { code: 'BLT-08', name: 'AVRO GSE BL30E', type: 'BELT_LOADER', serialNumber: 'Int.br. 75 (H)', location: 'Platforma A', status: 'AVAILABLE', department: 'SLUZBA_PO' }, // god. 2026 - NOVO
+  { code: 'BLT-09', name: 'AVRO GSE BL30E', type: 'BELT_LOADER', serialNumber: 'Int.br. 76 (H)', location: 'Platforma A', status: 'AVAILABLE', department: 'SLUZBA_PO' }, // god. 2026 - NOVO
+  { code: 'BLT-10', name: 'AVRO GSE BL30E', type: 'BELT_LOADER', serialNumber: 'Int.br. 77 (H)', location: 'Platforma A', status: 'AVAILABLE', department: 'SLUZBA_PO' }, // god. 2026 - NOVO
+  { code: 'STR-01', name: 'AVIOGEI SI 18-39/male – samohodne', type: 'STAIRS', serialNumber: 'Int.br. 54 (H)', location: 'Platforma', status: 'AVAILABLE', department: 'SLUZBA_PO' }, // god. 2011
+  { code: 'STR-02', name: 'AVIOGEI SI 22-45/srednje-samoh.', type: 'STAIRS', serialNumber: 'Int.br. 74 (H)', location: 'Platforma', status: 'AVAILABLE', department: 'SLUZBA_PO' }, // god. 2011
+  { code: 'STR-03', name: 'AVIOGEI SI 22-45/srednje – samohodne', type: 'STAIRS', serialNumber: 'Int.br. 83 (H)', location: 'Platforma', status: 'AVAILABLE', department: 'SLUZBA_PO' }, // god. 2011
+  { code: 'STR-04', name: 'AVIOGEI SI 22-45 / srednje - samohodne', type: 'STAIRS', serialNumber: 'Int.br. 33 (H)', location: 'Platforma', status: 'AVAILABLE', department: 'SLUZBA_PO' }, // god. 2004
+  { code: 'STR-05', name: 'AVIOGEI SI 22-45 / srednje - samohodne', type: 'STAIRS', serialNumber: 'Int.br. 32 (H)', location: 'Platforma', status: 'AVAILABLE', department: 'SLUZBA_PO' }, // god. 2004
+  { code: 'STR-06', name: 'TBD TPS 2436 – električne', type: 'STAIRS', serialNumber: 'Int.br. 55 (H)', location: 'Platforma', status: 'AVAILABLE', department: 'SLUZBA_PO' }, // god. 2023
+  { code: 'STR-07', name: 'TBD TPS 2436 - električne', type: 'STAIRS', serialNumber: 'Int.br. 56 (H)', location: 'Platforma', status: 'AVAILABLE', department: 'SLUZBA_PO' }, // god. 2023
+  { code: 'STR-08', name: 'TBD TPS 2436 - električne', type: 'STAIRS', serialNumber: 'Int.br. 57 (H)', location: 'Platforma', status: 'AVAILABLE', department: 'SLUZBA_PO' }, // god. 2023
+  { code: 'STR-09', name: 'TBD TPS 2436 - električne', type: 'STAIRS', serialNumber: 'Int.br. 58 (H)', location: 'Platforma', status: 'AVAILABLE', department: 'SLUZBA_PO' }, // god. 2023
+  { code: 'CGO-01', name: 'TREPEL LOADER CHAMP 70W; 7t', type: 'CARGO_LOADER', serialNumber: 'Int.br. 48 (H)', location: 'Teretni terminal', status: 'AVAILABLE', department: 'TEHNICKA_SLUZBA' }, // god. 2008
+  { code: 'WTR-01', name: 'AVIOGEI VASM 2000', type: 'WATER', serialNumber: 'Int.br. 16 (H)', location: 'Servisna saobraćajnica', status: 'AVAILABLE', department: 'SLUZBA_PO' }, // god. 2004
+  { code: 'LAV-01', name: 'AVIOGEI VSTM 2000 V', type: 'LAVATORY', serialNumber: 'Int.br. 31 (H)', location: 'Servisna saobraćajnica', status: 'OUT_OF_SERVICE', department: 'SLUZBA_PO', notes: 'Curenje na crijevu za pražnjenje - prijavljeno radionici' }, // god. 2008
+  { code: 'LAV-02', name: 'AVIOGEI VSTM 2000 VE', type: 'LAVATORY', serialNumber: 'Int.br. 44 (H)', location: 'Servisna saobraćajnica', status: 'AVAILABLE', department: 'SLUZBA_PO' }, // god. 2023
+  { code: 'PBK-01', name: 'LEKTRO AP8750CX', type: 'PUSHBACK', serialNumber: 'Int.br. 71 (H)', location: 'Head-of-stand', status: 'AVAILABLE', department: 'TEHNICKA_SLUZBA' }, // god. 2010
+  { code: 'PBK-02', name: 'LEKTRO AP8850SDA', type: 'PUSHBACK', serialNumber: 'Int.br. 72 (H)', location: 'Head-of-stand', status: 'AVAILABLE', department: 'TEHNICKA_SLUZBA' }, // god. 2025 - NOVO
+  { code: 'FLT-01', name: 'TOYOTA Traigo 8FBMT30', type: 'FORKLIFT', serialNumber: 'Int.br. 11 (T)', location: 'Teretni terminal', status: 'AVAILABLE', department: 'TEHNICKA_SLUZBA' }, // god. 2017
+  { code: 'DLY-01', name: 'FSM Prtljažna kolica kavez', type: 'DOLLY', serialNumber: null, location: 'Terminal - prtljažni prostor', status: 'AVAILABLE', department: 'SLUZBA_PO' }, // god. x
+  { code: 'DLY-02', name: 'TIPS CARGO 2515 B', type: 'DOLLY', serialNumber: null, location: 'Terminal - prtljažni prostor', status: 'AVAILABLE', department: 'SLUZBA_PO' }, // god. 2016
+  { code: 'DLY-03', name: 'TIPS CARGO 0024C', type: 'DOLLY', serialNumber: null, location: 'Terminal - prtljažni prostor', status: 'AVAILABLE', department: 'SLUZBA_PO' }, // god. 2016
+  { code: 'DLY-04', name: 'AVIOGEI RC 25 T', type: 'DOLLY', serialNumber: null, location: 'Terminal - prtljažni prostor', status: 'AVAILABLE', department: 'SLUZBA_PO' }, // god. 2010
+  { code: 'DLY-05', name: 'ZODIAC EQUIPMENT BDK 20 HR (kavez kolica) kom 11', type: 'DOLLY', serialNumber: null, location: 'Terminal - prtljažni prostor', status: 'AVAILABLE', department: 'SLUZBA_PO' }, // god. 2024
+  { code: 'BUS-01', name: 'MERCEDES BENZ. V – class rise v 220 d (GA)', type: 'BUS', serialNumber: 'Int.br. PGCGK32 (H)', location: 'Terminal - ukrcajna zona', status: 'AVAILABLE', department: 'SLUZBA_PO' }, // god. 2020
+  { code: 'SVC-01', name: 'TOYOTA Hilux Bezbjednost', type: 'SERVICE_CAR', serialNumber: 'Int.br. PGMN731 (S)', location: 'Landside - uprava aerodroma', status: 'AVAILABLE', department: 'TEHNICKA_SLUZBA' }, // god. 2013
+  { code: 'SVC-02', name: 'TOYOTA Hilux Vatrogasci', type: 'SERVICE_CAR', serialNumber: 'Int.br. PGCG799 (F)', location: 'Landside - uprava aerodroma', status: 'AVAILABLE', department: 'TEHNICKA_SLUZBA' }, // god. 2013
+  { code: 'SVC-03', name: 'TOYOTA Hilux RC22 2.4D-4D 4X4DC M/T6', type: 'SERVICE_CAR', serialNumber: 'Int.br. PGCGP80 (S)', location: 'Landside - uprava aerodroma', status: 'AVAILABLE', department: 'TEHNICKA_SLUZBA' }, // god. 2024 - NOVO
+  { code: 'SVC-04', name: 'DACIA DUSTER LGV Comfort 1.5 blue DC', type: 'SERVICE_CAR', serialNumber: 'Int.br. PGCGL45 (T)', location: 'Landside - uprava aerodroma', status: 'AVAILABLE', department: 'TEHNICKA_SLUZBA' }, // god. 2022
+  { code: 'SVC-05', name: 'VW Caddy', type: 'SERVICE_CAR', serialNumber: 'Int.br. PG MN 930 (T)', location: 'Landside - uprava aerodroma', status: 'AVAILABLE', department: 'TEHNICKA_SLUZBA' }, // god. 2007
+  { code: 'SVC-06', name: 'ATTIVA 4.6', type: 'SERVICE_CAR', serialNumber: 'Int.br. 13 (H)', location: 'Landside - uprava aerodroma', status: 'AVAILABLE', department: 'TEHNICKA_SLUZBA' }, // god. 2019
+  { code: 'SVC-07', name: 'ATTIVA 4.6', type: 'SERVICE_CAR', serialNumber: 'Int.br. 20 (S)', location: 'Landside - uprava aerodroma', status: 'AVAILABLE', department: 'TEHNICKA_SLUZBA' }, // god. 2019
+  { code: 'SVC-08', name: 'ATTIVA 6LC.5', type: 'SERVICE_CAR', serialNumber: 'Int.br. 28 (H)', location: 'Landside - uprava aerodroma', status: 'AVAILABLE', department: 'TEHNICKA_SLUZBA' }, // god. 2019
+  { code: 'SVC-09', name: 'ATTIVA 6LC.5', type: 'SERVICE_CAR', serialNumber: 'Int.br. 91 (T)', location: 'Landside - uprava aerodroma', status: 'AVAILABLE', department: 'TEHNICKA_SLUZBA' }, // god. 2019
+  { code: 'FIR-01', name: 'ROSENBAUER Panther 6X6', type: 'FIRE_TRUCK', serialNumber: 'Int.br. PGCGB89 (F)', location: 'Vatrogasna stanica', status: 'AVAILABLE', department: 'TEHNICKA_SLUZBA' }, // god. 2005
+  { code: 'FIR-02', name: 'ROSENBAUER Panther 6X6', type: 'FIRE_TRUCK', serialNumber: 'Int.br. PGCGB90 (F)', location: 'Vatrogasna stanica', status: 'AVAILABLE', department: 'TEHNICKA_SLUZBA' }, // god. 2005
+  { code: 'FIR-03', name: 'Rosenbauer Panther 6x6', type: 'FIRE_TRUCK', serialNumber: 'Int.br. PGCGS36 (F)', location: 'Vatrogasna stanica', status: 'AVAILABLE', department: 'TEHNICKA_SLUZBA' }, // god. 2025
+  { code: 'FLM-01', name: 'FIAT Fiorino', type: 'FOLLOW_ME', serialNumber: 'Int.br. PGCGK64 (F)', location: 'Kontrolni toranj / apron', status: 'AVAILABLE', department: 'TEHNICKA_SLUZBA' }, // god. 2019
+  { code: 'FLM-02', name: 'OPEL', type: 'FOLLOW_ME', serialNumber: 'Int.br. PGCGU46 (F)', location: 'Kontrolni toranj / apron', status: 'AVAILABLE', department: 'TEHNICKA_SLUZBA' }, // god. 2026 - NOVO
+  { code: 'AMB-01', name: 'Renault Master', type: 'AMBULANCE', serialNumber: 'Int.br. PGCG068 (H)', location: 'Zdravstvena stanica aerodroma', status: 'AVAILABLE', department: 'SLUZBA_PO' }, // god. 2015
+  { code: 'AMB-02', name: 'Renault Master', type: 'AMBULANCE', serialNumber: 'Int.br. PGCGJ47 (H)', location: 'Zdravstvena stanica aerodroma', status: 'AVAILABLE', department: 'SLUZBA_PO' }, // god. 2019
+  { code: 'SVC-10', name: 'VW GOLF V Aerodroma Tivat', type: 'SERVICE_CAR', serialNumber: 'Int.br. PGMN655', location: 'Landside parking', status: 'AVAILABLE', department: 'TEHNICKA_SLUZBA' }, // god. 2008
+  { code: 'SVC-11', name: 'VW GOLF V Aerodroma Tivat', type: 'SERVICE_CAR', serialNumber: 'Int.br. PG CG C09', location: 'Landside parking', status: 'AVAILABLE', department: 'TEHNICKA_SLUZBA' }, // god. 2008
+  { code: 'SVC-12', name: 'VW GOLF V Aerodroma Tivat', type: 'SERVICE_CAR', serialNumber: 'Int.br. PGMN967', location: 'Landside parking', status: 'AVAILABLE', department: 'TEHNICKA_SLUZBA' }, // god. 2005
+  { code: 'SVC-13', name: 'Audi A6 Direktor ATV', type: 'SERVICE_CAR', serialNumber: 'Int.br. PG CG 440', location: 'Landside parking', status: 'AVAILABLE', department: 'TEHNICKA_SLUZBA' }, // god. 2008
 ]
 
 const employees = [
-  { cardId: 'EMP-1001', name: 'Vukan Vojvodić', department: 'Ramp', role: 'Operator', pin: '1001', idCardQr: 'EMP-1001' },
-  { cardId: 'EMP-1002', name: 'Milena Popović', department: 'Ramp', role: 'Operator', pin: '1002', idCardQr: 'EMP-1002' },
-  { cardId: 'EMP-1003', name: 'Novak Knežević', department: 'Ramp', role: 'Senior Operator', pin: '1003', idCardQr: 'EMP-1003' },
-  { cardId: 'EMP-1004', name: 'Milica Medenica', department: 'Maintenance', role: 'Technician', pin: '1004', idCardQr: 'EMP-1004' },
-  { cardId: 'EMP-1005', name: 'Blažo Adžić', department: 'Operations', role: 'Supervisor', pin: '1005', idCardQr: 'EMP-1005' },
+  { cardId: 'EMP-1001', name: 'Marko Radulović', department: 'Ramp', role: 'Operator', pin: '1001' },
+  { cardId: 'EMP-1002', name: 'Ivana Vuković', department: 'Ramp', role: 'Operator', pin: '1002' },
+  { cardId: 'EMP-1003', name: 'Petar Backović', department: 'Ramp', role: 'Senior Operator', pin: '1003' },
+  { cardId: 'EMP-1004', name: 'Ana Perović', department: 'Maintenance', role: 'Tehničar - mehanika', pin: '1004' },
+  { cardId: 'EMP-1005', name: 'Boris Jovanović', department: 'Operations', role: 'Šef službe GSE', pin: '1005' },
+  { cardId: 'EMP-1006', name: 'Nikola Đurović', department: 'Fire & Rescue', role: 'Vatrogasac', pin: '1006' },
+  { cardId: 'EMP-1007', name: 'Jelena Mijušković', department: 'Security', role: 'Bezbjednost', pin: '1007' },
+  { cardId: 'EMP-1008', name: 'Stefan Kovačević', department: 'Medical', role: 'Medicinar', pin: '1008' },
+  { cardId: 'EMP-1009', name: 'Vladimir Stanić', department: 'Maintenance', role: 'Tehničar - elektrika', pin: '1009' },
+  { cardId: 'EMP-1010', name: 'Filip Bulatović', department: 'Maintenance', role: 'Tehničar - hidraulika', pin: '1010' },
 ]
 
+const RAMP_TYPES = ['GPU', 'AIR_STARTER', 'TOW_TRACTOR', 'BELT_LOADER', 'CARGO_LOADER', 'STAIRS', 'WATER', 'LAVATORY', 'PUSHBACK', 'FORKLIFT', 'DOLLY', 'BUS']
+const FIRE_TYPES = ['FIRE_TRUCK', 'SERVICE_CAR']
+const SECURITY_TYPES = ['SERVICE_CAR', 'FOLLOW_ME']
+const MEDICAL_TYPES = ['AMBULANCE', 'SERVICE_CAR']
+const ALL_TYPES = [...new Set([...RAMP_TYPES, ...FIRE_TYPES, ...SECURITY_TYPES, ...MEDICAL_TYPES])]
+
+const qualificationsByCard = {
+  'EMP-1001': RAMP_TYPES,
+  'EMP-1002': RAMP_TYPES,
+  'EMP-1003': RAMP_TYPES,
+  'EMP-1004': ALL_TYPES,
+  'EMP-1005': ALL_TYPES,
+  'EMP-1006': FIRE_TYPES,
+  'EMP-1007': SECURITY_TYPES,
+  'EMP-1008': MEDICAL_TYPES,
+  'EMP-1009': ALL_TYPES,
+  'EMP-1010': ALL_TYPES,
+}
+
+// Kvalifikacije RADIONICE po kategoriji kvara (MaintenanceSkill) - bez ovoga
+// markRepaired odbija svako označavanje popravke. Namjerno različite
+// specijalnosti po radniku (elektrika vs mehanika vs hidraulika).
+const maintenanceSkillsByCard = {
+  'EMP-1004': ['MEHANIKA', 'OPSTE'],
+  'EMP-1009': ['ELEKTRIKA', 'OPSTE'],
+  'EMP-1010': ['HIDRAULIKA', 'MEHANIKA'],
+  'EMP-1005': ['MEHANIKA', 'ELEKTRIKA', 'HIDRAULIKA', 'BEZBJEDNOST', 'OPSTE'],
+}
+
+const validUntil = new Date()
+validUntil.setFullYear(validUntil.getFullYear() + 1)
+
 async function main() {
-  console.log('Seeding database...')
+  console.log('Seeding STVARNI GSE inventar Aerodroma Tivat...')
 
   for (const e of equipment) {
     await db.equipment.upsert({
       where: { code: e.code },
-      update: {},
+      update: { department: e.department ?? null },
       create: {
         code: e.code,
         name: e.name,
         type: e.type,
-        serialNumber: e.serialNumber,
+        serialNumber: e.serialNumber ?? null,
         location: e.location,
         status: e.status,
-        notes: e.notes,
+        notes: e.notes ?? null,
+        department: e.department ?? null,
       },
     })
   }
+  console.log(`Seeded ${equipment.length} stvarnih sredstava`)
 
+  const createdEmployees = {}
   for (const emp of employees) {
-    await db.employee.upsert({
+    const created = await db.employee.upsert({
       where: { cardId: emp.cardId },
-      update: { pin: emp.pin, idCardQr: emp.idCardQr },
+      update: { name: emp.name, department: emp.department, role: emp.role, pin: emp.pin },
       create: emp,
     })
+    createdEmployees[emp.cardId] = created.id
   }
+  console.log(`Seeded ${employees.length} zaposlenih`)
 
-  console.log(`Seeded ${equipment.length} equipment items and ${employees.length} employees`)
+  let qualCount = 0
+  for (const emp of employees) {
+    const types = qualificationsByCard[emp.cardId] || []
+    for (const equipmentType of types) {
+      await db.equipmentQualification.upsert({
+        where: { employeeId_equipmentType: { employeeId: createdEmployees[emp.cardId], equipmentType } },
+        update: {},
+        create: {
+          employeeId: createdEmployees[emp.cardId],
+          employeeCardId: emp.cardId,
+          employeeName: emp.name,
+          equipmentType,
+          qualificationLevel: emp.cardId === 'EMP-1005' ? 'INSTRUCTOR' : emp.cardId === 'EMP-1003' ? 'SENIOR' : 'OPERATOR',
+          trainedAt: new Date('2025-01-15'),
+          validUntil,
+          certifiedBy: 'Šef službe GSE',
+        },
+      })
+      qualCount++
+    }
+  }
+  console.log(`Seeded ${qualCount} kvalifikacija`)
+
+  for (const emp of employees) {
+    await db.driverAuthorization.upsert({
+      where: { employeeCardId: emp.cardId },
+      update: {},
+      create: {
+        employeeCardId: emp.cardId,
+        employeeName: emp.name,
+        category1: true,
+        category2: emp.cardId === 'EMP-1003' || emp.cardId === 'EMP-1005',
+        category3: emp.cardId === 'EMP-1005',
+        licenseNumber: `ADP-${emp.cardId.slice(-4)}`,
+        issuedAt: new Date('2025-01-15'),
+        validUntil,
+        issuedBy: 'Operativna služba Aerodroma Tivat',
+        trainingCompleted: true,
+        trainingDate: new Date('2025-01-15'),
+        trainingExpiry: validUntil,
+        active: true,
+      },
+    })
+  }
+  console.log(`Seeded ${employees.length} airside vozačkih dozvola`)
+
+  let skillCount = 0
+  for (const [cardId, categories] of Object.entries(maintenanceSkillsByCard)) {
+    const emp = employees.find((e) => e.cardId === cardId)
+    if (!emp) continue
+    for (const category of categories) {
+      await db.maintenanceSkill.upsert({
+        where: { employeeCardId_category: { employeeCardId: cardId, category } },
+        update: {},
+        create: {
+          employeeCardId: cardId,
+          employeeName: emp.name,
+          category,
+          level: cardId === 'EMP-1005' ? 'SENIOR' : 'CERTIFIED',
+          certifiedBy: 'Šef službe GSE',
+          validUntil,
+        },
+      })
+      skillCount++
+    }
+  }
+  console.log(`Seeded ${skillCount} kvalifikacija radionice po kategoriji kvara`)
 }
 
 main()

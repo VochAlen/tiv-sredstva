@@ -106,6 +106,15 @@ export async function createAerodromeInspection(input: {
     longitude?: number
     photoUrl?: string
     actionRequired?: string
+    lengthM?: number
+    maxWidthCm?: number
+    maxDepthCm?: number
+    locationCode?: string
+    isMarked?: boolean
+    conditionRating?: string
+    fenceStubFrom?: number
+    fenceStubTo?: number
+    trackingGroupId?: string
   }>
 }) {
   await requireAuth()
@@ -162,6 +171,15 @@ export async function createAerodromeInspection(input: {
             longitude: f.longitude || null,
             photoUrl: f.photoUrl || null,
             actionRequired: f.actionRequired || null,
+            lengthM: f.lengthM ?? null,
+            maxWidthCm: f.maxWidthCm ?? null,
+            maxDepthCm: f.maxDepthCm ?? null,
+            locationCode: f.locationCode || null,
+            isMarked: f.isMarked ?? false,
+            conditionRating: f.conditionRating || null,
+            fenceStubFrom: f.fenceStubFrom ?? null,
+            fenceStubTo: f.fenceStubTo ?? null,
+            trackingGroupId: f.trackingGroupId || null,
           }))
         } : undefined,
       },
@@ -221,6 +239,15 @@ export async function createAerodromeInspection(input: {
         longitude: f.longitude || null,
         photo_url: f.photoUrl || null,
         action_required: f.actionRequired || null,
+        length_m: f.lengthM ?? null,
+        max_width_cm: f.maxWidthCm ?? null,
+        max_depth_cm: f.maxDepthCm ?? null,
+        location_code: f.locationCode || null,
+        is_marked: f.isMarked ?? false,
+        condition_rating: f.conditionRating || null,
+        fence_stub_from: f.fenceStubFrom ?? null,
+        fence_stub_to: f.fenceStubTo ?? null,
+        tracking_group_id: f.trackingGroupId || null,
       }))
     )
     if (fError) console.error('Findings error:', fError)
@@ -283,6 +310,15 @@ function mapFinding(f: any) {
     resolvedBy: f.resolved_by,
     notamGenerated: f.notam_generated,
     notamNumber: f.notam_number,
+    lengthM: f.length_m,
+    maxWidthCm: f.max_width_cm,
+    maxDepthCm: f.max_depth_cm,
+    locationCode: f.location_code,
+    isMarked: f.is_marked,
+    conditionRating: f.condition_rating,
+    fenceStubFrom: f.fence_stub_from,
+    fenceStubTo: f.fence_stub_to,
+    trackingGroupId: f.tracking_group_id,
     createdAt: new Date(f.created_at),
     inspection: insp ? {
       id: insp.id,
@@ -633,3 +669,242 @@ export async function getInspectionStats(period?: 'monthly' | 'semiannual' | 'an
     notamsGenerated: findings.filter((f: any) => f.notamGenerated).length,
   }
 }
+
+// =====================================================
+// PRG.03.02 - Digitalno praćenje dospjelosti periodičnih pregleda
+// (zamjenjuje ručno prelistavanje papirnih izvještaja pri izradi
+// godišnjeg Plana održavanja - Program tehničkog održavanja 3.3)
+// =====================================================
+
+// Frekventnost periodičnih pregleda po cjelini (Tabela 3 i Tabela
+// "PERIODIČNI PREGLEDI" iz Sekcije 4) - broj puta godišnje. Koristi se za
+// grubu procjenu "dospjelosti" (dani od poslednjeg pregleda / (365/N)),
+// pošto stvarno pravilo (prije/poslije sezone: 1.maj-31.okt) zavisi od
+// kalendara, ne strogog intervala - ovo je namjerna pojednostavljena
+// aproksimacija za dashboard prikaz, ne zamjena za stručnu procjenu MING-a.
+const SURFACE_INSPECTION_FREQUENCY: Record<string, { label: string; timesPerYear: number; obrazac: string }> = {
+  RUNWAY: { label: 'PSS (po trećinama)', timesPerYear: 2, obrazac: 'Prilozi 3-5' },
+  TAXIWAY: { label: 'Rulne staze (RS)', timesPerYear: 2, obrazac: 'Prilog 6' },
+  APRON: { label: 'Parking pozicije i pripadajuće RS', timesPerYear: 2, obrazac: 'Prilog 7' },
+  RUNWAY_STRIP: { label: 'Osnovna staza PSS-a', timesPerYear: 2, obrazac: 'Prilog 8' },
+  TAXIWAY_STRIP: { label: 'Osnovna staza RS-a', timesPerYear: 2, obrazac: 'Prilog 9' },
+  DRAINAGE: { label: 'Sistem za odvodnjavanje', timesPerYear: 2, obrazac: 'Prilog 10' },
+  FENCE: { label: 'Žičana ograda (periodični)', timesPerYear: 3, obrazac: 'Prilog 11' },
+  BUILDING: { label: 'Građevinski objekti', timesPerYear: 1, obrazac: 'Prilog 12' },
+  WATER_SEWAGE: { label: 'Vodovodne i kanalizacione instalacije', timesPerYear: 2, obrazac: 'Prilog 13' },
+  GREEN_AREA: { label: 'Zelene površine', timesPerYear: 2, obrazac: 'Prilog 14' },
+}
+
+export interface SurfaceInspectionDueRow {
+  type: string
+  label: string
+  obrazac: string
+  timesPerYear: number
+  lastInspectionDate: Date | null
+  daysSinceLastInspection: number | null
+  dueIntervalDays: number
+  isDue: boolean
+}
+
+export async function getSurfaceInspectionDueStatus(): Promise<SurfaceInspectionDueRow[]> {
+  await requireAuth()
+
+  const latestByType = new Map<string, Date>()
+  if (isDemoMode()) {
+    const rows = await db.aerodromeInspection.findMany({
+      where: { inspectionType: { in: Object.keys(SURFACE_INSPECTION_FREQUENCY) } },
+      orderBy: { inspectionDate: 'desc' },
+      select: { inspectionType: true, inspectionDate: true },
+    })
+    for (const r of rows) {
+      if (!latestByType.has(r.inspectionType)) latestByType.set(r.inspectionType, r.inspectionDate)
+    }
+  } else {
+    const supabase = await createSupabaseClient()
+    const { data } = await supabase
+      .from('aerodrome_inspections')
+      .select('inspection_type, inspection_date')
+      .in('inspection_type', Object.keys(SURFACE_INSPECTION_FREQUENCY))
+      .order('inspection_date', { ascending: false })
+    for (const r of data ?? []) {
+      if (!latestByType.has(r.inspection_type)) latestByType.set(r.inspection_type, new Date(r.inspection_date))
+    }
+  }
+
+  const now = Date.now()
+  return Object.entries(SURFACE_INSPECTION_FREQUENCY).map(([type, meta]) => {
+    const last = latestByType.get(type) ?? null
+    const dueIntervalDays = Math.round(365 / meta.timesPerYear)
+    const daysSince = last ? Math.floor((now - last.getTime()) / 86_400_000) : null
+    return {
+      type,
+      label: meta.label,
+      obrazac: meta.obrazac,
+      timesPerYear: meta.timesPerYear,
+      lastInspectionDate: last,
+      daysSinceLastInspection: daysSince,
+      dueIntervalDays,
+      isDue: daysSince === null || daysSince >= dueIntervalDays,
+    }
+  })
+}
+
+// =====================================================
+// Istorija praćenja istog fizičkog nedostatka kroz vrijeme (npr. ista
+// pukotina markirana na dva uzastopna periodična pregleda) - direktna
+// zamjena za ručno vizuelno poređenje markiranog mjesta na dva papirna
+// izvještaja udaljena 6 mjeseci (PRG.03.02 3.2.5.1)
+// =====================================================
+
+export async function getDefectHistory(trackingGroupId: string) {
+  await requireAuth()
+
+  if (isDemoMode()) {
+    const rows = await db.inspectionFinding.findMany({
+      where: { trackingGroupId },
+      orderBy: { createdAt: 'asc' },
+      include: { inspection: { select: { inspectionDate: true, inspectionType: true } } },
+    })
+    return rows.map((r) => ({
+      id: r.id,
+      date: r.inspection.inspectionDate,
+      lengthM: r.lengthM,
+      maxWidthCm: r.maxWidthCm,
+      maxDepthCm: r.maxDepthCm,
+      conditionRating: r.conditionRating,
+      description: r.description,
+    }))
+  }
+
+  const supabase = await createSupabaseClient()
+  const { data } = await supabase
+    .from('inspection_findings')
+    .select('id, length_m, max_width_cm, max_depth_cm, condition_rating, description, aerodrome_inspections(inspection_date)')
+    .eq('tracking_group_id', trackingGroupId)
+    .order('created_at', { ascending: true })
+
+  return (data ?? []).map((r: any) => ({
+    id: r.id,
+    date: r.aerodrome_inspections?.inspection_date ? new Date(r.aerodrome_inspections.inspection_date) : null,
+    lengthM: r.length_m,
+    maxWidthCm: r.max_width_cm,
+    maxDepthCm: r.max_depth_cm,
+    conditionRating: r.condition_rating,
+    description: r.description,
+  }))
+}
+
+// =====================================================
+// FTO PATROLA OGRADE - JAVNA akcija, bez logina (PRG.03.02, 3.2.3.3)
+// Za razliku od svih ostalih funkcija u ovom fajlu, ova NAMJERNO ne poziva
+// requireAuth() - FTO službenik ide na teren 2-4x dnevno bez pristupa
+// dashboardu, isto kao GSE radnik na worker kiosku. U Supabase modu ide
+// isključivo kroz fn_create_fence_patrol (SECURITY DEFINER) - direktan
+// anon INSERT na tabele ostaje zabranjen (migracija 021).
+// =====================================================
+
+export interface FencePatrolFinding {
+  category: string
+  description: string
+  severity?: string
+  locationCode?: string
+  fenceStubFrom?: number
+  fenceStubTo?: number
+  isMarked?: boolean
+}
+
+export async function createFencePatrol(params: {
+  patrollerName: string
+  patrollerCardId?: string
+  shift?: string
+  findings: FencePatrolFinding[]
+}): Promise<{ ok: boolean; error?: string; id?: string; findingsCount?: number }> {
+  if (!params.patrollerName?.trim()) {
+    return { ok: false, error: 'Ime patrolera je obavezno' }
+  }
+
+  const findingsCount = params.findings.length
+  const status = findingsCount > 0 ? 'WITH_FINDINGS' : 'COMPLETED'
+
+  if (isDemoMode()) {
+    const created = await db.aerodromeInspection.create({
+      data: {
+        inspectionType: 'FENCE',
+        inspectionDate: new Date(),
+        performedBy: params.patrollerName.trim(),
+        performedByCardId: params.patrollerCardId?.trim() || null,
+        shift: params.shift || null,
+        status,
+        findingsCount,
+        criticalCount: 0,
+        findings: findingsCount > 0 ? {
+          create: params.findings.map((f) => ({
+            category: f.category,
+            severity: f.severity || 'MEDIUM',
+            description: f.description,
+            locationCode: f.locationCode || null,
+            fenceStubFrom: f.fenceStubFrom ?? null,
+            fenceStubTo: f.fenceStubTo ?? null,
+            isMarked: f.isMarked ?? false,
+          })),
+        } : undefined,
+      },
+    })
+    revalidatePath('/dashboard')
+    return { ok: true, id: created.id, findingsCount }
+  }
+
+  const supabase = await createSupabaseClient()
+  const { data, error } = await supabase.rpc('fn_create_fence_patrol', {
+    p_patroller_name: params.patrollerName.trim(),
+    p_patroller_card_id: params.patrollerCardId?.trim() || null,
+    p_shift: params.shift || null,
+    p_findings: params.findings.map((f) => ({
+      category: f.category,
+      severity: f.severity || 'MEDIUM',
+      description: f.description,
+      locationCode: f.locationCode || null,
+      fenceStubFrom: f.fenceStubFrom ?? null,
+      fenceStubTo: f.fenceStubTo ?? null,
+      isMarked: f.isMarked ?? false,
+    })),
+  })
+
+  if (error) {
+    console.error('fn_create_fence_patrol failed:', error)
+    return { ok: false, error: 'Greška pri slanju patrole' }
+  }
+  const result = data as { ok: boolean; error?: string; id?: string; findingsCount?: number }
+  if (!result.ok) return { ok: false, error: result.error ?? 'Greška' }
+
+  revalidatePath('/dashboard')
+  return { ok: true, id: result.id, findingsCount: result.findingsCount }
+}
+
+// Javno čitanje - za FTO ekran da vidi status svoje poslednje patrole (npr.
+// koliko je vremena prošlo) bez potrebe za loginom
+export async function getLatestFencePatrol() {
+  if (isDemoMode()) {
+    return db.aerodromeInspection.findFirst({
+      where: { inspectionType: 'FENCE' },
+      orderBy: { inspectionDate: 'desc' },
+    })
+  }
+  const supabase = await createSupabaseClient()
+  const { data } = await supabase
+    .from('aerodrome_inspections')
+    .select('*')
+    .eq('inspection_type', 'FENCE')
+    .order('inspection_date', { ascending: false })
+    .limit(1)
+    .maybeSingle()
+  if (!data) return null
+  return {
+    id: data.id,
+    inspectionDate: new Date(data.inspection_date),
+    performedBy: data.performed_by,
+    findingsCount: data.findings_count,
+    status: data.status,
+  }
+}
+

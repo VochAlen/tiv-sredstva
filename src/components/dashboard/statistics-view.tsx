@@ -120,6 +120,51 @@ export function StatisticsView() {
       .slice(0, 5)
   }, [utilization])
 
+  // Predictive maintenance - na osnovu MTBF-a i istorije kvarova po sredstvu
+  const predictiveAlerts = useMemo(() => {
+    if (!stats) return []
+    const alerts: Array<{ equipment: string; risk: 'HIGH' | 'MEDIUM' | 'LOW'; reason: string }> = []
+
+    utilization.forEach((u) => {
+      if (u.damages >= 3) {
+        alerts.push({
+          equipment: `${u.code} - ${u.name}`,
+          risk: 'HIGH',
+          reason: `${u.damages} prijavljena oštećenja - visok rizik od ponovnog kvara`,
+        })
+      } else if (u.damages >= 1 && u.checkouts > 10) {
+        alerts.push({
+          equipment: `${u.code} - ${u.name}`,
+          risk: 'MEDIUM',
+          reason: `${u.damages} oštećenja na ${u.checkouts} zaduženja - praćenje preporučeno`,
+        })
+      }
+    })
+
+    if (stats.mtbfHours > 0 && stats.mtbfHours < 200) {
+      alerts.push({
+        equipment: 'Sistemski (MTBF)',
+        risk: 'HIGH',
+        reason: `MTBF od ${stats.mtbfHours}h je ispod 200h - sistemski problem moguć`,
+      })
+    }
+
+    return alerts.sort((a, b) => {
+      const order = { HIGH: 0, MEDIUM: 1, LOW: 2 }
+      return order[a.risk] - order[b.risk]
+    })
+  }, [stats, utilization])
+
+  // Compliance score (EASA) - jedan brz 0-100 pokazatelj zdravlja flote
+  const complianceScore = useMemo(() => {
+    if (!stats) return 0
+    let score = 100
+    score -= stats.openDamages * 2
+    score -= stats.inspectionOverdue * 5
+    if (stats.complianceRate < 95) score -= (95 - stats.complianceRate) * 2
+    return Math.max(0, Math.min(100, score))
+  }, [stats])
+
   if (loading || !stats) {
     return (
       <div className="flex items-center justify-center py-20">
@@ -157,6 +202,24 @@ export function StatisticsView() {
         </div>
       </div>
 
+      {/* Compliance Score - jedan brz vizuelni indikator opšteg zdravlja flote */}
+      <Card className={complianceScore >= 90 ? 'border-emerald-300 bg-emerald-50' : complianceScore >= 70 ? 'border-amber-300 bg-amber-50' : 'border-red-300 bg-red-50'}>
+        <CardContent className="p-6">
+          <div className="flex items-center justify-between flex-wrap gap-4">
+            <div>
+              <div className="text-sm text-muted-foreground uppercase tracking-wide">EASA Compliance Score</div>
+              <div className={`text-4xl font-bold ${complianceScore >= 90 ? 'text-emerald-600' : complianceScore >= 70 ? 'text-amber-600' : 'text-red-600'}`}>
+                {complianceScore}/100
+              </div>
+              <div className="text-sm mt-1">
+                {complianceScore >= 90 ? '✓ Odličan nivo usklađenosti' : complianceScore >= 70 ? '⚠ Potrebno poboljšanje' : '✗ Kritično - hitne akcije potrebne'}
+              </div>
+            </div>
+            <Award className={`h-16 w-16 ${complianceScore >= 90 ? 'text-emerald-500' : complianceScore >= 70 ? 'text-amber-500' : 'text-red-500'}`} />
+          </div>
+        </CardContent>
+      </Card>
+
       {/* KPI Cards */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
         <KpiCard
@@ -187,7 +250,73 @@ export function StatisticsView() {
           icon={Wrench}
           tone="orange"
         />
+        <KpiCard
+          label="Dostupnost flote"
+          value={`${stats.availabilityRate}%`}
+          subtitle="Nije neispravno/na servisu"
+          icon={CheckCircle2}
+          tone={stats.availabilityRate >= 90 ? 'emerald' : stats.availabilityRate >= 75 ? 'amber' : 'red'}
+        />
+        <KpiCard
+          label="Trošak održavanja"
+          value={`€${stats.totalMaintenanceCost.toLocaleString('hr-HR')}`}
+          subtitle="Ukupno iz servisnih naloga"
+          icon={BarChart3}
+          tone="blue"
+        />
       </div>
+
+      {/* Predictive Maintenance Alerts - na osnovu istorije kvarova i MTBF-a */}
+      <Card>
+        <CardHeader>
+          <CardTitle className="text-base flex items-center gap-2">
+            <AlertTriangle className="h-4 w-4" />
+            Predictive Maintenance Alerti
+          </CardTitle>
+          <p className="text-xs text-muted-foreground">
+            Sredstva sa učestalim kvarovima ili sistemski nizak MTBF - kandidati za preventivnu provjeru
+          </p>
+        </CardHeader>
+        <CardContent>
+          {predictiveAlerts.length === 0 ? (
+            <div className="text-center py-8">
+              <CheckCircle2 className="h-10 w-10 mx-auto mb-2 text-emerald-500" />
+              <p className="text-sm text-muted-foreground">Nema predviđenih problema - sve u redu!</p>
+            </div>
+          ) : (
+            <div className="space-y-2">
+              {predictiveAlerts.map((alert, i) => (
+                <div
+                  key={i}
+                  className={`flex items-start gap-3 p-3 rounded-lg border ${
+                    alert.risk === 'HIGH' ? 'bg-red-50 border-red-200' :
+                    alert.risk === 'MEDIUM' ? 'bg-amber-50 border-amber-200' :
+                    'bg-blue-50 border-blue-200'
+                  }`}
+                >
+                  <AlertTriangle className={`h-5 w-5 flex-shrink-0 mt-0.5 ${
+                    alert.risk === 'HIGH' ? 'text-red-600' :
+                    alert.risk === 'MEDIUM' ? 'text-amber-600' : 'text-blue-600'
+                  }`} />
+                  <div className="flex-1">
+                    <div className="flex items-center gap-2 mb-0.5">
+                      <span className="font-medium text-sm">{alert.equipment}</span>
+                      <Badge className={`text-xs ${
+                        alert.risk === 'HIGH' ? 'bg-red-100 text-red-800' :
+                        alert.risk === 'MEDIUM' ? 'bg-amber-100 text-amber-800' :
+                        'bg-blue-100 text-blue-800'
+                      }`}>
+                        {alert.risk === 'HIGH' ? 'Visok rizik' : alert.risk === 'MEDIUM' ? 'Srednji rizik' : 'Nizak rizik'}
+                      </Badge>
+                    </div>
+                    <div className="text-xs text-muted-foreground">{alert.reason}</div>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </CardContent>
+      </Card>
 
       {/* Stats grid */}
       <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-5 gap-3">

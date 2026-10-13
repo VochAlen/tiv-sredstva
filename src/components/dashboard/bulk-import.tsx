@@ -88,9 +88,9 @@ export function BulkImportDialog({ onImported }: { onImported: () => void }) {
 
   const downloadTemplate = () => {
     const template = `code,name,type,serialNumber,location
-GSE-TOW-010,Tow Tractor Goldhofer AST-3,TOW_TRACTOR,GH-2025-001,Stand D1
-GSE-GPU-004,GPU ITW GSE 1400,GPU,ITW-2024-050,Stand D2
-GSE-BLT-004,Belt Loader TLD TB-150,BELT_LOADER,TLD-2024-300,Stand D3`
+TOW-22,Tow Tractor Goldhofer AST-3,TOW_TRACTOR,GH-2025-001,Platforma B
+GPU-05,GPU ITW GSE 1400,GPU,ITW-2024-050,Platforma - stajanka
+BLT-11,Belt Loader TLD TB-150,BELT_LOADER,TLD-2024-300,Platforma A`
     const blob = new Blob([template], { type: 'text/csv' })
     const url = URL.createObjectURL(blob)
     const link = document.createElement('a')
@@ -144,7 +144,7 @@ GSE-BLT-004,Belt Loader TLD TB-150,BELT_LOADER,TLD-2024-300,Stand D3`
                   value={csvText}
                   onChange={(e) => { setCsvText(e.target.value); setResult(null) }}
                   rows={8}
-                  placeholder="code,name,type,serialNumber,location&#10;GSE-TOW-010,Tow Tractor Goldhofer,TOW_TRACTOR,GH-2025-001,Stand D1"
+                  placeholder="code,name,type,serialNumber,location&#10;TOW-22,Tow Tractor Goldhofer,TOW_TRACTOR,GH-2025-001,Platforma B"
                   className="font-mono text-xs"
                 />
               </div>

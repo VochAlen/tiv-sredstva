@@ -214,7 +214,7 @@ function CreateIncidentDialog({ open, onOpenChange, onCreated }: any) {
             <div className="space-y-1.5"><Label>Vremenski uslovi</Label><Select value={weather} onValueChange={setWeather}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent><SelectItem value="SUNNY">Sunčano</SelectItem><SelectItem value="CLOUDY">Oblačno</SelectItem><SelectItem value="RAIN">Kiša</SelectItem><SelectItem value="FOG">Magla</SelectItem><SelectItem value="SNOW">Snijeg</SelectItem><SelectItem value="STORM">Oluja</SelectItem></SelectContent></Select></div>
           </div>
           <div className="grid grid-cols-2 gap-2">
-            <div className="space-y-1.5"><Label>GSE kod</Label><Input value={equipmentCode} onChange={(e) => setEquipmentCode(e.target.value.toUpperCase())} placeholder="GSE-TOW-001" className="font-mono" /></div>
+            <div className="space-y-1.5"><Label>GSE kod</Label><Input value={equipmentCode} onChange={(e) => setEquipmentCode(e.target.value.toUpperCase())} placeholder="npr. TOW-01" className="font-mono" /></div>
             <div className="space-y-1.5"><Label>Operater</Label><Input value={operatorName} onChange={(e) => setOperatorName(e.target.value)} placeholder="Ime radnika" /></div>
           </div>
           <div className="space-y-1.5"><Label>Opis događaja *</Label><Textarea value={description} onChange={(e) => setDescription(e.target.value)} rows={3} placeholder="Detaljno opišite šta se desilo..." required /></div>

@@ -12,26 +12,29 @@ import {
 } from 'recharts'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
-import { getStats, getActivityByDay, getEquipmentUtilization } from '@/lib/actions-advanced'
-import type { Stats, ActivityByDay, EquipmentUtilization } from '@/lib/types-advanced'
+import { getStats, getActivityByDay, getEquipmentUtilization, getTopFailingEquipment } from '@/lib/actions-advanced'
+import type { Stats, ActivityByDay, EquipmentUtilization, TopFailingEquipment } from '@/lib/types-advanced'
 
 export function AnalyticsView() {
   const [stats, setStats] = useState<Stats | null>(null)
   const [activity, setActivity] = useState<ActivityByDay[]>([])
   const [utilization, setUtilization] = useState<EquipmentUtilization[]>([])
+  const [topFailing, setTopFailing] = useState<TopFailingEquipment[]>([])
   const [loading, setLoading] = useState(true)
 
   const load = async () => {
     setLoading(true)
     try {
-      const [s, a, u] = await Promise.all([
+      const [s, a, u, tf] = await Promise.all([
         getStats(),
         getActivityByDay(30),
         getEquipmentUtilization(),
+        getTopFailingEquipment(5),
       ])
       setStats(s)
       setActivity(a)
       setUtilization(u)
+      setTopFailing(tf)
     } catch (e) {
       console.error(e)
     } finally {
@@ -148,7 +151,44 @@ export function AnalyticsView() {
         <KpiCard label="MTBF" value={`${stats.mtbfHours}h`} icon={Clock} tone="blue" />
         <KpiCard label="MTTR" value={`${stats.mttrHours}h`} icon={Activity} tone="purple" />
         <KpiCard label="Utilization" value={`${stats.utilizationRate}%`} icon={TrendingUp} tone="orange" />
+        <KpiCard label="Dostupnost flote" value={`${stats.availabilityRate}%`} icon={ShieldCheck} tone={stats.availabilityRate >= 90 ? 'emerald' : stats.availabilityRate >= 75 ? 'amber' : 'red'} />
+        <KpiCard label="Trošak održavanja" value={`€${stats.totalMaintenanceCost.toLocaleString('hr-HR')}`} icon={BarChart3} tone="blue" />
       </div>
+
+      {/* Top-kvarna oprema - za budžetsko planiranje i odluke o zamjeni */}
+      <Card>
+        <CardHeader>
+          <CardTitle className="text-base flex items-center gap-2">
+            <AlertTriangle className="h-4 w-4" />
+            Najčešće kvarena oprema
+          </CardTitle>
+          <p className="text-xs text-muted-foreground">
+            Sredstva sa najviše prijavljenih kvarova - kandidati za detaljniju inspekciju ili zamjenu
+          </p>
+        </CardHeader>
+        <CardContent>
+          {topFailing.length === 0 ? (
+            <p className="text-sm text-muted-foreground text-center py-8">Nema prijavljenih kvarova</p>
+          ) : (
+            <div className="space-y-2">
+              {topFailing.map((t, idx) => (
+                <div key={t.equipmentCode} className="flex items-center justify-between p-2.5 rounded-lg bg-muted/30">
+                  <div className="flex items-center gap-3">
+                    <div className="h-7 w-7 rounded-full bg-red-100 text-red-700 flex items-center justify-center text-xs font-bold flex-shrink-0">
+                      {idx + 1}
+                    </div>
+                    <div>
+                      <div className="text-sm font-medium">{t.equipmentCode} - {t.equipmentName}</div>
+                      <div className="text-xs text-muted-foreground">{t.equipmentType}</div>
+                    </div>
+                  </div>
+                  <Badge variant="destructive" className="text-xs">{t.damageCount} kvarova</Badge>
+                </div>
+              ))}
+            </div>
+          )}
+        </CardContent>
+      </Card>
 
       {/* Operator Performance */}
       <Card>

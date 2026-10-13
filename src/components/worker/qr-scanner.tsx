@@ -176,7 +176,7 @@ export function QrScanner({ onScan, onError }: QrScannerProps) {
           <form onSubmit={handleSubmitManual} className="space-y-2">
             <Input
               autoFocus
-              placeholder="npr. GSE-TOW-001"
+              placeholder="npr. TOW-01"
               value={manualValue}
               onChange={(e) => setManualValue(e.target.value)}
               className="text-lg font-mono uppercase"

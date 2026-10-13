@@ -15,6 +15,13 @@ export const MANUAL_TYPE_LABELS_EN: Record<string, string> = {
   PARTS: 'Parts Catalog',
 }
 
+// ADR.OPS.B.016 — FOD tipovi predmeta
+export const FOD_ITEM_TYPE_LABELS: Record<string, string> = {
+  AIRCRAFT_PART: 'Dio vazduhoplova', TOOL: 'Alat', CATERING: 'Catering otpad',
+  PERSONAL_ITEM: 'Lični predmet', PAVEMENT: 'Dio kolovoza', CONSTRUCTION: 'Građevinski materijal',
+  PLASTIC: 'Plastika/ambalaža', OTHER: 'Ostalo',
+}
+
 export interface EquipmentManualData {
   id: string
   equipmentId: string | null

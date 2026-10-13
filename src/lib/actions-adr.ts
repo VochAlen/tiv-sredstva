@@ -290,6 +290,62 @@ export async function completeMaintenanceTask(taskId: string, completionNotes: s
 // DAILY INSPECTION (ADR.OPS.C.007(c))
 // =====================================================
 
+// Za dnevni pregled po službama - svako sredstvo sa statusom da li je
+// VEĆ pregledano danas (koristi dashboard "Dnevni pregled" prikaz i
+// worker daily-check ekran da zna šta je preskočiti). Javna funkcija -
+// worker kiosk je poziva bez logina.
+export interface DailyInspectionStatusRow {
+  id: string
+  code: string
+  name: string
+  type: string
+  department: string | null
+  status: string
+  inspection: { id: string; result: string; inspectorName: string; inspectionDate: Date; shift: string } | null
+}
+
+export async function getDailyInspectionStatus(dateStr?: string): Promise<DailyInspectionStatusRow[]> {
+  const date = dateStr ?? new Date().toISOString().slice(0, 10)
+  const startOfDay = `${date}T00:00:00.000Z`
+  const endOfDay = `${date}T23:59:59.999Z`
+
+  if (isDemoMode()) {
+    const equipment = await db.equipment.findMany({ orderBy: [{ department: 'asc' }, { type: 'asc' }, { code: 'asc' }] })
+    const inspections = await db.dailyInspection.findMany({
+      where: { inspectionDate: { gte: new Date(startOfDay), lte: new Date(endOfDay) } },
+      orderBy: { inspectionDate: 'desc' },
+    })
+    const byEquipment = new Map<string, (typeof inspections)[number]>()
+    for (const insp of inspections) {
+      if (!byEquipment.has(insp.equipmentId)) byEquipment.set(insp.equipmentId, insp)
+    }
+    return equipment.map((e) => {
+      const insp = byEquipment.get(e.id)
+      return {
+        id: e.id, code: e.code, name: e.name, type: e.type, department: e.department, status: e.status,
+        inspection: insp ? { id: insp.id, result: insp.result, inspectorName: insp.inspectorName, inspectionDate: insp.inspectionDate, shift: insp.shift } : null,
+      }
+    })
+  }
+
+  const supabase = await createSupabaseClient()
+  const [{ data: equipment }, { data: inspections }] = await Promise.all([
+    supabase.from('equipment').select('*').order('department').order('type').order('code'),
+    supabase.from('daily_inspections').select('*').gte('inspection_date', startOfDay).lte('inspection_date', endOfDay).order('inspection_date', { ascending: false }),
+  ])
+  const byEquipment = new Map<string, any>()
+  for (const insp of inspections ?? []) {
+    if (!byEquipment.has(insp.equipment_id)) byEquipment.set(insp.equipment_id, insp)
+  }
+  return (equipment ?? []).map((e: any) => {
+    const insp = byEquipment.get(e.id)
+    return {
+      id: e.id, code: e.code, name: e.name, type: e.type, department: e.department, status: e.status,
+      inspection: insp ? { id: insp.id, result: insp.result, inspectorName: insp.inspector_name, inspectionDate: new Date(insp.inspection_date), shift: insp.shift } : null,
+    }
+  })
+}
+
 export async function getDailyInspections(equipmentId?: string, limit = 50) {
   if (isDemoMode()) {
     return db.dailyInspection.findMany({
@@ -329,7 +385,7 @@ export async function createDailyInspection(params: {
   shift: 'MORNING' | 'AFTERNOON' | 'NIGHT'
   checklist: Array<{ id: string; label: string; passed: boolean }>
   notes?: string
-}) {
+}): Promise<{ ok: boolean; error?: string; id?: string; result?: string }> {
   // Javna funkcija - radnici mogu kreirati daily inspection bez login-a
 
   if (isDemoMode()) {
@@ -375,38 +431,19 @@ export async function createDailyInspection(params: {
 
   // Supabase
   const supabase = await createSupabaseClient()
-  const { data: equipment } = await supabase.from('equipment').select('*').eq('code', params.equipmentCode).single()
-  if (!equipment) return { ok: false, error: 'Oprema nije pronađena' }
-
-  const failedItems = params.checklist.filter((c) => !c.passed)
-  let result = 'FIT'
-  if (failedItems.length > 2) result = 'UNFIT'
-  else if (failedItems.length > 0) result = 'CONDITIONAL'
-
-  const { data, error } = await supabase.from('daily_inspections').insert({
-    equipment_id: equipment.id,
-    equipment_code: equipment.code,
-    equipment_name: equipment.name,
-    inspector_card_id: params.inspectorCardId,
-    inspector_name: params.inspectorName,
-    shift: params.shift,
-    checklist_json: JSON.stringify(params.checklist),
-    result,
-    notes: params.notes ?? null,
-    issues_found: failedItems.length,
-    issues_json: JSON.stringify(failedItems),
-  }).select().single()
+  const { data, error } = await supabase.rpc('fn_create_daily_inspection', {
+    p_equipment_code: params.equipmentCode,
+    p_inspector_card_id: params.inspectorCardId,
+    p_inspector_name: params.inspectorName,
+    p_shift: params.shift,
+    p_checklist: params.checklist,
+    p_notes: params.notes ?? null,
+  })
 
   if (error) throw error
-
-  if (result === 'UNFIT') {
-    await supabase.from('equipment').update({
-      fitness_status: 'UNFIT',
-      fitness_calculated_at: new Date().toISOString(),
-      fitness_reason: `Dnevna inspekcija: ${failedItems.length} neispravnih stavki`,
-    }).eq('id', equipment.id)
-  }
+  const rpcResult = data as { ok: boolean; error?: string; id?: string; result?: string }
+  if (!rpcResult.ok) return { ok: false, error: rpcResult.error ?? 'Greška pri snimanju inspekcije' }
 
   revalidatePath('/dashboard')
-  return { ok: true, id: data?.id, result }
+  return { ok: true, id: rpcResult.id, result: rpcResult.result }
 }

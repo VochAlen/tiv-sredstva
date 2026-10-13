@@ -649,7 +649,7 @@ function AddConsumptionDialog({ open, onOpenChange, onAdded, parts }: any) {
           <div className="space-y-1.5"><Label>Rezervni dio *</Label><Select value={partId} onValueChange={setPartId}><SelectTrigger><SelectValue placeholder="Izaberite dio..." /></SelectTrigger><SelectContent>{parts.map((p: any) => <SelectItem key={p.id} value={p.id}>{p.partNumber} — {p.name} ({p.quantity} {p.unit})</SelectItem>)}</SelectContent></Select></div>
           <div className="grid grid-cols-2 gap-2">
             <div className="space-y-1.5"><Label>Količina</Label><Input type="number" value={quantity} onChange={(e) => setQuantity(parseInt(e.target.value) || 1)} /></div>
-            <div className="space-y-1.5"><Label>Vozilo (kod)</Label><Input value={equipmentCode} onChange={(e) => setEquipmentCode(e.target.value.toUpperCase())} placeholder="GSE-TOW-001" /></div>
+            <div className="space-y-1.5"><Label>Vozilo (kod)</Label><Input value={equipmentCode} onChange={(e) => setEquipmentCode(e.target.value.toUpperCase())} placeholder="npr. TOW-01" /></div>
           </div>
           <div className="space-y-1.5"><Label>Napomene</Label><Textarea value={notes} onChange={(e) => setNotes(e.target.value)} rows={2} /></div>
           <div className="p-2 bg-amber-50 border border-amber-200 rounded text-xs text-amber-700">⚠️ Stanje u magacinu će biti smanjeno za {quantity} kom.</div>

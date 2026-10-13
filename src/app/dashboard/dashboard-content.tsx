@@ -53,7 +53,7 @@ export function DashboardContent({ user, demoMode }: { user: AppUser; demoMode: 
           {demoMode && <Badge variant="secondary" className="text-[10px]">Demo Mode</Badge>}
         </div>
       </header>
-      <main className="flex-1 container mx-auto px-4 py-4 sm:py-6 w-full max-w-7xl">
+      <main className="flex-1 w-full min-h-0">
         <DashboardView currentUser={user} />
       </main>
       <footer className="mt-auto border-t bg-background/95 py-3 px-4 text-center text-xs text-muted-foreground print:hidden">

@@ -8,7 +8,7 @@ import { isDemoMode } from '@/lib/auth-mode'
 import { getCurrentUser, type AppUser } from '@/lib/auth-server'
 import { createClientAsync as createSupabaseClient } from "@/lib/supabase/server"
 import { revalidatePath } from 'next/cache'
-import type { Stats, ActivityByDay, EquipmentUtilization } from '@/lib/types-advanced'
+import type { Stats, ActivityByDay, EquipmentUtilization, TopFailingEquipment } from '@/lib/types-advanced'
 
 async function requireAuth(): Promise<AppUser> {
   const user = await getCurrentUser()
@@ -76,12 +76,16 @@ export async function getStats(): Promise<Stats> {
       : 0
 
     const utilizationRate = total > 0 ? Math.round((assigned / total) * 100) : 0
+    const availabilityRate = total > 0 ? Math.round(((available + assigned) / total) * 100) : 0
+
+    const costAgg = await db.maintenanceLog.aggregate({ _sum: { cost: true } })
+    const totalMaintenanceCost = costAgg._sum.cost ?? 0
 
     return {
       total, available, assigned, outOfService, maintenance, openDamages,
       inspectionOverdue, inspectionDueSoon,
       totalCheckouts, totalCheckins, complianceRate,
-      mtbfHours, mttrHours, utilizationRate,
+      mtbfHours, mttrHours, utilizationRate, availabilityRate, totalMaintenanceCost,
     }
   }
 
@@ -135,13 +139,62 @@ export async function getStats(): Promise<Stats> {
     : 0
 
   const utilizationRate = total > 0 ? Math.round((assigned / total) * 100) : 0
+  const availabilityRate = total > 0 ? Math.round(((available + assigned) / total) * 100) : 0
+
+  const { data: costRows } = await supabase.from('maintenance_log').select('cost')
+  const totalMaintenanceCost = (costRows ?? []).reduce((sum: number, r: any) => sum + (r.cost ?? 0), 0)
 
   return {
     total, available, assigned, outOfService, maintenance, openDamages: openDamagesRes.count ?? 0,
     inspectionOverdue, inspectionDueSoon,
     totalCheckouts, totalCheckins, complianceRate,
-    mtbfHours, mttrHours, utilizationRate,
+    mtbfHours, mttrHours, utilizationRate, availabilityRate, totalMaintenanceCost,
   }
+}
+
+// Top N sredstava po broju prijava kvara - za budžetsko planiranje i
+// odluke o zamjeni (npr. stara oprema koja se stalno kvari)
+export async function getTopFailingEquipment(limit = 5): Promise<TopFailingEquipment[]> {
+  await requireAuth()
+
+  if (isDemoMode()) {
+    const grouped = await db.damageReport.groupBy({
+      by: ['equipmentCode', 'equipmentName'],
+      _count: { equipmentCode: true },
+      orderBy: { _count: { equipmentCode: 'desc' } },
+      take: limit,
+    })
+    const codes = grouped.map((g) => g.equipmentCode)
+    const equipment = await db.equipment.findMany({ where: { code: { in: codes } } })
+    const typeByCode = new Map(equipment.map((e) => [e.code, e.type]))
+    return grouped.map((g) => ({
+      equipmentCode: g.equipmentCode,
+      equipmentName: g.equipmentName,
+      equipmentType: typeByCode.get(g.equipmentCode) ?? 'OTHER',
+      damageCount: g._count.equipmentCode,
+    }))
+  }
+
+  const supabase = await createSupabaseClient()
+  const { data: damages } = await supabase.from('damage_reports').select('equipment_code, equipment_name')
+  const counts = new Map<string, { name: string; count: number }>()
+  for (const d of damages ?? []) {
+    const existing = counts.get(d.equipment_code)
+    if (existing) existing.count++
+    else counts.set(d.equipment_code, { name: d.equipment_name, count: 1 })
+  }
+  const top = [...counts.entries()]
+    .sort((a, b) => b[1].count - a[1].count)
+    .slice(0, limit)
+  const codes = top.map(([code]) => code)
+  const { data: equipment } = await supabase.from('equipment').select('code, type').in('code', codes)
+  const typeByCode = new Map((equipment ?? []).map((e: any) => [e.code, e.type]))
+  return top.map(([code, v]) => ({
+    equipmentCode: code,
+    equipmentName: v.name,
+    equipmentType: typeByCode.get(code) ?? 'OTHER',
+    damageCount: v.count,
+  }))
 }
 
 export async function getActivityByDay(days = 30): Promise<ActivityByDay[]> {

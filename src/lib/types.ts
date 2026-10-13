@@ -22,20 +22,97 @@ export interface ChecklistItem {
   id: string
   label: string
   passed: boolean | null // null = nije odgovoreno
+  /** Grupa lokacije provjere (1/2/3) - iz papirnog obrasca "Dnevna čeklista" */
+  group?: 1 | 2 | 3
+  /** Period provjere - u papirnom obrascu uvijek "Dnevno" za ovu čeklistu */
+  period?: string
+  /** Da li je stavka blokirajuća (sredstvo se ne može zadužiti ako je neispravna) */
+  blocking?: boolean
 }
 
-// Standardni AHM 340 pre-use inspection checklist
+// Standardni AHM 340 pre-use inspection checklist - koristi se za tipove
+// opreme za koje ne postoji poseban papirni obrazac (fallback).
 export const DEFAULT_CHECKLIST: ChecklistItem[] = [
-  { id: 'tires', label: 'Gume i pneumatski u good stanju (bez oštećenja, odgovarajući pritisak)', passed: null },
-  { id: 'body', label: 'Karoserija bez novih oštećenja', passed: null },
-  { id: 'lights', label: 'Svjetla (farovi, žmigavci, kočiona) rade', passed: null },
-  { id: 'brakes', label: 'Kočioni sistem funkcionalan', passed: null },
-  { id: 'steering', label: 'Volan/upravljanje bez nenormalnih zvukova', passed: null },
-  { id: 'hydraulics', label: 'Hidraulični sistem bez curenja', passed: null },
-  { id: 'fluids', label: 'Nivo ulja i rashladne tečnosti OK', passed: null },
-  { id: 'safety', label: 'Sigurnosni znakovi i reflektori prisutni', passed: null },
-  { id: 'clean', label: 'Vozilo čisto, bez stranih predmeta', passed: null },
+  { id: 'tires', label: 'Gume i pneumatski u good stanju (bez oštećenja, odgovarajući pritisak)', passed: null, group: 3 },
+  { id: 'body', label: 'Karoserija bez novih oštećenja', passed: null, group: 2 },
+  { id: 'lights', label: 'Svjetla (farovi, žmigavci, kočiona) rade', passed: null, group: 3 },
+  { id: 'brakes', label: 'Kočioni sistem funkcionalan', passed: null, group: 3, blocking: true },
+  { id: 'steering', label: 'Volan/upravljanje bez nenormalnih zvukova', passed: null, group: 3 },
+  { id: 'hydraulics', label: 'Hidraulični sistem bez curenja', passed: null, group: 2 },
+  { id: 'fluids', label: 'Nivo ulja i rashladne tečnosti OK', passed: null, group: 2 },
+  { id: 'safety', label: 'Sigurnosni znakovi i reflektori prisutni', passed: null, group: 3 },
+  { id: 'clean', label: 'Vozilo čisto, bez stranih predmeta', passed: null, group: 2 },
 ]
+
+// =====================================================
+// Dnevne čekliste po tipu sredstva - prepisano IDENTIČNO sa papirnih
+// obrazaca ("Dnevna čeklista ... Aviogei/Bliss-Fox") koje koristi
+// Tehnička služba. Ista čeklista vrijedi za sve jedinice istog tipa
+// (npr. H103/H104/H105 za BELT_LOADER), jer su papirni obrasci
+// identični po jedinici - razlikuje se samo naziv jedinice na vrhu.
+// "Grupa lokacije provjere" (1/2/3) i "Period provjere" (Dnevno)
+// prepisani tačno iz obrasca, radi usklađenosti sa PRG.03.02 / EASA ADR.
+// =====================================================
+
+// STEPENICE (Aviogei) - "Dnevna čeklista stepenica Aviogei H21/H22/H23"
+const STAIRS_CHECKLIST: ChecklistItem[] = [
+  { id: 'vital', label: 'Ispitati sve vitalne funkcije vozila', passed: null, group: 1, period: 'Dnevno', blocking: true },
+  { id: 'fluid-leak', label: 'Provjeriti vozilo na prisustvo curenja fluida', passed: null, group: 2, period: 'Dnevno' },
+  { id: 'chassis', label: 'Provjeriti oštećenja na šasiji', passed: null, group: 2, period: 'Dnevno' },
+  { id: 'door-hinges', label: 'Provjeriti šarke, ručke i graničnike na vratima', passed: null, group: 2, period: 'Dnevno' },
+  { id: 'glass-mirrors', label: 'Provjeriti stanje stakala i retrovizora', passed: null, group: 2, period: 'Dnevno' },
+  { id: 'canopy-bumpers', label: 'Provjeriti stanje nadstrešnice i odbojnika na platformi', passed: null, group: 2, period: 'Dnevno' },
+  { id: 'tires-steering', label: 'Provjeriti stanje pneumatika i upravljačku pokretljivost', passed: null, group: 3, period: 'Dnevno', blocking: true },
+  { id: 'dash-lights', label: 'Provjeriti funkcionalnost lampi na komandnoj tabli', passed: null, group: 3, period: 'Dnevno' },
+  { id: 'foot-brake', label: 'Provjeriti efikasnost nožnih kočnica', passed: null, group: 3, period: 'Dnevno', blocking: true },
+  { id: 'hand-brake', label: 'Provjeriti efikasnost ručne kočnice', passed: null, group: 3, period: 'Dnevno', blocking: true },
+  { id: 'wipers', label: 'Provjeriti funkciju brisača', passed: null, group: 3, period: 'Dnevno' },
+  { id: 'signal-lights', label: 'Provjeriti funkciju signalizacije i rasvjete', passed: null, group: 3, period: 'Dnevno' },
+]
+
+// ELEVATOR / BELT LOADER (Aviogei) - "Dnevna čeklista elevatora Aviogei H103/H104/H105"
+const BELT_LOADER_CHECKLIST: ChecklistItem[] = [
+  { id: 'vital', label: 'Ispitati sve vitalne funkcije vozila', passed: null, group: 1, period: 'Dnevno', blocking: true },
+  { id: 'fluid-leak', label: 'Provjeriti vozilo na prisustvo curenja fluida', passed: null, group: 2, period: 'Dnevno' },
+  { id: 'chassis-bumpers', label: 'Provjeriti oštećenja na šasiji / odbojni točkovi', passed: null, group: 2, period: 'Dnevno' },
+  { id: 'door-hinges', label: 'Provjeriti šarke, ručke i graničnike na vratima', passed: null, group: 2, period: 'Dnevno' },
+  { id: 'glass-mirrors', label: 'Provjeriti stanje stakala i retrovizora', passed: null, group: 2, period: 'Dnevno' },
+  { id: 'tires-steering', label: 'Provjeriti stanje pneumatika i upravljačku pokretljivost', passed: null, group: 3, period: 'Dnevno', blocking: true },
+  { id: 'dash-lights', label: 'Provjeriti funkcionalnost lampi na komandnoj tabli', passed: null, group: 3, period: 'Dnevno' },
+  { id: 'foot-brake', label: 'Provjeriti efikasnost nožnih kočnica', passed: null, group: 3, period: 'Dnevno', blocking: true },
+  { id: 'hand-brake', label: 'Provjeriti efikasnost ručne kočnice', passed: null, group: 3, period: 'Dnevno', blocking: true },
+  { id: 'wipers', label: 'Provjeriti funkciju brisača', passed: null, group: 3, period: 'Dnevno' },
+  { id: 'signal-lights', label: 'Provjeriti funkciju signalizacije i rasvjete', passed: null, group: 3, period: 'Dnevno' },
+]
+
+// TEGLJAČ (Bliss-Fox) - "Dnevna čeklista tegljača Bliss-Fox H7/H8/H9/H10"
+const TOW_TRACTOR_CHECKLIST: ChecklistItem[] = [
+  { id: 'vital', label: 'Provjeriti ispravnost vitalnih funkcija', passed: null, group: 1, period: 'Dnevno', blocking: true },
+  { id: 'fluid-leak', label: 'Provjeriti vozilo na prisustvo curenja fluida', passed: null, group: 2, period: 'Dnevno' },
+  { id: 'door-hinges', label: 'Provjeriti šarke, ručke i graničnike na vratima', passed: null, group: 2, period: 'Dnevno' },
+  { id: 'glass', label: 'Provjeriti sva stakla na vozilu', passed: null, group: 2, period: 'Dnevno' },
+  { id: 'battery', label: 'Provjeriti napunjenost baterije – vizuelno', passed: null, group: 2, period: 'Dnevno' },
+  { id: 'tires-steering', label: 'Provjeriti stanje pneumatika i sistem upravljanja', passed: null, group: 3, period: 'Dnevno', blocking: true },
+  { id: 'display', label: 'Provjeriti funkciju displeja', passed: null, group: 3, period: 'Dnevno' },
+  { id: 'brakes', label: 'Provjeriti kočioni sistem', passed: null, group: 3, period: 'Dnevno', blocking: true },
+  { id: 'signal-lights-horn', label: 'Provjeriti funkciju signalizacije, rasvjete i sirene', passed: null, group: 3, period: 'Dnevno' },
+  { id: 'wipers', label: 'Provjeriti funkciju brisača', passed: null, group: 3, period: 'Dnevno' },
+]
+
+/**
+ * Vraća dnevnu pre-use čeklistu za dati tip sredstva, identičnu
+ * odgovarajućem papirnom obrascu. Za tipove bez posebnog obrasca
+ * koristi se opšta (DEFAULT_CHECKLIST) čeklista.
+ */
+export function getChecklistForType(type: string): ChecklistItem[] {
+  const map: Partial<Record<string, ChecklistItem[]>> = {
+    STAIRS: STAIRS_CHECKLIST,
+    BELT_LOADER: BELT_LOADER_CHECKLIST,
+    TOW_TRACTOR: TOW_TRACTOR_CHECKLIST,
+  }
+  const list = map[type] ?? DEFAULT_CHECKLIST
+  return list.map((i) => ({ ...i, passed: null }))
+}
 
 export const EQUIPMENT_TYPE_LABELS: Record<EquipmentType, string> = {
   TOW_TRACTOR: 'Tow Tractor',

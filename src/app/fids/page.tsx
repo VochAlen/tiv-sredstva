@@ -34,7 +34,11 @@ export default function FidsPage() {
 
   useEffect(() => {
     load()
-    const interval = setInterval(load, 30000) // 30s auto-refresh
+    // 240s auto-refresh (povećano sa 30s na zahtjev - smanjuje broj
+    // Vercel serverless pozivа ~8x: ovaj ekran je namijenjen da bude
+    // trajno otvoren, 30s interval je generisao ~2880 pozivа/dan po
+    // ekranu, na 240s je to ~360/dan po ekranu)
+    const interval = setInterval(load, 240000)
     return () => clearInterval(interval)
   }, [])
 

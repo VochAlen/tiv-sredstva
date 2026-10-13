@@ -17,8 +17,11 @@ import {
   Camera,
   Lock,
   FileText,
+  Bird,
+  ShieldCheck,
 } from 'lucide-react'
 import { QrScanner } from './qr-scanner'
+import { QuickReportDialog } from './quick-report-dialog'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
@@ -29,6 +32,7 @@ import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group'
 import { Separator } from '@/components/ui/separator'
 import {
   DEFAULT_CHECKLIST,
+  getChecklistForType,
   EQUIPMENT_TYPE_LABELS,
   STATUS_LABELS,
   STATUS_COLORS,
@@ -44,6 +48,8 @@ import {
 import { getManualsForEquipment } from '@/lib/actions-manuals'
 import { type EquipmentManualData, MANUAL_TYPE_LABELS } from '@/lib/constants-export'
 import { toast } from 'sonner'
+import { HelpButton } from '@/components/ui/help-button'
+import { recordFitnessDeclaration } from '@/lib/actions-safety-reports'
 
 type Step = 'scan' | 'identify' | 'inspect' | 'success' | 'blocked'
 
@@ -94,6 +100,10 @@ export function WorkerView({
   const [lookupLoading, setLookupLoading] = useState(false)
   const [manuals, setManuals] = useState<EquipmentManualData[]>([])
   const [showManuals, setShowManuals] = useState(false)
+  const [assignmentId, setAssignmentId] = useState<string | null>(null)
+  const [showFodDialog, setShowFodDialog] = useState(false)
+  const [showWildlifeDialog, setShowWildlifeDialog] = useState(false)
+  const [fitnessConfirmed, setFitnessConfirmed] = useState(false)
 
   // Ako je otvoreno preko ?scan=XXX URL parametra (skener telefona)
   useEffect(() => {
@@ -115,6 +125,8 @@ export function WorkerView({
     setDamageDescription('')
     setDamageSeverity('MINOR')
     setActionType('CHECK_OUT')
+    setAssignmentId(null)
+    setFitnessConfirmed(false)
   }
 
   // Kad skener vrati vrijednost
@@ -138,6 +150,9 @@ export function WorkerView({
         notes: eq.notes,
         manualUrl: (eq as any).manualUrl ?? null,
       })
+
+      // Čeklista zavisi od tipa sredstva (identična papirnom obrascu)
+      setChecklist(getChecklistForType(eq.type))
 
       // Ako je neispravno ili na održavanju - odmah blokiraj
       if (eq.status === 'OUT_OF_SERVICE' || eq.status === 'MAINTENANCE') {
@@ -176,6 +191,13 @@ export function WorkerView({
       toast.error('Unesite broj ID kartice i ime')
       return
     }
+    if (!fitnessConfirmed) {
+      toast.error('Potvrdite da ste sposobni za rad prije nastavka')
+      return
+    }
+    // ADR.OR.C.045 — bilježi se samo potvrda i vrijeme, bez zdravstvenih
+    // podataka. Best-effort, ne blokira glavni tok ako loguje neuspješno.
+    recordFitnessDeclaration({ employeeCardId: cardId, employeeName, confirmed: true }).catch(() => {})
     if (actionType === 'CHECK_IN') {
       // CHECK_IN - ide direktno na success path (kraći proces)
       // ali ipak ide na inspect step da se potvrdi
@@ -206,6 +228,15 @@ export function WorkerView({
       }
     }
 
+    submitInspect()
+  }
+
+  // Izdvojeno iz handleInspectSubmit da i brza dugmad (markAllPassed +
+  // submit, quickCheckIn) mogu pozvati isti kod bez events-a.
+  const submitInspect = (overrides?: { damageDescription?: string }) => {
+    if (!equipment) return
+    const effectiveDamageDescription = overrides?.damageDescription ?? damageDescription
+
     startTransition(async () => {
       try {
         if (actionType === 'CHECK_OUT') {
@@ -216,13 +247,14 @@ export function WorkerView({
             checklist,
             inspectionResult,
             inspectionNotes: notes.trim() || undefined,
-            damageDescription: inspectionResult !== 'OK' ? damageDescription.trim() : undefined,
+            damageDescription: inspectionResult !== 'OK' ? effectiveDamageDescription.trim() : undefined,
             damageSeverity,
           })
+          setAssignmentId((res as any).assignmentId ?? null)
           if (res.ok) {
             if (res.damageReportId && inspectionResult !== 'OK') {
               // Ažuriraj lokalni state - sredstvo je sad OUT_OF_SERVICE
-              setEquipment((prev) => prev ? { ...prev, status: 'OUT_OF_SERVICE', notes: `Oštećenje prijavljeno: ${damageDescription.trim().slice(0, 100)}` } : prev)
+              setEquipment((prev) => prev ? { ...prev, status: 'OUT_OF_SERVICE', notes: `Oštećenje prijavljeno: ${effectiveDamageDescription.trim().slice(0, 100)}` } : prev)
               setStep('blocked')
               toast.warning('Zaduživanje uslovljeno oštećenjem - prijava zabilježena')
             } else {
@@ -241,7 +273,7 @@ export function WorkerView({
             employeeCardId: cardId.trim(),
             employeeName: employeeName.trim(),
             notes: notes.trim() || undefined,
-            foundDamage: damageDescription.trim() || undefined,
+            foundDamage: effectiveDamageDescription.trim() || undefined,
             damageSeverity,
           })
           if (res.ok) {
@@ -262,6 +294,21 @@ export function WorkerView({
     setChecklist((prev) => prev.map((i) => (i.id === id ? { ...i, passed: value } : i)))
   }
 
+  // Brzo zaduživanje - jednim klikom oznaci sve stavke kao ispravne
+  // (radnik ipak može kliknuti na pojedinačnu stavku ako primijeti kvar)
+  const markAllPassed = () => {
+    setChecklist((prev) => prev.map((i) => ({ ...i, passed: true })))
+    setInspectionResult('OK')
+  }
+
+  // Brzo razduživanje - jednim klikom potvrdi "sve OK, nema novog
+  // oštećenja" i odmah pošalji (isti obrazac kao markAllPassed za
+  // zaduživanje, za CHECK_IN tok).
+  const quickCheckIn = () => {
+    setDamageDescription('')
+    submitInspect({ damageDescription: '' })
+  }
+
   // Auto-set inspection result na osnovu checkliste
   useEffect(() => {
     if (actionType !== 'CHECK_OUT') return
@@ -273,8 +320,21 @@ export function WorkerView({
     else setInspectionResult((prev) => (prev === 'OK' ? 'MAJOR_DAMAGE' : prev))
   }, [checklist, actionType])
 
+  // Automatski upiši naziv neispravne stavke u opis oštećenja, da
+  // održavanje odmah vidi koji dio sredstva je u kvaru - radnik ne
+  // mora ponovo kucati ono što je već oznacio u checklisti (ali može
+  // dopisati detalje).
+  useEffect(() => {
+    if (actionType !== 'CHECK_OUT') return
+    const failedLabels = checklist.filter((i) => i.passed === false).map((i) => i.label)
+    if (failedLabels.length === 0) return
+    const autoText = `Neispravno: ${failedLabels.join('; ')}`
+    setDamageDescription((prev) => (prev.trim() === '' || prev.startsWith('Neispravno: ') ? autoText : prev))
+  }, [checklist, actionType])
+
   return (
     <div className="max-w-md mx-auto pb-24">
+      <HelpButton helpKey={`worker.${step}`} />
       {/* Header sa step indikatorom */}
       <div className="flex items-center justify-between mb-4">
         <div className="flex items-center gap-2">
@@ -322,8 +382,23 @@ export function WorkerView({
               </ol>
             </CardContent>
           </Card>
+
+          {/* Brze prijave — ne zahtijevaju skeniranje opreme (ADR.OPS.B.016/B.020) */}
+          <div className="grid grid-cols-2 gap-2">
+            <Button type="button" variant="outline" size="sm" onClick={() => setShowFodDialog(true)}>
+              <AlertTriangle className="h-4 w-4 mr-1.5 text-amber-600" />
+              Prijavi FOD
+            </Button>
+            <Button type="button" variant="outline" size="sm" onClick={() => setShowWildlifeDialog(true)}>
+              <Bird className="h-4 w-4 mr-1.5 text-emerald-600" />
+              Divlja životinja
+            </Button>
+          </div>
         </div>
       )}
+
+      <QuickReportDialog open={showFodDialog} onOpenChange={setShowFodDialog} type="FOD" />
+      <QuickReportDialog open={showWildlifeDialog} onOpenChange={setShowWildlifeDialog} type="WILDLIFE" />
 
       {/* STEP 2: IDENTIFY - info o sredstvu + ID radnika */}
       {step === 'identify' && equipment && !lookupLoading && (
@@ -393,7 +468,21 @@ export function WorkerView({
             </CardContent>
           </Card>
 
-          <Button type="submit" size="lg" className="w-full">
+          {/* ADR.OR.C.045 — potvrda sposobnosti za rad (bez zdravstvenih podataka) */}
+          <label className="flex items-start gap-2.5 text-sm p-3 rounded-lg border bg-muted/30 cursor-pointer">
+            <input
+              type="checkbox"
+              checked={fitnessConfirmed}
+              onChange={(e) => setFitnessConfirmed(e.target.checked)}
+              className="h-4 w-4 mt-0.5 flex-shrink-0"
+            />
+            <span className="flex items-start gap-1.5">
+              <ShieldCheck className="h-4 w-4 text-emerald-600 flex-shrink-0 mt-0.5" />
+              Potvrđujem da sam sposoban/na za rad (nisam pod uticajem alkohola ili psihoaktivnih supstanci)
+            </span>
+          </label>
+
+          <Button type="submit" size="lg" className="w-full" disabled={!fitnessConfirmed}>
             {actionType === 'CHECK_OUT' ? 'Nastavi na pregled' : 'Nastavi na razduživanje'}
           </Button>
         </form>
@@ -417,36 +506,60 @@ export function WorkerView({
                   </p>
                 </CardHeader>
                 <CardContent className="space-y-3">
-                  {checklist.map((item, idx) => (
-                    <div key={item.id} className="space-y-1.5">
-                      <div className="text-sm font-medium">
-                        {idx + 1}. {item.label}
+                  <Button
+                    type="button"
+                    variant="outline"
+                    className="w-full border-emerald-300 text-emerald-700 hover:bg-emerald-50"
+                    onClick={markAllPassed}
+                  >
+                    <CheckCircle2 className="h-4 w-4 mr-2" />
+                    Sve stavke ispravne (brzo zaduživanje)
+                  </Button>
+                  <Separator />
+                  {checklist.map((item, idx) => {
+                    const prevGroup = idx > 0 ? checklist[idx - 1].group : undefined
+                    const showGroupHeader = item.group !== undefined && item.group !== prevGroup
+                    return (
+                      <div key={item.id} className="space-y-1.5">
+                        {showGroupHeader && (
+                          <div className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground pt-1">
+                            Grupa {item.group}
+                          </div>
+                        )}
+                        <div className="text-sm font-medium flex items-center gap-1.5">
+                          {idx + 1}. {item.label}
+                          {item.blocking && (
+                            <Badge variant="outline" className="text-[10px] border-red-300 text-red-700">
+                              blokira zaduživanje
+                            </Badge>
+                          )}
+                        </div>
+                        <div className="flex gap-2">
+                          <Button
+                            type="button"
+                            size="sm"
+                            variant={item.passed === true ? 'default' : 'outline'}
+                            className={item.passed === true ? 'bg-emerald-600 hover:bg-emerald-700' : ''}
+                            onClick={() => updateChecklistItem(item.id, true)}
+                          >
+                            <CheckCircle2 className="h-4 w-4 mr-1" />
+                            Ispravno
+                          </Button>
+                          <Button
+                            type="button"
+                            size="sm"
+                            variant={item.passed === false ? 'default' : 'outline'}
+                            className={item.passed === false ? 'bg-red-600 hover:bg-red-700' : ''}
+                            onClick={() => updateChecklistItem(item.id, false)}
+                          >
+                            <XCircle className="h-4 w-4 mr-1" />
+                            Neispravno
+                          </Button>
+                        </div>
+                        {idx < checklist.length - 1 && <Separator className="mt-3" />}
                       </div>
-                      <div className="flex gap-2">
-                        <Button
-                          type="button"
-                          size="sm"
-                          variant={item.passed === true ? 'default' : 'outline'}
-                          className={item.passed === true ? 'bg-emerald-600 hover:bg-emerald-700' : ''}
-                          onClick={() => updateChecklistItem(item.id, true)}
-                        >
-                          <CheckCircle2 className="h-4 w-4 mr-1" />
-                          Ispravno
-                        </Button>
-                        <Button
-                          type="button"
-                          size="sm"
-                          variant={item.passed === false ? 'default' : 'outline'}
-                          className={item.passed === false ? 'bg-red-600 hover:bg-red-700' : ''}
-                          onClick={() => updateChecklistItem(item.id, false)}
-                        >
-                          <XCircle className="h-4 w-4 mr-1" />
-                          Neispravno
-                        </Button>
-                      </div>
-                      {idx < checklist.length - 1 && <Separator className="mt-3" />}
-                    </div>
-                  ))}
+                    )
+                  })}
                 </CardContent>
               </Card>
 
@@ -554,6 +667,18 @@ export function WorkerView({
                     <p>Potvrđujete da razdužujete ovo sredstvo i da ste ga vratili u istom stanju (ili prijavljujete novo oštećenje).</p>
                   </div>
 
+                  <Button
+                    type="button"
+                    variant="outline"
+                    className="w-full border-emerald-300 text-emerald-700 hover:bg-emerald-50"
+                    onClick={quickCheckIn}
+                    disabled={isPending}
+                  >
+                    {isPending ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : <CheckCircle2 className="h-4 w-4 mr-2" />}
+                    Sve OK — brzo razduživanje
+                  </Button>
+                  <Separator />
+
                   <div className="space-y-1.5">
                     <Label>Dali ste primijetili novo oštećenje?</Label>
                     <RadioGroup
@@ -648,9 +773,22 @@ export function WorkerView({
                 {new Date().toLocaleString('hr-HR')}
               </div>
             </div>
-            <Button onClick={reset} className="mt-4">
-              Skeniraj sljedeće
-            </Button>
+            <div className="flex flex-col gap-2 items-center mt-4">
+              {assignmentId && actionType === 'CHECK_OUT' && (
+                <a
+                  href={`/api/reports/gse-checklist?id=${assignmentId}`}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="inline-flex items-center gap-1.5 px-3 py-2 rounded-lg bg-white border border-emerald-300 text-emerald-700 hover:bg-emerald-50 transition text-sm font-medium"
+                >
+                  <FileText className="h-4 w-4" />
+                  Preuzmi PDF čeklistu
+                </a>
+              )}
+              <Button onClick={reset}>
+                Skeniraj sljedeće
+              </Button>
+            </div>
           </CardContent>
         </Card>
       )}
@@ -694,9 +832,22 @@ export function WorkerView({
                 </div>
               )}
             </div>
-            <Button onClick={reset} className="mt-4" variant="outline">
-              Skeniraj drugo sredstvo
-            </Button>
+            <div className="flex flex-col gap-2 items-center mt-4">
+              {assignmentId && (
+                <a
+                  href={`/api/reports/gse-checklist?id=${assignmentId}`}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="inline-flex items-center gap-1.5 px-3 py-2 rounded-lg bg-white border border-red-300 text-red-700 hover:bg-red-50 transition text-sm font-medium"
+                >
+                  <FileText className="h-4 w-4" />
+                  Preuzmi PDF čeklistu
+                </a>
+              )}
+              <Button onClick={reset} variant="outline">
+                Skeniraj drugo sredstvo
+              </Button>
+            </div>
           </CardContent>
         </Card>
       )}

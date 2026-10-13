@@ -13,6 +13,13 @@ const TYPE_LABELS: Record<string, string> = {
   TAXIWAY: 'Taxiway',
   APRON: 'Apron',
   MOVEMENT_AREA_JOINT: 'Movement Area Joint',
+  RUNWAY_STRIP: 'Osnovna staza PSS-a',
+  TAXIWAY_STRIP: 'Osnovna staza RS-a',
+  DRAINAGE: 'Sistem za odvodnjavanje',
+  FENCE: 'Zicana ograda',
+  BUILDING: 'Gradjevinski objekti',
+  WATER_SEWAGE: 'Vodovod i kanalizacija',
+  GREEN_AREA: 'Zelene povrsine',
 }
 const STATUS_LABELS: Record<string, string> = {
   COMPLETED: 'Zavrseno',
@@ -21,13 +28,44 @@ const STATUS_LABELS: Record<string, string> = {
   ABORTED: 'Prekinuto',
 }
 
+// PRG.03.02 - referentna oznaka papirnog obrasca kojeg PDF digitalno
+// zamjenjuje, po tipu pregleda (Sekcija 6, Tabela 10)
+const PRG0302_FORM_CODE: Record<string, string> = {
+  RUNWAY: 'PRG.03.02.OBR.3-5',
+  TAXIWAY: 'PRG.03.02.OBR.6',
+  APRON: 'PRG.03.02.OBR.7',
+  RUNWAY_STRIP: 'PRG.03.02.OBR.8',
+  TAXIWAY_STRIP: 'PRG.03.02.OBR.9',
+  DRAINAGE: 'PRG.03.02.OBR.10',
+  FENCE: 'PRG.03.02.OBR.11 (Prilog 1 za dnevnu FTO patrolu)',
+  BUILDING: 'PRG.03.02.OBR.12',
+  WATER_SEWAGE: 'PRG.03.02.OBR.13',
+  GREEN_AREA: 'PRG.03.02.OBR.14',
+}
+
 // Regulatorna referenca po tipu inspekcije — Commission Regulation (EU) 139/2014, Part-ADR.OPS
 const REGULATION_REF: Record<string, string> = {
   RUNWAY: 'ADR.OPS.B.015 (Monitoring & inspection) / ADR.OPS.A.065 (RCC/GRF)',
   TAXIWAY: 'ADR.OPS.B.015 (Monitoring & inspection of movement area)',
   APRON: 'ADR.OPS.B.015 / ADR.OPS.B.016 (FOD control programme)',
   MOVEMENT_AREA_JOINT: 'ADR.OPS.B.015 / ADR.OPS.B.020 (Wildlife strike hazard reduction)',
+  RUNWAY_STRIP: 'PRG.03.02 3.2.5.1 - periodicni pregled osnovne staze PSS-a',
+  TAXIWAY_STRIP: 'PRG.03.02 3.2.5.1 - periodicni pregled osnovne staze RS-a',
+  DRAINAGE: 'PRG.03.02 3.2.5.2 - sistem za odvodnjavanje',
+  FENCE: 'ADR.OPS.B.020 / PRG.03.02 3.2.3.3, 3.2.5.3 - zicana ograda',
+  BUILDING: 'PRG.03.02 4.2 - gradjevinski objekti',
+  WATER_SEWAGE: 'PRG.03.02 4.2.1 - vodovodne i kanalizacione instalacije',
+  GREEN_AREA: 'PRG.03.02 4.3 - zelene povrsine',
 }
+
+// Tabela 7 (PRG.03.02) - kratak opis ocjene za PDF
+const CONDITION_RATING_LABELS: Record<string, string> = {
+  E: 'Odlicno',
+  G: 'Zadovoljava',
+  A: 'Prihvatljivo (granica)',
+  NA: 'NEPRIHVATLJIVO',
+}
+
 
 async function embedFindingPhoto(pdfDoc: PDFDocument, photoUrl: string) {
   try {
@@ -98,6 +136,14 @@ export async function GET(request: NextRequest) {
         location: f.location,
         photoUrl: f.photo_url,
         status: f.status,
+        lengthM: f.length_m,
+        maxWidthCm: f.max_width_cm,
+        maxDepthCm: f.max_depth_cm,
+        locationCode: f.location_code,
+        isMarked: f.is_marked,
+        conditionRating: f.condition_rating,
+        fenceStubFrom: f.fence_stub_from,
+        fenceStubTo: f.fence_stub_to,
       })),
     }))
   }
@@ -214,6 +260,14 @@ export async function GET(request: NextRequest) {
     })
     y -= 9
 
+    if (PRG0302_FORM_CODE[i.inspectionType]) {
+      addText(`Zamjenjuje papirni obrazac: ${PRG0302_FORM_CODE[i.inspectionType]}`, margin + 10, y, {
+        size: 6,
+        color: rgb(0.5, 0.5, 0.5),
+      })
+      y -= 9
+    }
+
     if (i.inspectionType === 'RUNWAY' && i.runwayCondition) {
       const rcc = getIndicativeRCC(i.runwayCondition)
       addText(
@@ -237,6 +291,24 @@ export async function GET(request: NextRequest) {
           { size: 6, color: sevColor }
         )
         y -= 8
+
+        // Strukturirani K-kod podaci (PRG.03.02, Tabela 5-7) - ako postoje
+        const kBits: string[] = []
+        if (f.lengthM != null) kBits.push(`dužina/pov.: ${f.lengthM}m`)
+        if (f.maxWidthCm != null) kBits.push(`širina: ${f.maxWidthCm}cm`)
+        if (f.maxDepthCm != null) kBits.push(`dubina/visina: ${f.maxDepthCm}cm`)
+        if (f.locationCode) kBits.push(`lokacija: ${f.locationCode}`)
+        if (f.fenceStubFrom != null) kBits.push(`stub: ${f.fenceStubFrom}${f.fenceStubTo && f.fenceStubTo !== f.fenceStubFrom ? `-${f.fenceStubTo}` : ''}`)
+        if (f.isMarked) kBits.push('markirano')
+        if (f.conditionRating) kBits.push(`ocjena: ${CONDITION_RATING_LABELS[f.conditionRating] ?? f.conditionRating}`)
+        if (kBits.length > 0) {
+          ensureSpace(15)
+          addText(`      (${kBits.join(' / ')})`, margin, y, {
+            size: 6,
+            color: f.conditionRating === 'NA' ? rgb(0.86, 0.15, 0.15) : rgb(0.45, 0.45, 0.45),
+          })
+          y -= 9
+        }
 
         if (f.photoUrl) {
           const img = await embedFindingPhoto(pdfDoc, f.photoUrl)

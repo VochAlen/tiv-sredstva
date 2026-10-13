@@ -23,8 +23,12 @@ import {
   getAerodromeInspections, createAerodromeInspection, deleteAerodromeInspection,
   getFindings, updateFindingStatus, deleteFinding,
   getNotams, createNotam, cancelNotam, deleteNotam,
-  getInspectionStats,
+  getInspectionStats, getSurfaceInspectionDueStatus, getDefectHistory, type SurfaceInspectionDueRow,
 } from '@/lib/actions-inspection'
+import {
+  PAVEMENT_DEFECT_CATEGORIES, FENCE_DEFECT_CATEGORIES, getDefectCategoryDef,
+  LOCATION_CODES, CONDITION_RATINGS,
+} from '@/lib/inspection-codes'
 
 type Inspection = Awaited<ReturnType<typeof getAerodromeInspections>>[number]
 type Finding = Awaited<ReturnType<typeof getFindings>>[number]
@@ -32,10 +36,17 @@ type Notam = Awaited<ReturnType<typeof getNotams>>[number]
 type Stats = Awaited<ReturnType<typeof getInspectionStats>>
 
 const INSPECTION_TYPE_LABELS: Record<string, string> = {
-  RUNWAY: 'Runway inspekcija',
-  TAXIWAY: 'Taxiway inspekcija',
-  APRON: 'Apron inspekcija',
+  RUNWAY: 'Runway inspekcija (PSS)',
+  TAXIWAY: 'Taxiway inspekcija (RS)',
+  APRON: 'Apron inspekcija (parking)',
   MOVEMENT_AREA_JOINT: 'Movement Area Joint',
+  RUNWAY_STRIP: 'Osnovna staza PSS-a',
+  TAXIWAY_STRIP: 'Osnovna staza RS-a',
+  DRAINAGE: 'Sistem za odvodnjavanje',
+  FENCE: 'Žičana ograda',
+  BUILDING: 'Građevinski objekti',
+  WATER_SEWAGE: 'Vodovod i kanalizacija',
+  GREEN_AREA: 'Zelene površine',
 }
 
 const STATUS_LABELS: Record<string, string> = {
@@ -111,20 +122,21 @@ function CheckSelect({ label, value, onChange }: any) {
 }
 
 export function AerodromeInspectionView() {
-  const [tab, setTab] = useState<'inspections' | 'findings' | 'notam' | 'stats' | 'trends'>('inspections')
+  const [tab, setTab] = useState<'inspections' | 'findings' | 'notam' | 'due' | 'stats' | 'trends'>('inspections')
   const [insp, setInsp] = useState<Inspection[]>([])
   const [findings, setFindings] = useState<Finding[]>([])
   const [notams, setNotams] = useState<Notam[]>([])
   const [stats, setStats] = useState<Stats | null>(null)
+  const [dueStatus, setDueStatus] = useState<SurfaceInspectionDueRow[]>([])
   const [loading, setLoading] = useState(true)
 
   const load = async () => {
     setLoading(true)
     try {
-      const [i, f, n, s] = await Promise.all([
-        getAerodromeInspections(), getFindings(), getNotams(), getInspectionStats(),
+      const [i, f, n, s, d] = await Promise.all([
+        getAerodromeInspections(), getFindings(), getNotams(), getInspectionStats(), getSurfaceInspectionDueStatus(),
       ])
-      setInsp(i); setFindings(f); setNotams(n); setStats(s)
+      setInsp(i); setFindings(f); setNotams(n); setStats(s); setDueStatus(d)
     } catch (e) { console.error(e) }
     finally { setLoading(false) }
   }
@@ -162,6 +174,7 @@ export function AerodromeInspectionView() {
         <TabBtn active={tab === 'inspections'} onClick={() => setTab('inspections')} icon={ClipboardCheck} label="Inspekcije" />
         <TabBtn active={tab === 'findings'} onClick={() => setTab('findings')} icon={AlertTriangle} label="Nalazi" />
         <TabBtn active={tab === 'notam'} onClick={() => setTab('notam')} icon={Radio} label="NOTAM" />
+        <TabBtn active={tab === 'due'} onClick={() => setTab('due')} icon={Calendar} label="Dospjelost pregleda" />
         <TabBtn active={tab === 'stats'} onClick={() => setTab('stats')} icon={BarChart3} label="Statistika" />
         <TabBtn active={tab === 'trends'} onClick={() => setTab('trends')} icon={TrendingUp} label="Trendovi" />
       </div>
@@ -174,6 +187,8 @@ export function AerodromeInspectionView() {
         <FindingsList findings={findings} onUpdated={load} />
       ) : tab === 'notam' ? (
         <NotamList notams={notams} findings={findings} onUpdated={load} />
+      ) : tab === 'due' ? (
+        <DueStatusList rows={dueStatus} />
       ) : tab === 'stats' ? (
         <StatsView stats={stats} />
       ) : (
@@ -374,6 +389,24 @@ function AddInspectionDialog({ open, onOpenChange, onAdded }: { open: boolean; o
   const [fLat, setFLat] = useState('')
   const [fLng, setFLng] = useState('')
   const [fAction, setFAction] = useState('')
+  // PRG.03.02 K-kod strukturirana polja (samo za nove tipove pregleda)
+  const [fLengthM, setFLengthM] = useState('')
+  const [fMaxWidthCm, setFMaxWidthCm] = useState('')
+  const [fMaxDepthCm, setFMaxDepthCm] = useState('')
+  const [fLocationCode, setFLocationCode] = useState('')
+  const [fFenceFrom, setFFenceFrom] = useState('')
+  const [fFenceTo, setFFenceTo] = useState('')
+  const [fIsMarked, setFIsMarked] = useState(false)
+  const [fConditionRating, setFConditionRating] = useState('')
+  const [fTrackingGroupId, setFTrackingGroupId] = useState('')
+
+  // K-kod tipovi pregleda koriste PRG.03.02 kodovnik umjesto generičkih
+  // ADR.OPS kategorija (FOD/PAVEMENT_DAMAGE/...)
+  const K_CODE_TYPES = ['RUNWAY_STRIP', 'TAXIWAY_STRIP', 'DRAINAGE', 'BUILDING', 'WATER_SEWAGE', 'GREEN_AREA']
+  const isFenceType = inspectionType === 'FENCE'
+  const usesKCodes = isFenceType || K_CODE_TYPES.includes(inspectionType)
+  const kCodeOptions = isFenceType ? FENCE_DEFECT_CATEGORIES : PAVEMENT_DEFECT_CATEGORIES
+  const selectedKDef = usesKCodes ? getDefectCategoryDef(fCat) : undefined
 
   const addFinding = () => {
     if (!fDesc) { toast.error('Opis nalaza je obavezan'); return }
@@ -383,10 +416,28 @@ function AddInspectionDialog({ open, onOpenChange, onAdded }: { open: boolean; o
       latitude: fLat ? parseFloat(fLat) : undefined,
       longitude: fLng ? parseFloat(fLng) : undefined,
       actionRequired: fAction || undefined,
+      lengthM: fLengthM ? parseFloat(fLengthM) : undefined,
+      maxWidthCm: fMaxWidthCm ? parseFloat(fMaxWidthCm) : undefined,
+      maxDepthCm: fMaxDepthCm ? parseFloat(fMaxDepthCm) : undefined,
+      locationCode: fLocationCode || undefined,
+      fenceStubFrom: fFenceFrom ? parseInt(fFenceFrom, 10) : undefined,
+      fenceStubTo: fFenceTo ? parseInt(fFenceTo, 10) : (fFenceFrom ? parseInt(fFenceFrom, 10) : undefined),
+      isMarked: fIsMarked || undefined,
+      conditionRating: fConditionRating || undefined,
+      trackingGroupId: fTrackingGroupId.trim() || undefined,
     }])
     setFCat('FOD'); setFSev('LOW'); setFDesc(''); setFLoc(''); setFLat(''); setFLng(''); setFAction('')
+    setFLengthM(''); setFMaxWidthCm(''); setFMaxDepthCm(''); setFLocationCode('')
+    setFFenceFrom(''); setFFenceTo(''); setFIsMarked(false); setFConditionRating(''); setFTrackingGroupId('')
     setShowFindingForm(false)
   }
+
+  // Kad se promijeni tip pregleda, resetuj kategoriju na prvu ispravnu
+  // opciju za taj tip (K-kod lista vs generičke ADR.OPS kategorije)
+  useEffect(() => {
+    setFCat(usesKCodes ? kCodeOptions[0]?.category ?? 'OTHER' : 'FOD')
+    setFConditionRating('')
+  }, [inspectionType])
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault()
@@ -529,24 +580,93 @@ function AddInspectionDialog({ open, onOpenChange, onAdded }: { open: boolean; o
               <div className="space-y-2 mb-2 p-2 border rounded bg-white">
                 <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
                   <div className="space-y-1">
-                    <Label className="text-xs">Kategorija</Label>
+                    <Label className="text-xs">{usesKCodes ? 'Vrsta nedostatka (K-kod)' : 'Kategorija'}</Label>
                     <Select value={fCat} onValueChange={setFCat}>
                       <SelectTrigger className="h-8 text-xs"><SelectValue /></SelectTrigger>
-                      <SelectContent>{Object.entries(CATEGORY_LABELS).map(([k, v]) => <SelectItem key={k} value={k}>{v}</SelectItem>)}</SelectContent>
+                      <SelectContent>
+                        {usesKCodes
+                          ? kCodeOptions.map((c) => <SelectItem key={c.category} value={c.category}>{c.code} - {c.label}</SelectItem>)
+                          : Object.entries(CATEGORY_LABELS).map(([k, v]) => <SelectItem key={k} value={k}>{v}</SelectItem>)}
+                      </SelectContent>
                     </Select>
                   </div>
-                  <div className="space-y-1">
-                    <Label className="text-xs">Težina</Label>
-                    <Select value={fSev} onValueChange={setFSev}>
-                      <SelectTrigger className="h-8 text-xs"><SelectValue /></SelectTrigger>
-                      <SelectContent>{Object.entries(SEVERITY_LABELS).map(([k, v]) => <SelectItem key={k} value={k}>{v}</SelectItem>)}</SelectContent>
-                    </Select>
-                  </div>
-                  <div className="space-y-1"><Label className="text-xs">Lokacija</Label><Input className="h-8 text-xs" value={fLoc} onChange={(e) => setFLoc(e.target.value)} placeholder="RWY 14, 200m" /></div>
-                  <div className="space-y-1"><Label className="text-xs">Koordinate</Label><div className="flex gap-1"><Input className="h-8 text-xs" type="number" step="0.0001" value={fLat} onChange={(e) => setFLat(e.target.value)} placeholder="lat" /><Input className="h-8 text-xs" type="number" step="0.0001" value={fLng} onChange={(e) => setFLng(e.target.value)} placeholder="lng" /></div></div>
+                  {!usesKCodes && (
+                    <div className="space-y-1">
+                      <Label className="text-xs">Težina</Label>
+                      <Select value={fSev} onValueChange={setFSev}>
+                        <SelectTrigger className="h-8 text-xs"><SelectValue /></SelectTrigger>
+                        <SelectContent>{Object.entries(SEVERITY_LABELS).map(([k, v]) => <SelectItem key={k} value={k}>{v}</SelectItem>)}</SelectContent>
+                      </Select>
+                    </div>
+                  )}
+                  {usesKCodes && (
+                    <div className="space-y-1">
+                      <Label className="text-xs">Ocjena (Tabela 7)</Label>
+                      <Select value={fConditionRating} onValueChange={(v) => { setFConditionRating(v); setFSev(v === 'NA' ? 'CRITICAL' : v === 'A' ? 'HIGH' : 'LOW') }}>
+                        <SelectTrigger className="h-8 text-xs"><SelectValue placeholder="Odaberite..." /></SelectTrigger>
+                        <SelectContent>{CONDITION_RATINGS.map((r) => <SelectItem key={r.code} value={r.code}>{r.code} - {r.label}</SelectItem>)}</SelectContent>
+                      </Select>
+                    </div>
+                  )}
+                  {!usesKCodes && (
+                    <>
+                      <div className="space-y-1"><Label className="text-xs">Lokacija</Label><Input className="h-8 text-xs" value={fLoc} onChange={(e) => setFLoc(e.target.value)} placeholder="RWY 14, 200m" /></div>
+                      <div className="space-y-1"><Label className="text-xs">Koordinate</Label><div className="flex gap-1"><Input className="h-8 text-xs" type="number" step="0.0001" value={fLat} onChange={(e) => setFLat(e.target.value)} placeholder="lat" /><Input className="h-8 text-xs" type="number" step="0.0001" value={fLng} onChange={(e) => setFLng(e.target.value)} placeholder="lng" /></div></div>
+                    </>
+                  )}
                 </div>
+
+                {/* PRG.03.02 K-kod strukturirana polja - samo za nove tipove pregleda */}
+                {usesKCodes && (
+                  <div className="grid grid-cols-2 md:grid-cols-4 gap-2 p-2 bg-blue-50/50 rounded border border-blue-100">
+                    {selectedKDef?.measurements.map((m) => (
+                      <div key={m.field} className="space-y-1">
+                        <Label className="text-xs">{m.label}</Label>
+                        <Input
+                          className="h-8 text-xs" type="number" step="0.01"
+                          value={m.field === 'lengthM' ? fLengthM : m.field === 'maxWidthCm' ? fMaxWidthCm : fMaxDepthCm}
+                          onChange={(e) => {
+                            if (m.field === 'lengthM') setFLengthM(e.target.value)
+                            else if (m.field === 'maxWidthCm') setFMaxWidthCm(e.target.value)
+                            else setFMaxDepthCm(e.target.value)
+                          }}
+                        />
+                      </div>
+                    ))}
+                    {selectedKDef?.needsLocationCode && (
+                      <div className="space-y-1">
+                        <Label className="text-xs">Lokacija (Tabela 6)</Label>
+                        <Select value={fLocationCode} onValueChange={setFLocationCode}>
+                          <SelectTrigger className="h-8 text-xs"><SelectValue placeholder="L/C/R..." /></SelectTrigger>
+                          <SelectContent>{LOCATION_CODES.map((l) => <SelectItem key={l.code} value={l.code}>{l.code} - {l.label}</SelectItem>)}</SelectContent>
+                        </Select>
+                      </div>
+                    )}
+                    {selectedKDef?.needsFenceStub && (
+                      <>
+                        <div className="space-y-1"><Label className="text-xs">Stub (od)</Label><Input className="h-8 text-xs" type="number" value={fFenceFrom} onChange={(e) => setFFenceFrom(e.target.value)} /></div>
+                        <div className="space-y-1"><Label className="text-xs">Stub (do)</Label><Input className="h-8 text-xs" type="number" value={fFenceTo} onChange={(e) => setFFenceTo(e.target.value)} placeholder="opciono" /></div>
+                      </>
+                    )}
+                    {selectedKDef?.markable && (
+                      <label className="flex items-center gap-1.5 text-xs mt-4">
+                        <input type="checkbox" checked={fIsMarked} onChange={(e) => setFIsMarked(e.target.checked)} className="h-3.5 w-3.5" />
+                        Markirano crvenom bojom
+                      </label>
+                    )}
+                    {selectedKDef && selectedKDef.measurements.length > 0 && (
+                      <div className="space-y-1 col-span-2">
+                        <Label className="text-xs">ID praćenja (opciono - isti ID kod sljedećeg pregleda = ista pukotina)</Label>
+                        <Input className="h-8 text-xs" value={fTrackingGroupId} onChange={(e) => setFTrackingGroupId(e.target.value)} placeholder="npr. PSS-14-K1-01" />
+                      </div>
+                    )}
+                  </div>
+                )}
+
                 <div className="space-y-1"><Label className="text-xs">Opis *</Label><Textarea className="text-xs" value={fDesc} onChange={(e) => setFDesc(e.target.value)} rows={2} placeholder="Detaljan opis nalaza..." /></div>
-                <div className="space-y-1"><Label className="text-xs">Potrebna akcija</Label><Input className="h-8 text-xs" value={fAction} onChange={(e) => setFAction(e.target.value)} placeholder="npr. Ukloniti FOD, popraviti oznake..." /></div>
+                {!usesKCodes && (
+                  <div className="space-y-1"><Label className="text-xs">Potrebna akcija</Label><Input className="h-8 text-xs" value={fAction} onChange={(e) => setFAction(e.target.value)} placeholder="npr. Ukloniti FOD, popraviti oznake..." /></div>
+                )}
                 <Button type="button" size="sm" onClick={addFinding}>Dodaj u listu</Button>
               </div>
             )}
@@ -661,8 +781,34 @@ function FindingsList({ findings, onUpdated }: { findings: Finding[]; onUpdated:
 function FindingCard({ finding: f, onUpdated }: { finding: Finding; onUpdated: () => void }) {
   const [isPending, startTransition] = useTransition()
   const [showActions, setShowActions] = useState(false)
+  const [showHistory, setShowHistory] = useState(false)
+  const [history, setHistory] = useState<Awaited<ReturnType<typeof getDefectHistory>> | null>(null)
+  const [historyLoading, setHistoryLoading] = useState(false)
   const [actionTaken, setActionTaken] = useState(f.actionTaken || '')
   const [newStatus, setNewStatus] = useState(f.status)
+
+  const kBits: string[] = []
+  if ((f as any).lengthM != null) kBits.push(`dužina/pov.: ${(f as any).lengthM}m`)
+  if ((f as any).maxWidthCm != null) kBits.push(`širina: ${(f as any).maxWidthCm}cm`)
+  if ((f as any).maxDepthCm != null) kBits.push(`dubina/visina: ${(f as any).maxDepthCm}cm`)
+  if ((f as any).locationCode) kBits.push(`lokacija: ${(f as any).locationCode}`)
+  if ((f as any).fenceStubFrom != null) kBits.push(`stub: ${(f as any).fenceStubFrom}${(f as any).fenceStubTo && (f as any).fenceStubTo !== (f as any).fenceStubFrom ? `-${(f as any).fenceStubTo}` : ''}`)
+  if ((f as any).isMarked) kBits.push('markirano')
+  if ((f as any).conditionRating) kBits.push(`ocjena: ${(f as any).conditionRating}`)
+
+  const toggleHistory = async () => {
+    if (showHistory) { setShowHistory(false); return }
+    setShowHistory(true)
+    if (!history && (f as any).trackingGroupId) {
+      setHistoryLoading(true)
+      try {
+        const h = await getDefectHistory((f as any).trackingGroupId)
+        setHistory(h)
+      } finally {
+        setHistoryLoading(false)
+      }
+    }
+  }
 
   const handleStatusUpdate = () => {
     startTransition(async () => {
@@ -699,6 +845,11 @@ function FindingCard({ finding: f, onUpdated }: { finding: Finding; onUpdated: (
           {f.photoUrl && <div className="mt-1"><img src={f.photoUrl} alt="Foto dokaz" className="max-h-32 rounded border" /></div>}
           {f.actionRequired && <div className="text-xs mt-1 p-1.5 bg-amber-50 rounded">Potrebna akcija: {f.actionRequired}</div>}
           {f.actionTaken && <div className="text-xs mt-1 p-1.5 bg-emerald-50 rounded">Poduzeto: {f.actionTaken}</div>}
+          {kBits.length > 0 && (
+            <div className={`text-xs mt-1 p-1.5 rounded ${(f as any).conditionRating === 'NA' ? 'bg-red-50 text-red-800' : 'bg-blue-50 text-blue-800'}`}>
+              PRG.03.02: {kBits.join(' · ')}
+            </div>
+          )}
           <div className="text-xs text-muted-foreground mt-1 flex items-center gap-3 flex-wrap">
             <span>{new Date(f.createdAt).toLocaleString('hr-HR').slice(0, 16)}</span>
             {f.inspection && (
@@ -710,12 +861,48 @@ function FindingCard({ finding: f, onUpdated }: { finding: Finding; onUpdated: (
           </div>
         </div>
         <div className="flex flex-col gap-1">
+          {(f as any).trackingGroupId && (
+            <Button size="sm" variant="ghost" onClick={toggleHistory}>Istorija</Button>
+          )}
           <Button size="sm" variant="ghost" onClick={() => setShowActions(!showActions)}>Ažuriraj</Button>
           <Button size="sm" variant="ghost" onClick={handleDelete} disabled={isPending}>
             {isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : <Trash2 className="h-4 w-4 text-red-600" />}
           </Button>
         </div>
       </div>
+
+      {showHistory && (
+        <div className="mt-3 p-3 bg-blue-50/50 rounded-lg border border-blue-100">
+          <div className="text-xs font-medium mb-2">
+            Istorija mjerenja (ID praćenja: {(f as any).trackingGroupId}) - poređenje umjesto ručnog vizuelnog upoređivanja papira
+          </div>
+          {historyLoading ? (
+            <Loader2 className="h-4 w-4 animate-spin" />
+          ) : !history || history.length === 0 ? (
+            <p className="text-xs text-muted-foreground">Nema ranijih mjerenja za ovaj ID.</p>
+          ) : (
+            <div className="space-y-1">
+              {history.map((h, idx) => {
+                const prev = idx > 0 ? history[idx - 1] : null
+                const lengthDelta = prev && h.lengthM != null && prev.lengthM != null ? h.lengthM - prev.lengthM : null
+                return (
+                  <div key={h.id} className="text-xs flex items-center gap-3 p-1.5 bg-white rounded border">
+                    <span className="text-muted-foreground w-24 flex-shrink-0">{h.date ? new Date(h.date).toLocaleDateString('hr-HR') : '-'}</span>
+                    <span>dužina/pov.: {h.lengthM ?? '-'}m</span>
+                    <span>širina: {h.maxWidthCm ?? '-'}cm</span>
+                    <span>ocjena: {h.conditionRating ?? '-'}</span>
+                    {lengthDelta != null && (
+                      <span className={lengthDelta > 0 ? 'text-red-700 font-medium' : lengthDelta < 0 ? 'text-emerald-700' : 'text-muted-foreground'}>
+                        {lengthDelta > 0 ? `+${lengthDelta.toFixed(2)}m raste` : lengthDelta < 0 ? `${lengthDelta.toFixed(2)}m opada` : 'bez promjene'}
+                      </span>
+                    )}
+                  </div>
+                )
+              })}
+            </div>
+          )}
+        </div>
+      )}
 
       {showActions && (
         <div className="mt-3 p-3 bg-muted/30 rounded-lg space-y-2">
@@ -741,6 +928,40 @@ function FindingCard({ finding: f, onUpdated }: { finding: Finding; onUpdated: (
 // ============================================================================
 // NOTAM LIST
 // ============================================================================
+
+function DueStatusList({ rows }: { rows: SurfaceInspectionDueRow[] }) {
+  if (rows.length === 0) {
+    return <p className="text-sm text-muted-foreground text-center py-8">Nema podataka</p>
+  }
+  return (
+    <div className="space-y-2">
+      <p className="text-xs text-muted-foreground">
+        Digitalna zamjena za ručno prelistavanje papirnih izvještaja pri izradi godišnjeg Plana
+        održavanja (PRG.03.02, tačka 3.3). Rok je gruba procjena (365 / broj pregleda godišnje) -
+        stvarno pravilo prije/poslije sezone (1.maj - 31.okt) ostaje na procjeni MING-a.
+      </p>
+      {rows.map((r) => (
+        <div
+          key={r.type}
+          className={`flex items-center justify-between p-3 rounded-lg border ${r.isDue ? 'border-amber-300 bg-amber-50' : 'border-emerald-200 bg-emerald-50/50'}`}
+        >
+          <div>
+            <div className="text-sm font-medium">{r.label}</div>
+            <div className="text-xs text-muted-foreground">
+              {r.obrazac} · {r.timesPerYear}x godišnje
+              {r.lastInspectionDate
+                ? ` · poslednji pregled ${new Date(r.lastInspectionDate).toLocaleDateString('hr-HR')} (prije ${r.daysSinceLastInspection} dana)`
+                : ' · nikad pregledano'}
+            </div>
+          </div>
+          <Badge className={r.isDue ? 'bg-amber-100 text-amber-800' : 'bg-emerald-100 text-emerald-800'}>
+            {r.isDue ? 'Dospjelo' : 'U roku'}
+          </Badge>
+        </div>
+      ))}
+    </div>
+  )
+}
 
 function NotamList({ notams, findings, onUpdated }: { notams: Notam[]; findings: Finding[]; onUpdated: () => void }) {
   const [search, setSearch] = useState('')

@@ -117,11 +117,19 @@ export async function createIncident(params: {
 
   // Supabase
   const supabase = await createSupabaseClient()
-  const { count } = await supabase.from('incidents').select('*', { count: 'exact', head: true })
-  const year = new Date().getFullYear()
-  const incidentNumber = `INC-${year}-${String((count ?? 0) + 1).padStart(3, '0')}`
+  // Broj incidenta se generiše preko RPC funkcije (sekvenca u bazi, vidi
+  // migraciju 018) - ne čita tabelu incidents, pa radi i za anon pozivaoca
+  // sada kada je SELECT na incidents ograničen na authenticated (migracija 017).
+  const { data: numberData, error: numberError } = await supabase.rpc('next_incident_number')
+  if (numberError) throw numberError
+  const incidentNumber: string = numberData
 
-  const { data, error } = await supabase.from('incidents').insert({
+  // ID se generiše unaprijed iz istog razloga kao u addFuelLog
+  // (actions-fuel-parking.ts) - SELECT na incidents je ograničen na authenticated.
+  const id = crypto.randomUUID()
+
+  const { error } = await supabase.from('incidents').insert({
+    id,
     incident_number: incidentNumber,
     incident_type: params.incidentType,
     severity: params.severity,
@@ -143,11 +151,11 @@ export async function createIncident(params: {
     injuries_reported: params.injuriesReported ?? false,
     injury_details: params.injuryDetails ?? null,
     damage_estimate: params.damageEstimate ?? null,
-  }).select().single()
+  })
 
   if (error) throw error
   revalidatePath('/dashboard')
-  return { ok: true, id: data?.id, incidentNumber }
+  return { ok: true, id, incidentNumber }
 }
 
 // =====================================================
