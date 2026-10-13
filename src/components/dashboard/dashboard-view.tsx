@@ -3,6 +3,9 @@
 import { useEffect, useRef, useState, useTransition, useMemo } from 'react'
 import { QRCodeSVG } from 'qrcode.react'
 import { printQrLabels, svgOf } from '@/lib/qr-print'
+import { RestrictionBadges } from '@/components/restriction-badges'
+import { DamageRowCard } from '@/components/dashboard/damage-row-card'
+import { OverviewDetailTable, type OverviewKind } from '@/components/dashboard/overview-detail-table'
 import { deleteEquipment } from '@/lib/actions-admin-edit'
 import {
   Package,
@@ -240,6 +243,8 @@ export function DashboardView({ currentUser }: { currentUser: AppUser }) {
   const [allDamages, setAllDamages] = useState<DamageRow[]>([])
   const [inspectionAlerts, setInspectionAlerts] = useState<InspectionAlertLike[]>([])
   const [loading, setLoading] = useState(true)
+  const [detail, setDetail] = useState<OverviewKind | null>(null)
+  const toggleDetail = (k: OverviewKind) => setDetail((d) => (d === k ? null : k))
 
   // filters
   const [search, setSearch] = useState('')
@@ -393,11 +398,22 @@ export function DashboardView({ currentUser }: { currentUser: AppUser }) {
           <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-3">
             <StatCard label={t('dash.total')} value={stats.total} icon={Package} tone="default" />
             <StatCard label={t('dash.available')} value={stats.available} icon={CheckCircle2} tone="emerald" />
-            <StatCard label={t('dash.assigned')} value={stats.assigned} icon={TrendingUp} tone="amber" />
-            <StatCard label={t('dash.oos')} value={stats.oos} icon={AlertOctagon} tone="red" />
-            <StatCard label={t('dash.maintenance')} value={stats.maint} icon={Wrench} tone="purple" />
-            <StatCard label={t('dash.openDamages')} value={stats.openDamages} icon={AlertOctagon} tone="red" />
+            <StatCard label={t('dash.assigned')} value={stats.assigned} icon={TrendingUp} tone="amber" onClick={() => toggleDetail('assigned')} selected={detail === 'assigned'} />
+            <StatCard label={t('dash.oos')} value={stats.oos} icon={AlertOctagon} tone="red" onClick={() => toggleDetail('oos')} selected={detail === 'oos'} />
+            <StatCard label={t('dash.maintenance')} value={stats.maint} icon={Wrench} tone="purple" onClick={() => toggleDetail('maint')} selected={detail === 'maint'} />
+            <StatCard label={t('dash.openDamages')} value={stats.openDamages} icon={AlertOctagon} tone="red" onClick={() => toggleDetail('damages')} selected={detail === 'damages'} />
           </div>
+
+          {detail && (
+            <OverviewDetailTable
+              kind={detail}
+              equipment={equipment as any}
+              damages={damages as any}
+              active={active as any}
+              onClose={() => setDetail(null)}
+              onOpenDamages={() => setTab('damages')}
+            />
+          )}
 
           {/* Dospijeva ovog mjeseca - preventivno planiranje umjesto reaktivnog */}
           {dueThisMonth.length > 0 && (
@@ -431,7 +447,7 @@ export function DashboardView({ currentUser }: { currentUser: AppUser }) {
           )}
 
           {/* Active assignments + Open damages */}
-          <div className="grid lg:grid-cols-2 gap-4">
+          <div className={`grid lg:grid-cols-2 gap-4 ${detail ? 'hidden' : ''}`}>
             <Card>
               <CardHeader>
                 <CardTitle className="text-base flex items-center gap-2">
@@ -483,7 +499,7 @@ export function DashboardView({ currentUser }: { currentUser: AppUser }) {
                 ) : (
                   <div className="space-y-2 max-h-80 overflow-y-auto">
                     {damages.map((d) => (
-                      <DamageRowCard key={d.id} damage={d} onResolved={load} compact />
+                      <DamageRowCard key={d.id} damage={d} onResolved={load} currentUser={currentUser} compact />
                     ))}
                   </div>
                 )}
@@ -587,6 +603,7 @@ export function DashboardView({ currentUser }: { currentUser: AppUser }) {
                               {e._count.damages} prijava
                             </Badge>
                           )}
+                          <RestrictionBadges restrictions={(e as any).activeRestrictions} />
                         </TableCell>
                         <TableCell className="text-right">
                           <div className="flex justify-end gap-1">
@@ -626,7 +643,7 @@ export function DashboardView({ currentUser }: { currentUser: AppUser }) {
               ) : (
                 <div className="space-y-2 max-h-[600px] overflow-y-auto">
                   {allDamages.map((d) => (
-                    <DamageRowCard key={d.id} damage={d} onResolved={load} />
+                    <DamageRowCard key={d.id} damage={d} onResolved={load} currentUser={currentUser} />
                   ))}
                 </div>
               )}
@@ -771,11 +788,15 @@ function StatCard({
   value,
   icon: Icon,
   tone = 'default',
+  onClick,
+  selected = false,
 }: {
   label: string
   value: number
   icon: React.ComponentType<{ className?: string }>
   tone?: 'default' | 'emerald' | 'amber' | 'red' | 'purple'
+  onClick?: () => void
+  selected?: boolean
 }) {
   const toneClasses = {
     default: 'bg-card text-foreground',
@@ -792,12 +813,15 @@ function StatCard({
     purple: 'text-purple-600',
   }[tone]
   return (
-    <Card className={`${toneClasses} border`}>
+    <Card
+      className={`${toneClasses} border ${onClick ? 'cursor-pointer hover:shadow-md transition' : ''} ${selected ? 'ring-2 ring-primary' : ''}`}
+      {...(onClick ? { role: 'button', tabIndex: 0, 'aria-pressed': selected, onClick, onKeyDown: (e: React.KeyboardEvent) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onClick() } } } : {})}
+    >
       <CardContent className="p-4">
         <div className="flex items-center justify-between">
           <div>
             <div className="text-2xl font-bold">{value}</div>
-            <div className="text-xs text-muted-foreground mt-0.5">{label}</div>
+            <div className="text-xs text-muted-foreground mt-0.5">{label}{onClick ? ' ▾' : ''}</div>
           </div>
           <Icon className={`h-5 w-5 ${iconColor}`} />
         </div>
@@ -1131,164 +1155,6 @@ function ChangeStatusDialog({
         </form>
       </DialogContent>
     </Dialog>
-  )
-}
-
-// =====================================================
-// DAMAGE ROW CARD
-// =====================================================
-
-function DamageRowCard({
-  damage,
-  onResolved,
-  compact = false,
-}: {
-  damage: DamageRow
-  onResolved: () => void
-  compact?: boolean
-}) {
-  const [open, setOpen] = useState(false)
-  const [resolution, setResolution] = useState('')
-  const [setAvailable, setSetAvailable] = useState(true)
-  const [isPending, startTransition] = useTransition()
-
-  const severityBadge = {
-    MINOR: 'bg-amber-100 text-amber-800',
-    MAJOR: 'bg-orange-100 text-orange-800',
-    CRITICAL: 'bg-red-100 text-red-800',
-  }[damage.severity] ?? 'bg-gray-100'
-
-  const statusBadge = {
-    OPEN: 'bg-red-100 text-red-800',
-    IN_REPAIR: 'bg-amber-100 text-amber-800',
-    RESOLVED: 'bg-emerald-100 text-emerald-800',
-  }[damage.status] ?? 'bg-gray-100'
-
-  const urgency = getDamageUrgency({
-    severity: damage.severity,
-    equipmentStatus: damage.equipment?.status,
-    status: damage.status,
-    createdAt: damage.createdAt,
-  })
-
-  const handleResolve = (e: React.FormEvent) => {
-    e.preventDefault()
-    if (!resolution.trim()) {
-      toast.error('Unesite opis popravke')
-      return
-    }
-    startTransition(async () => {
-      await resolveDamageReport({
-        damageId: damage.id,
-        resolution: resolution.trim(),
-        setEquipmentAvailable: setAvailable,
-      })
-      toast.success('Prijava riješena')
-      setOpen(false)
-      setResolution('')
-      onResolved()
-    })
-  }
-
-  const handleStatusChange = async (newStatus: 'OPEN' | 'IN_REPAIR' | 'RESOLVED') => {
-    startTransition(async () => {
-      await updateDamageStatus({ damageId: damage.id, status: newStatus })
-      toast.success('Status ažuriran')
-      onResolved()
-    })
-  }
-
-  return (
-    <div className={`p-3 rounded-lg border ${damage.status === 'OPEN' ? 'border-red-200 bg-red-50/50' : damage.status === 'IN_REPAIR' ? 'border-amber-200 bg-amber-50/50' : 'border-emerald-200 bg-emerald-50/50'}`}>
-      <div className="flex items-start justify-between gap-2">
-        <div className="flex-1 min-w-0">
-          <div className="flex items-center gap-2 mb-1 flex-wrap">
-            <Badge variant="outline" className="font-mono text-xs">{damage.equipmentCode}</Badge>
-            <Badge className={`text-xs ${severityBadge}`}>{damage.severity}</Badge>
-            <Badge className={`text-xs ${statusBadge}`}>{damage.status}</Badge>
-            {damage.status !== 'RESOLVED' && (
-              <Badge variant="outline" className={`text-xs font-semibold ${URGENCY_COLORS[urgency]}`}>
-                Hitnost: {URGENCY_LABELS[urgency]}
-              </Badge>
-            )}
-          </div>
-          <div className="text-sm font-medium truncate">{damage.equipmentName}</div>
-          <div className="text-sm text-muted-foreground mt-1">{damage.description}</div>
-          {!compact && (
-            <div className="text-xs text-muted-foreground mt-1.5 flex items-center gap-2 flex-wrap">
-              <span className="flex items-center gap-1"><User className="h-3 w-3" />{damage.reportedByName}</span>
-              <span className="flex items-center gap-1"><Calendar className="h-3 w-3" />{new Date(damage.createdAt).toLocaleString('hr-HR')}</span>
-              {damage.resolvedAt && (
-                <span className="flex items-center gap-1 text-emerald-700"><CheckCircle2 className="h-3 w-3" />Riješeno {new Date(damage.resolvedAt).toLocaleDateString('hr-HR')}</span>
-              )}
-            </div>
-          )}
-          {damage.resolution && (
-            <div className="text-xs text-emerald-700 mt-1.5 p-1.5 bg-emerald-50 rounded">
-              <strong>Rješenje:</strong> {damage.resolution}
-            </div>
-          )}
-        </div>
-        <div className="flex flex-col gap-1">
-          {damage.status !== 'RESOLVED' && (
-            <>
-              <Select
-                value={damage.status}
-                onValueChange={(v) => handleStatusChange(v as 'OPEN' | 'IN_REPAIR' | 'RESOLVED')}
-                disabled={isPending}
-              >
-                <SelectTrigger className="h-8 w-[120px] text-xs">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="OPEN">Otvoreno</SelectItem>
-                  <SelectItem value="IN_REPAIR">U popravku</SelectItem>
-                  <SelectItem value="RESOLVED">Riješeno</SelectItem>
-                </SelectContent>
-              </Select>
-              <Dialog open={open} onOpenChange={setOpen}>
-                <DialogTrigger asChild>
-                  <Button size="sm" variant="outline">
-                    <CheckCircle2 className="h-3.5 w-3.5 mr-1" />
-                    Riješi
-                  </Button>
-                </DialogTrigger>
-                <DialogContent>
-                  <DialogHeader>
-                    <DialogTitle>Riješi prijavu oštećenja</DialogTitle>
-                    <DialogDescription>
-                      Opišite šta je urađeno i odlučite da li da sredstvo bude vraćeno u dostupne.
-                    </DialogDescription>
-                  </DialogHeader>
-                  <form onSubmit={handleResolve} className="space-y-3">
-                    <div className="space-y-1.5">
-                      <Label htmlFor="resol">Opis popravke / rješenja</Label>
-                      <Textarea id="resol" value={resolution} onChange={(e) => setResolution(e.target.value)} rows={3} placeholder="npr. Zamijenjen kabel, testirano OK" />
-                    </div>
-                    <label className="flex items-center gap-2 text-sm cursor-pointer">
-                      <input
-                        type="checkbox"
-                        checked={setAvailable}
-                        onChange={(e) => setSetAvailable(e.target.checked)}
-                        className="h-4 w-4"
-                      />
-                      Vrati sredstvo u status "Dostupno"
-                    </label>
-                    <DialogFooter>
-                      <Button type="button" variant="outline" onClick={() => setOpen(false)}>Odustani</Button>
-                      <Button type="submit" disabled={isPending}>
-                        {isPending && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}
-                        Potvrdi
-                      </Button>
-                    </DialogFooter>
-                  </form>
-                </DialogContent>
-              </Dialog>
-            </>
-          )}
-        </div>
-      </div>
-    </div>
   )
 }
 

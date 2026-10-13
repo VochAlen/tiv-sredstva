@@ -50,6 +50,7 @@ import { getManualsForEquipment } from '@/lib/actions-manuals'
 import { type EquipmentManualData, MANUAL_TYPE_LABELS } from '@/lib/constants-export'
 import { toast } from 'sonner'
 import { HelpButton } from '@/components/ui/help-button'
+import { RestrictionBadges, toRestrictions } from '@/components/restriction-badges'
 import { recordFitnessDeclaration } from '@/lib/actions-safety-reports'
 
 type Step = 'scan' | 'identify' | 'inspect' | 'success' | 'blocked'
@@ -64,6 +65,7 @@ interface EquipmentInfo {
   status: string
   notes: string | null
   manualUrl?: string | null
+  activeRestrictions?: string | null
 }
 
 // Normalizuje ono što je skenirano u kod opreme
@@ -970,6 +972,12 @@ function EquipmentCard({
             </div>
           </div>
         </div>
+        {toRestrictions(equipment.activeRestrictions).length > 0 && (
+          <div className="mt-3 rounded-lg border-2 border-amber-500 bg-amber-50 p-2.5">
+            <div className="text-xs font-bold text-amber-900 mb-1">ISPRAVNO, ALI SA OGRANIČENJEM:</div>
+            <RestrictionBadges restrictions={equipment.activeRestrictions} showLabel />
+          </div>
+        )}
         {equipment.notes && (
           <div className="mt-3 text-xs flex items-start gap-1.5 p-2 bg-muted/50 rounded">
             <Wrench className="h-3 w-3 mt-0.5 flex-shrink-0" />

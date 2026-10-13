@@ -52,6 +52,7 @@ type SupabaseEquipment = {
   status: string
   notes: string | null
   department?: string | null
+  active_restrictions?: unknown
 }
 
 // =====================================================
@@ -109,6 +110,7 @@ export async function getAllEquipment() {
     status: e.status,
     notes: e.notes,
     department: e.department ?? null,
+    activeRestrictions: typeof e.active_restrictions === 'string' ? e.active_restrictions : e.active_restrictions ? JSON.stringify(e.active_restrictions) : null,
     createdAt: new Date(),
     updatedAt: new Date(),
     _count: { damages: damagesCount[e.id] ?? 0 },
@@ -170,6 +172,7 @@ export async function getEquipmentByCode(code: string) {
     location: eq.location,
     status: eq.status,
     notes: eq.notes,
+    activeRestrictions: typeof (eq as any).active_restrictions === 'string' ? (eq as any).active_restrictions : (eq as any).active_restrictions ? JSON.stringify((eq as any).active_restrictions) : null,
     createdAt: new Date(),
     updatedAt: new Date(),
     assignments: (assignmentsRes.data ?? []).map((a: any) => ({
@@ -343,6 +346,13 @@ export async function getOpenDamages() {
     approvedByCardId: d.approved_by_card_id ?? null,
     approvedByName: d.approved_by_name ?? null,
     approvedAt: d.approved_at ? new Date(d.approved_at) : null,
+    restrictionCode: d.restriction_code ?? null,
+    restrictionLabel: d.restriction_label ?? null,
+    sourceItem: d.source_item ?? null,
+    partsJson: d.parts_json ? (typeof d.parts_json === 'string' ? d.parts_json : JSON.stringify(d.parts_json)) : null,
+    workHours: d.work_hours != null ? Number(d.work_hours) : null,
+    workCost: d.work_cost != null ? Number(d.work_cost) : null,
+    workerNames: d.worker_names ?? null,
     equipment: d.equipment
       ? {
           id: d.equipment.id,
@@ -400,6 +410,13 @@ export async function getAllDamages() {
     approvedByCardId: d.approved_by_card_id ?? null,
     approvedByName: d.approved_by_name ?? null,
     approvedAt: d.approved_at ? new Date(d.approved_at) : null,
+    restrictionCode: d.restriction_code ?? null,
+    restrictionLabel: d.restriction_label ?? null,
+    sourceItem: d.source_item ?? null,
+    partsJson: d.parts_json ? (typeof d.parts_json === 'string' ? d.parts_json : JSON.stringify(d.parts_json)) : null,
+    workHours: d.work_hours != null ? Number(d.work_hours) : null,
+    workCost: d.work_cost != null ? Number(d.work_cost) : null,
+    workerNames: d.worker_names ?? null,
     equipment: d.equipment
       ? {
           id: d.equipment.id,
@@ -1238,6 +1255,14 @@ export async function approveRepair(params: {
   let resolution = ''
   let repairedByName: string | null = null
   let repairedByCardId: string | null = null
+  let saved: { workers: string | null; parts: string | null; hours: number | null; cost: number | null } = { workers: null, parts: null, hours: null, cost: null }
+  const fmtParts = (raw: unknown): string | null => {
+    try {
+      const arr = typeof raw === 'string' ? JSON.parse(raw) : raw
+      if (!Array.isArray(arr) || arr.length === 0) return null
+      return arr.map((p: any) => `${p.name} ×${p.qty}`).join(', ')
+    } catch { return null }
+  }
 
   if (isDemoMode()) {
     const dr = await db.damageReport.findUnique({ where: { id: params.damageId } })
@@ -1247,6 +1272,7 @@ export async function approveRepair(params: {
     resolution = dr.resolution ?? ''
     repairedByName = dr.repairedByName
     repairedByCardId = dr.repairedByCardId
+    saved = { workers: dr.workerNames ?? null, parts: fmtParts(dr.partsJson), hours: dr.workHours ?? null, cost: dr.workCost ?? null }
 
     await db.damageReport.update({
       where: { id: params.damageId },
@@ -1270,7 +1296,7 @@ export async function approveRepair(params: {
     const supabase = await createSupabaseClient()
     const { data: dr } = await supabase
       .from('damage_reports')
-      .select('equipment_id, status, resolution, repaired_by_name, repaired_by_card_id')
+      .select('equipment_id, status, resolution, repaired_by_name, repaired_by_card_id, worker_names, parts_json, work_hours, work_cost')
       .eq('id', params.damageId)
       .maybeSingle()
     if (!dr) return { ok: false, error: 'Prijava kvara nije pronađena' }
@@ -1279,6 +1305,7 @@ export async function approveRepair(params: {
     resolution = dr.resolution ?? ''
     repairedByName = dr.repaired_by_name
     repairedByCardId = dr.repaired_by_card_id
+    saved = { workers: dr.worker_names ?? null, parts: fmtParts(dr.parts_json), hours: dr.work_hours != null ? Number(dr.work_hours) : null, cost: dr.work_cost != null ? Number(dr.work_cost) : null }
 
     // Atomično: isto što i fn_approve_repair (status RESOLVED + oprema AVAILABLE)
     const { error } = await supabase.rpc('fn_approve_repair', {
@@ -1296,11 +1323,11 @@ export async function approveRepair(params: {
         equipmentId,
         maintenanceType: 'CORRECTIVE',
         description: resolution || 'Korektivna popravka po prijavi kvara',
-        performedBy: repairedByName ?? undefined,
+        performedBy: saved.workers ?? repairedByName ?? undefined,
         performedByCardId: repairedByCardId ?? undefined,
-        cost: params.cost,
-        durationHours: params.durationHours,
-        partsReplaced: params.partsReplaced,
+        cost: params.cost ?? saved.cost ?? undefined,
+        durationHours: params.durationHours ?? saved.hours ?? undefined,
+        partsReplaced: params.partsReplaced ?? saved.parts ?? undefined,
       })
     } catch (e) {
       // Popravka je već odobrena - neuspjeh evidencije ne smije poništiti odobrenje

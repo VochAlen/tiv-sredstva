@@ -62,7 +62,11 @@ export function DailyInspectionDialog({
         notes: notes.trim() || undefined,
       })
       if (r.ok) {
-        toast.success(r.result === 'FIT' ? 'Pregled snimljen — vozilo ispravno' : r.result === 'UNFIT' ? 'Pregled snimljen — vozilo NIJE ispravno' : 'Pregled snimljen — uslovno ispravno')
+        const extra = r.damageReports ? ` Prijava kvara poslata radionici (${r.damageReports}).` : ''
+        if (r.result === 'UNFIT') toast.error(`Vozilo je NEISPRAVNO i van upotrebe.${extra}`)
+        else if (r.result === 'CONDITIONAL' && r.restrictive) toast.warning(`Vozilo je ispravno SA OGRANIČENJEM — vidi oznaku na vozilu.${extra}`)
+        else if (r.result === 'CONDITIONAL') toast.warning(`Pregled snimljen — manji nedostaci prijavljeni radionici.${extra}`)
+        else toast.success('Pregled snimljen — vozilo ispravno')
         onOpenChange(false)
         onDone()
       } else toast.error(r.error ?? 'Greška pri snimanju')
@@ -105,7 +109,9 @@ export function DailyInspectionDialog({
                         <span className="font-mono text-xs font-semibold">{e.code}</span>
                         <span className="block text-sm truncate">{e.name}</span>
                       </span>
-                      {e.inspection ? (
+                      {e.status === 'OUT_OF_SERVICE' ? (
+                        <span className="text-xs font-bold text-red-700 flex-shrink-0">NEISPRAVNO</span>
+                      ) : e.inspection ? (
                         <span className="text-xs text-emerald-700 flex items-center gap-1 flex-shrink-0"><CheckCircle2 className="h-3.5 w-3.5" />danas</span>
                       ) : (
                         <span className="text-xs text-amber-700 flex-shrink-0">nije pregledano</span>
@@ -128,7 +134,8 @@ export function DailyInspectionDialog({
             )}
             <div className="space-y-1.5">
               {DAILY_INSPECTION_CHECKLIST.map((c) => (
-                <div key={c.id} className="rounded-lg border p-2.5 flex items-center justify-between gap-2">
+                <div key={c.id} className={`rounded-lg border p-2.5 ${answers[c.id] === false ? (c.severity === 'BLOCKING' ? 'border-red-300 bg-red-50' : c.severity === 'RESTRICTIVE' ? 'border-amber-300 bg-amber-50' : 'border-yellow-200 bg-yellow-50') : ''}`}>
+                  <div className="flex items-center justify-between gap-2">
                   <span className="text-sm">{c.label}</span>
                   <div className="flex gap-1.5 flex-shrink-0">
                     <button type="button" aria-label="Ispravno" onClick={() => setAnswers((a) => ({ ...a, [c.id]: true }))}
@@ -140,6 +147,14 @@ export function DailyInspectionDialog({
                       <XCircle className="h-5 w-5" />
                     </button>
                   </div>
+                  </div>
+                  {answers[c.id] === false && (
+                    <p className={`mt-1.5 text-xs font-medium ${c.severity === 'BLOCKING' ? 'text-red-700' : c.severity === 'RESTRICTIVE' ? 'text-amber-800' : 'text-yellow-800'}`}>
+                      {c.severity === 'BLOCKING' && 'Vozilo će biti označeno kao NEISPRAVNO (van upotrebe) i prijava kvara ide radionici.'}
+                      {c.severity === 'RESTRICTIVE' && `Vozilo ostaje ispravno SA OGRANIČENJEM: ${c.restrictionLabel}. Prijava kvara ide radionici.`}
+                      {c.severity === 'MINOR' && 'Manji nedostatak — prijava ide radionici, vozilo ostaje u upotrebi.'}
+                    </p>
+                  )}
                 </div>
               ))}
             </div>

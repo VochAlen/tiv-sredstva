@@ -22,6 +22,7 @@ para je fiksan i ne smije se mijenjati:
 | 14 | 025_wildlife_admin.sql |
 | 15 | 026_fod_admin.sql |
 | 16 | 027_daily_inspection_rpc.sql |
+| 17 | 028_daily_inspection_faults.sql |
 
 Fajlovi **nisu** preimenovani namjerno: ako ste ih već pokretali ručno po broju, preimenovanje
 ništa ne popravlja a pravi zabunu. Duplirani brojevi smetaju samo Supabase CLI-ju (`supabase db push`),

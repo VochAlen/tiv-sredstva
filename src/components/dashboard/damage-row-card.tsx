@@ -7,7 +7,7 @@
 // razdvojene kopije bi vremenom počele da se razilaze.
 
 import { useState, useTransition } from 'react'
-import { Wrench, ShieldCheck, User, Calendar, CheckCircle2, Loader2, FileDown, Image as ImageIcon } from 'lucide-react'
+import { Wrench, ShieldCheck, User, Calendar, CheckCircle2, Loader2, FileDown, Image as ImageIcon, ClipboardList, Plus, Trash2 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import {
@@ -21,7 +21,9 @@ import { toast } from 'sonner'
 import { CHECKLIST_CATEGORY_LABELS, CHECKLIST_CATEGORY_ORDER } from '@/lib/types'
 import { resolveDamageReport, acknowledgeDamage, markRepaired, approveRepair, getOpenDamages } from '@/lib/actions'
 import { getPhotosForDamage } from '@/lib/actions-advanced'
+import { saveRepairWork } from '@/lib/actions-repair'
 import type { AppUser } from '@/lib/auth-server'
+import { RestrictionBadges } from '@/components/restriction-badges'
 
 export type DamageRow = Awaited<ReturnType<typeof getOpenDamages>>[number]
 
@@ -138,6 +140,45 @@ export function DamageRowCard({
     })
   }
 
+  // ---- Radni nalog (dijelovi + količina, ko je radio, sati, trošak) ----
+  const d: any = damage
+  const savedParts: Array<{ name: string; qty: number }> = (() => {
+    try { const v = typeof d.partsJson === 'string' ? JSON.parse(d.partsJson) : d.partsJson; return Array.isArray(v) ? v : [] } catch { return [] }
+  })()
+  const [workOpen, setWorkOpen] = useState(false)
+  const [workNotes, setWorkNotes] = useState('')
+  const [workParts, setWorkParts] = useState<Array<{ name: string; qty: string }>>([])
+  const [workWorkers, setWorkWorkers] = useState('')
+  const [workHours, setWorkHours] = useState('')
+  const [workCost, setWorkCost] = useState('')
+  const openWork = (o: boolean) => {
+    setWorkOpen(o)
+    if (o) {
+      setWorkNotes(damage.resolution ?? '')
+      setWorkParts(savedParts.length ? savedParts.map((p) => ({ name: p.name, qty: String(p.qty) })) : [{ name: '', qty: '1' }])
+      setWorkWorkers(d.workerNames ?? currentUser.full_name ?? '')
+      setWorkHours(d.workHours != null ? String(d.workHours) : '')
+      setWorkCost(d.workCost != null ? String(d.workCost) : '')
+    }
+  }
+  const handleSaveWork = (e: React.FormEvent) => {
+    e.preventDefault()
+    startTransition(async () => {
+      const res = await saveRepairWork({
+        damageId: damage.id,
+        resolution: workNotes,
+        parts: workParts.filter((p) => p.name.trim()).map((p) => ({ name: p.name, qty: Number(p.qty.replace(',', '.')) })),
+        workerNames: workWorkers,
+        workHours: workHours.trim() ? Number(workHours.replace(',', '.')) : null,
+        workCost: workCost.trim() ? Number(workCost.replace(',', '.')) : null,
+      })
+      if (res.ok) { toast.success('Radni nalog snimljen'); setWorkOpen(false); onResolved() }
+      else toast.error(res.error ?? 'Greška')
+    })
+  }
+  const canWork = currentUser.role !== 'operator' && damage.status !== 'RESOLVED'
+  const partsText = savedParts.map((p) => `${p.name} ×${p.qty}`).join(', ')
+
   const [approveOpen, setApproveOpen] = useState(false)
   const [approveCost, setApproveCost] = useState('')
   const [approveParts, setApproveParts] = useState('')
@@ -175,6 +216,9 @@ export function DamageRowCard({
             <Badge variant="outline" className="font-mono text-xs">{damage.equipmentCode}</Badge>
             <Badge className={`text-xs ${severityBadge}`}>{damage.severity}</Badge>
             <Badge className={`text-xs ${statusBadge}`}>{statusLabel}</Badge>
+            {(damage as any).restrictionCode && (
+              <RestrictionBadges restrictions={[{ code: (damage as any).restrictionCode, label: (damage as any).restrictionLabel ?? (damage as any).restrictionCode, source: 'damage', since: '' }]} showLabel />
+            )}
             {(damage as any).category ? (
               <Badge variant="outline" className={`text-xs ${CATEGORY_BADGE_CLASS[(damage as any).category as string] ?? ''}`}>
                 {CATEGORY_LABEL[(damage as any).category as string] ?? (damage as any).category}
@@ -231,6 +275,16 @@ export function DamageRowCard({
               <strong>Šta je urađeno:</strong> {damage.resolution}
             </div>
           )}
+          {(partsText || d.workerNames || d.workHours != null || d.workCost != null) && (
+            <div className="text-xs mt-1.5 p-1.5 rounded border bg-background space-y-0.5">
+              <div className="font-semibold flex items-center gap-1"><ClipboardList className="h-3 w-3" />Radni nalog</div>
+              {partsText && <div><strong>Dijelovi:</strong> {partsText}</div>}
+              {d.workerNames && <div><strong>Radio/la:</strong> {d.workerNames}</div>}
+              {d.workHours != null && <div><strong>Sati:</strong> {d.workHours}</div>}
+              {d.workCost != null && <div><strong>Trošak:</strong> {d.workCost} €</div>}
+              {d.approvedByName && <div><strong>Odobrio/la:</strong> {d.approvedByName}</div>}
+            </div>
+          )}
         </div>
         <div className="flex flex-col gap-1">
           <Button
@@ -249,9 +303,60 @@ export function DamageRowCard({
             </Button>
           )}
 
+          {canWork && (
+            <Dialog open={workOpen} onOpenChange={openWork}>
+              <DialogTrigger asChild>
+                <Button size="sm" variant="outline" className="h-8 text-xs">
+                  <ClipboardList className="h-3.5 w-3.5 mr-1" />
+                  Radni nalog
+                </Button>
+              </DialogTrigger>
+              <DialogContent className="max-h-[90vh] overflow-y-auto">
+                <DialogHeader>
+                  <DialogTitle>Radni nalog — {damage.equipmentCode}</DialogTitle>
+                  <DialogDescription>
+                    Upišite šta je urađeno, koji dijelovi i u kojoj količini, ko je radio. Snimanjem se ne mijenja status prijave.
+                  </DialogDescription>
+                </DialogHeader>
+                <form onSubmit={handleSaveWork} className="space-y-3">
+                  <div className="space-y-1.5">
+                    <Label>Opis popravke</Label>
+                    <Textarea rows={3} value={workNotes} onChange={(e) => setWorkNotes(e.target.value)} placeholder="npr. Zamijenjena sijalica prednjeg lijevog farova, testirano" />
+                  </div>
+                  <div className="space-y-1.5">
+                    <Label>Rezervni dijelovi</Label>
+                    {workParts.map((p, i) => (
+                      <div key={i} className="flex gap-1.5">
+                        <Input className="flex-1" placeholder="Naziv dijela" value={p.name} onChange={(e) => setWorkParts((ps) => ps.map((x, j) => j === i ? { ...x, name: e.target.value } : x))} />
+                        <Input className="w-20" inputMode="decimal" placeholder="Kol." value={p.qty} onChange={(e) => setWorkParts((ps) => ps.map((x, j) => j === i ? { ...x, qty: e.target.value } : x))} />
+                        <Button type="button" variant="ghost" size="icon" aria-label="Ukloni dio" onClick={() => setWorkParts((ps) => ps.filter((_, j) => j !== i))}><Trash2 className="h-4 w-4" /></Button>
+                      </div>
+                    ))}
+                    <Button type="button" variant="outline" size="sm" onClick={() => setWorkParts((ps) => [...ps, { name: '', qty: '1' }])}><Plus className="h-4 w-4 mr-1" />Dodaj dio</Button>
+                  </div>
+                  <div className="space-y-1.5">
+                    <Label>Ko je radio popravku</Label>
+                    <Input value={workWorkers} onChange={(e) => setWorkWorkers(e.target.value)} placeholder="ime i prezime (više osoba odvojite zarezom)" />
+                  </div>
+                  <div className="grid grid-cols-2 gap-2">
+                    <div className="space-y-1.5"><Label>Utrošeno sati</Label><Input inputMode="decimal" value={workHours} onChange={(e) => setWorkHours(e.target.value)} /></div>
+                    <div className="space-y-1.5"><Label>Trošak (€)</Label><Input inputMode="decimal" value={workCost} onChange={(e) => setWorkCost(e.target.value)} /></div>
+                  </div>
+                  <DialogFooter>
+                    <Button type="button" variant="outline" onClick={() => setWorkOpen(false)}>Odustani</Button>
+                    <Button type="submit" disabled={isPending}>
+                      {isPending && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}
+                      Snimi radni nalog
+                    </Button>
+                  </DialogFooter>
+                </form>
+              </DialogContent>
+            </Dialog>
+          )}
+
           {/* Korak 1: mehaničar (engineer/admin) označava da je popravka gotova */}
           {damage.status === 'IN_REPAIR' && (
-            <Dialog open={repairOpen} onOpenChange={setRepairOpen}>
+            <Dialog open={repairOpen} onOpenChange={(o) => { setRepairOpen(o); if (o && !repairNotes && damage.resolution) setRepairNotes(damage.resolution) }}>
               <DialogTrigger asChild>
                 <Button size="sm" className="h-9 text-xs bg-amber-600 hover:bg-amber-700">
                   <CheckCircle2 className="h-3.5 w-3.5 mr-1" />
@@ -311,7 +416,7 @@ export function DamageRowCard({
 
           {/* Korak 2: šef službe (samo admin) pregleda i odobrava */}
           {damage.status === 'AWAITING_APPROVAL' && currentUser.role === 'admin' && (
-            <Dialog open={approveOpen} onOpenChange={setApproveOpen}>
+            <Dialog open={approveOpen} onOpenChange={(o) => { setApproveOpen(o); if (o) { setApproveCost(d.workCost != null ? String(d.workCost) : ''); setApproveDuration(d.workHours != null ? String(d.workHours) : ''); setApproveParts(partsText) } }}>
               <DialogTrigger asChild>
                 <Button size="sm" className="h-9 text-xs bg-purple-600 hover:bg-purple-700">
                   <ShieldCheck className="h-3.5 w-3.5 mr-1" />
@@ -322,7 +427,7 @@ export function DamageRowCard({
                 <DialogHeader>
                   <DialogTitle>Odobri popravku</DialogTitle>
                   <DialogDescription>
-                    Podaci ispod su opcioni i upisuju se u servisni nalog (MaintenanceLog).
+                    Popunjeno iz radnog naloga radionice (možete ispraviti). Upisuje se u servisni nalog (MaintenanceLog), zajedno sa imenom ko je radio i ko je odobrio.
                     {(damage.severity === 'MAJOR' || damage.severity === 'CRITICAL') && ' Za ovu težinu kvara automatski se izdaje i Certificate of Release (EASA Part-145.A.50).'}
                   </DialogDescription>
                 </DialogHeader>

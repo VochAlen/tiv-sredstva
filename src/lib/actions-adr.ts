@@ -8,6 +8,8 @@ import { isDemoMode } from '@/lib/auth-mode'
 import { getCurrentUser, type AppUser } from '@/lib/auth-server'
 import { createClientAsync as createSupabaseClient } from '@/lib/supabase/server'
 import { revalidatePath } from 'next/cache'
+import { DAILY_INSPECTION_CHECKLIST } from '@/lib/constants-export'
+import { parseRestrictions, serializeRestrictions } from '@/lib/checklist-evaluation'
 
 async function requireRole(roles: Array<'operator' | 'engineer' | 'admin'>): Promise<AppUser> {
   const user = await getCurrentUser()
@@ -385,17 +387,33 @@ export async function createDailyInspection(params: {
   shift: 'MORNING' | 'AFTERNOON' | 'NIGHT'
   checklist: Array<{ id: string; label: string; passed: boolean }>
   notes?: string
-}): Promise<{ ok: boolean; error?: string; id?: string; result?: string }> {
-  // Javna funkcija - radnici mogu kreirati daily inspection bez login-a
+}): Promise<{ ok: boolean; error?: string; id?: string; result?: string; blocking?: number; restrictive?: number; damageReports?: number }> {
+  // Javna funkcija - radnici mogu kreirati daily inspection bez login-a.
+  // Težina stavki, kategorija i ograničenja uzimaju se SA SERVERA (DAILY_INSPECTION_CHECKLIST),
+  // nikad od klijenta - klijent šalje samo id + passed.
+  const defs = new Map(DAILY_INSPECTION_CHECKLIST.map((d) => [d.id, d]))
+  const checklist = params.checklist.map((c) => {
+    const d = defs.get(c.id)
+    return {
+      id: c.id,
+      label: d?.label ?? c.label,
+      passed: c.passed === true,
+      severity: d?.severity ?? 'MINOR',
+      category: d?.category ?? 'OPSTE',
+      damageSeverity: d?.damageSeverity,
+      restrictionCode: d?.restrictionCode,
+      restrictionLabel: d?.restrictionLabel,
+    }
+  })
 
   if (isDemoMode()) {
     const equipment = await db.equipment.findUnique({ where: { code: params.equipmentCode } })
     if (!equipment) return { ok: false, error: 'Oprema nije pronađena' }
 
-    const failedItems = params.checklist.filter((c) => !c.passed)
-    let result = 'FIT'
-    if (failedItems.length > 2) result = 'UNFIT'
-    else if (failedItems.length > 0) result = 'CONDITIONAL'
+    const failedItems = checklist.filter((c) => !c.passed)
+    const blocking = failedItems.filter((c) => c.severity === 'BLOCKING')
+    const restrictive = failedItems.filter((c) => c.severity === 'RESTRICTIVE')
+    const result = blocking.length > 0 ? 'UNFIT' : failedItems.length > 0 ? 'CONDITIONAL' : 'FIT'
 
     const inspection = await db.dailyInspection.create({
       data: {
@@ -405,7 +423,7 @@ export async function createDailyInspection(params: {
         inspectorCardId: params.inspectorCardId,
         inspectorName: params.inspectorName,
         shift: params.shift,
-        checklistJson: JSON.stringify(params.checklist),
+        checklistJson: JSON.stringify(checklist),
         result,
         notes: params.notes ?? null,
         issuesFound: failedItems.length,
@@ -413,20 +431,54 @@ export async function createDailyInspection(params: {
       },
     })
 
-    // Ako je UNFIT, ažuriraj fitness status
-    if (result === 'UNFIT') {
-      await db.equipment.update({
-        where: { id: equipment.id },
+    // Prijava kvara za svaku neispravnu stavku (bez dupliranja otvorene prijave iste stavke)
+    let created = 0
+    for (const item of failedItems) {
+      const source = `daily:${item.id}`
+      const open = await db.damageReport.findFirst({ where: { equipmentId: equipment.id, sourceItem: source, status: { not: 'RESOLVED' } } })
+      if (open) continue
+      await db.damageReport.create({
         data: {
-          fitnessStatus: 'UNFIT',
-          fitnessCalculatedAt: new Date(),
-          fitnessReason: `Dnevna inspekcija: ${failedItems.length} neispravnih stavki`,
+          equipmentId: equipment.id,
+          equipmentCode: equipment.code,
+          equipmentName: equipment.name,
+          reportedByCardId: params.inspectorCardId,
+          reportedByName: params.inspectorName,
+          severity: item.severity === 'BLOCKING' ? (item.damageSeverity ?? 'MAJOR') : 'MINOR',
+          description: `Dnevni pregled: neispravno - ${item.label}${item.severity === 'RESTRICTIVE' ? ` (ograničenje: ${item.restrictionLabel ?? ''})` : ''}${params.notes?.trim() ? `. Napomena: ${params.notes.trim()}` : ''}`,
+          status: 'OPEN',
+          category: item.category,
+          restrictionCode: item.severity === 'RESTRICTIVE' ? (item.restrictionCode ?? item.id.toUpperCase()) : null,
+          restrictionLabel: item.severity === 'RESTRICTIVE' ? (item.restrictionLabel ?? 'Ograničena upotreba') : null,
+          sourceItem: source,
         },
       })
+      created++
     }
 
+    // Ograničenja = ograničenja iz zaduženja + ograničenja svih otvorenih prijava
+    const openRestrictive = await db.damageReport.findMany({
+      where: { equipmentId: equipment.id, status: { not: 'RESOLVED' }, restrictionCode: { not: null } },
+    })
+    const flags = openRestrictive.map((d) => ({ code: d.restrictionCode, label: d.restrictionLabel ?? d.restrictionCode, source: d.sourceItem ?? 'damage', since: d.createdAt.toISOString(), damageId: d.id }))
+    const kept = parseRestrictions(equipment.activeRestrictions).filter((f: any) => !f.damageId)
+
+    await db.equipment.update({
+      where: { id: equipment.id },
+      data: {
+        fitnessStatus: result,
+        fitnessCalculatedAt: new Date(),
+        fitnessReason: result === 'UNFIT'
+          ? `Dnevni pregled: neispravno (${blocking.length} blokirajućih stavki)`
+          : result === 'CONDITIONAL' ? (restrictive.length > 0 ? 'Dnevni pregled: ispravno sa ograničenjem' : 'Dnevni pregled: manji nedostaci') : null,
+        ...(result === 'UNFIT' && equipment.status !== 'ASSIGNED' ? { status: 'OUT_OF_SERVICE', notes: `Dnevni pregled ${new Date().toISOString().slice(0, 10)} (${params.inspectorName}): sredstvo neispravno - vidi prijave kvarova` } : {}),
+        activeRestrictions: serializeRestrictions([...kept, ...flags] as any),
+      },
+    })
+
     revalidatePath('/dashboard')
-    return { ok: true, id: inspection.id, result }
+    revalidatePath('/')
+    return { ok: true, id: inspection.id, result, blocking: blocking.length, restrictive: restrictive.length, damageReports: created }
   }
 
   // Supabase
@@ -436,14 +488,15 @@ export async function createDailyInspection(params: {
     p_inspector_card_id: params.inspectorCardId,
     p_inspector_name: params.inspectorName,
     p_shift: params.shift,
-    p_checklist: params.checklist,
+    p_checklist: checklist,
     p_notes: params.notes ?? null,
   })
 
   if (error) throw error
-  const rpcResult = data as { ok: boolean; error?: string; id?: string; result?: string }
+  const rpcResult = data as { ok: boolean; error?: string; id?: string; result?: string; blocking?: number; restrictive?: number; damageReports?: number }
   if (!rpcResult.ok) return { ok: false, error: rpcResult.error ?? 'Greška pri snimanju inspekcije' }
 
   revalidatePath('/dashboard')
-  return { ok: true, id: rpcResult.id, result: rpcResult.result }
+  revalidatePath('/')
+  return { ok: true, id: rpcResult.id, result: rpcResult.result, blocking: rpcResult.blocking, restrictive: rpcResult.restrictive, damageReports: rpcResult.damageReports }
 }

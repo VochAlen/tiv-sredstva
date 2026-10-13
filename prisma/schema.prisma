@@ -165,6 +165,18 @@ model DamageReport {
   approvedByName   String?
   approvedAt       DateTime?
 
+  // Ograničenje upotrebe (npr. DAYTIME_ONLY) - kvar ne blokira sredstvo, nego ga ograničava
+  restrictionCode  String?
+  restrictionLabel String?
+  // Izvor prijave, npr. "daily:lights" (dnevni pregled) - sprječava dupliranje
+  sourceItem       String?
+
+  // Radni nalog popravke: dijelovi [{name, qty}] kao JSON string, sati, trošak, ko je radio
+  partsJson   String?
+  workHours   Float?
+  workCost    Float?
+  workerNames String?
+
   equipment Equipment        @relation(fields: [equipmentId], references: [id])
   employee  Employee?        @relation(fields: [employeeId], references: [id])
   photos    EquipmentPhoto[]

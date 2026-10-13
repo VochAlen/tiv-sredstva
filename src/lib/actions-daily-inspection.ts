@@ -95,7 +95,7 @@ export async function startDailyInspection(params: {
   equipmentCode: string
   checklist: Array<{ id: string; label: string; passed: boolean }>
   notes?: string
-}): Promise<{ ok: boolean; error?: string; result?: string }> {
+}): Promise<{ ok: boolean; error?: string; result?: string; blocking?: number; restrictive?: number; damageReports?: number }> {
   const user = await getCurrentUser()
   if (!user) return { ok: false, error: 'Morate biti prijavljeni' }
   if (!params.checklist.length) return { ok: false, error: 'Lista za pregled je prazna' }
@@ -113,5 +113,5 @@ export async function startDailyInspection(params: {
     checklist: params.checklist,
     notes: params.notes,
   })
-  return { ok: res.ok, error: res.error, result: res.result }
+  return { ok: res.ok, error: res.error, result: res.result, blocking: res.blocking, restrictive: res.restrictive, damageReports: res.damageReports }
 }
