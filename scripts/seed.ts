@@ -159,7 +159,8 @@ async function main() {
   for (const e of equipment) {
     await db.equipment.upsert({
       where: { code: e.code },
-      update: { department: (e as any).department ?? null },
+      // update: { department: (e as any).department ?? null },
+         update: {},
       create: {
         code: e.code,
         name: e.name,
