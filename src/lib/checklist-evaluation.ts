@@ -21,7 +21,9 @@ export interface ChecklistEvaluation {
 export function evaluateChecklist(checklist: ChecklistItem[]): ChecklistEvaluation {
   const allAnswered = checklist.every((i) => i.passed !== null)
   const failed = checklist.filter((i) => i.passed === false)
-  const blockingFailures = failed.filter((i) => i.severity === 'BLOCKING')
+  // Stavke bez eksplicitnog severity (stari papirni obrasci) koriste staro polje `blocking`
+  const isBlocking = (i: ChecklistItem) => i.severity === 'BLOCKING' || (i.severity === undefined && i.blocking === true)
+  const blockingFailures = failed.filter(isBlocking)
   const restrictiveFailures = failed.filter((i) => i.severity === 'RESTRICTIVE')
 
   const now = new Date().toISOString()
@@ -59,7 +61,7 @@ export function serializeRestrictions(restrictions: RestrictionFlag[]): string |
 // prva BLOCKING neispravna stavka, pa prva RESTRICTIVE. Vraća null ako je
 // sve prošlo (nema kvara) - poziva se samo kad se kreira DamageReport.
 export function deriveDamageCategory(evaluation: ChecklistEvaluation): string | null {
-  if (evaluation.blockingFailures.length > 0) return evaluation.blockingFailures[0].category
-  if (evaluation.restrictiveFailures.length > 0) return evaluation.restrictiveFailures[0].category
+  if (evaluation.blockingFailures.length > 0) return evaluation.blockingFailures[0].category ?? 'OPSTE'
+  if (evaluation.restrictiveFailures.length > 0) return evaluation.restrictiveFailures[0].category ?? 'OPSTE'
   return null
 }

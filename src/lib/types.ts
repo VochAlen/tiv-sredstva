@@ -13,15 +13,61 @@ export type EquipmentType =
   | 'BUS'
   | 'OTHER'
 
+// Služba kojoj sredstvo pripada (Equipment.department). null/nedefinisano se
+// tretira kao TEHNICKA_SLUZBA - isto kao u dnevnim pregledima i štampi obrazaca.
+export type EquipmentDepartment = 'TEHNICKA_SLUZBA' | 'SLUZBA_PO'
+
+export const EQUIPMENT_DEPARTMENT_ORDER: EquipmentDepartment[] = ['TEHNICKA_SLUZBA', 'SLUZBA_PO']
+
+export const EQUIPMENT_DEPARTMENT_LABELS: Record<EquipmentDepartment, string> = {
+  TEHNICKA_SLUZBA: 'Tehnička služba',
+  SLUZBA_PO: 'Služba zemaljskog opsluživanja (P/O)',
+}
+
 export type ActionType = 'CHECK_OUT' | 'CHECK_IN'
 export type InspectionResult = 'OK' | 'MINOR_DAMAGE' | 'MAJOR_DAMAGE' | 'OUT_OF_SERVICE'
 export type DamageSeverity = 'MINOR' | 'MAJOR' | 'CRITICAL'
 export type DamageStatus = 'OPEN' | 'IN_REPAIR' | 'RESOLVED'
 
+// Kategorija kvara - određuje koji radnik radionice (po kvalifikaciji) smije
+// preuzeti popravku. Vidi maintenance_skills i damage_reports.category.
+export type ChecklistCategory = 'MEHANIKA' | 'ELEKTRIKA' | 'HIDRAULIKA' | 'BEZBJEDNOST' | 'OPSTE'
+
+export const CHECKLIST_CATEGORY_ORDER: ChecklistCategory[] = [
+  'MEHANIKA', 'ELEKTRIKA', 'HIDRAULIKA', 'BEZBJEDNOST', 'OPSTE',
+]
+
+export const CHECKLIST_CATEGORY_LABELS: Record<ChecklistCategory, string> = {
+  MEHANIKA: 'Mehanika',
+  ELEKTRIKA: 'Elektrika',
+  HIDRAULIKA: 'Hidraulika',
+  BEZBJEDNOST: 'Bezbjednosna oprema',
+  OPSTE: 'Opšte',
+}
+
+// Težina neispravne stavke u semafor evaluaciji (vidi checklist-evaluation.ts):
+// BLOCKING -> zaduživanje odbijeno, RESTRICTIVE -> zaduženje uz ograničenje upotrebe
+export type ChecklistSeverity = 'BLOCKING' | 'RESTRICTIVE'
+
+// Aktivno ograničenje upotrebe sredstva (Equipment.activeRestrictions, JSON niz)
+export interface RestrictionFlag {
+  code: string
+  label: string
+  source: string // id stavke čeklista koja je izazvala ograničenje
+  since: string // ISO datum
+}
+
 export interface ChecklistItem {
   id: string
   label: string
   passed: boolean | null // null = nije odgovoreno
+  /** Težina neispravnosti - ako nije zadano, vrijedi staro polje `blocking` */
+  severity?: ChecklistSeverity
+  /** Kategorija kvara kad stavka padne (zadano: OPSTE) */
+  category?: ChecklistCategory
+  /** Šifra i opis ograničenja kad je severity RESTRICTIVE */
+  restrictionCode?: string
+  restrictionLabel?: string
   /** Grupa lokacije provjere (1/2/3) - iz papirnog obrasca "Dnevna čeklista" */
   group?: 1 | 2 | 3
   /** Period provjere - u papirnom obrascu uvijek "Dnevno" za ovu čeklistu */

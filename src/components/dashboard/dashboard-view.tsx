@@ -88,6 +88,8 @@ import { Textarea } from '@/components/ui/textarea'
 import { toast } from 'sonner'
 import {
   EQUIPMENT_TYPE_LABELS,
+  EQUIPMENT_DEPARTMENT_LABELS,
+  EQUIPMENT_DEPARTMENT_ORDER,
   STATUS_LABELS,
   STATUS_COLORS,
   INSPECTION_RESULT_LABELS,
@@ -776,6 +778,7 @@ function AddEquipmentDialog({ onCreated }: { onCreated: () => void }) {
   const [type, setType] = useState<EquipmentType>('TOW_TRACTOR')
   const [serialNumber, setSerialNumber] = useState('')
   const [location, setLocation] = useState('')
+  const [department, setDepartment] = useState<string>('TEHNICKA_SLUZBA')
   const [isPending, startTransition] = useTransition()
 
   const handleSubmit = (e: React.FormEvent) => {
@@ -791,6 +794,7 @@ function AddEquipmentDialog({ onCreated }: { onCreated: () => void }) {
         type,
         serialNumber: serialNumber || undefined,
         location,
+        department,
       })
       if (res.ok) {
         toast.success('Sredstvo kreirano')
@@ -849,6 +853,17 @@ function AddEquipmentDialog({ onCreated }: { onCreated: () => void }) {
             <Label htmlFor="add-sn">Serijski broj</Label>
             <Input id="add-sn" value={serialNumber} onChange={(e) => setSerialNumber(e.target.value)} />
           </div>
+          <div className="space-y-1.5">
+            <Label>Služba</Label>
+            <Select value={department} onValueChange={setDepartment}>
+              <SelectTrigger><SelectValue /></SelectTrigger>
+              <SelectContent>
+                {EQUIPMENT_DEPARTMENT_ORDER.map((d) => (
+                  <SelectItem key={d} value={d}>{EQUIPMENT_DEPARTMENT_LABELS[d]}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
           <DialogFooter>
             <Button type="button" variant="outline" onClick={() => setOpen(false)}>Odustani</Button>
             <Button type="submit" disabled={isPending}>
@@ -880,6 +895,7 @@ function EditEquipmentDialog({
   const [location, setLocation] = useState(equipment.location)
   const [serialNumber, setSerialNumber] = useState(equipment.serialNumber ?? '')
   const [notes, setNotes] = useState(equipment.notes ?? '')
+  const [department, setDepartment] = useState<string>(equipment.department ?? 'TEHNICKA_SLUZBA')
   const [isPending, startTransition] = useTransition()
 
   useEffect(() => {
@@ -889,6 +905,7 @@ function EditEquipmentDialog({
       setLocation(equipment.location)
       setSerialNumber(equipment.serialNumber ?? '')
       setNotes(equipment.notes ?? '')
+      setDepartment(equipment.department ?? 'TEHNICKA_SLUZBA')
     }
   }, [open, equipment])
 
@@ -902,6 +919,7 @@ function EditEquipmentDialog({
         location,
         serialNumber: serialNumber || undefined,
         notes: notes || undefined,
+        department,
       })
       toast.success('Ažurirano')
       setOpen(false)
@@ -948,6 +966,17 @@ function EditEquipmentDialog({
           <div className="space-y-1.5">
             <Label htmlFor="edit-sn">Serijski broj</Label>
             <Input id="edit-sn" value={serialNumber} onChange={(e) => setSerialNumber(e.target.value)} />
+          </div>
+          <div className="space-y-1.5">
+            <Label>Služba</Label>
+            <Select value={department} onValueChange={setDepartment}>
+              <SelectTrigger><SelectValue /></SelectTrigger>
+              <SelectContent>
+                {EQUIPMENT_DEPARTMENT_ORDER.map((d) => (
+                  <SelectItem key={d} value={d}>{EQUIPMENT_DEPARTMENT_LABELS[d]}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
           </div>
           <div className="space-y-1.5">
             <Label htmlFor="edit-notes">Napomene</Label>

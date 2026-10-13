@@ -46,8 +46,9 @@ export function BulkImportDialog({ onImported }: { onImported: () => void }) {
       return
     }
 
-    // Parse CSV: code,name,type,serialNumber,location
-    const items: Array<{ code: string; name: string; type: string; serialNumber?: string; location: string }> = []
+    // Parse CSV: code,name,type,serialNumber,location[,department]
+    // 6. kolona (department) je opciona: TEHNICKA_SLUZBA ili SLUZBA_PO. Prazno = TEHNICKA_SLUZBA.
+    const items: Array<{ code: string; name: string; type: string; serialNumber?: string; location: string; department?: string }> = []
     const errors: string[] = []
 
     for (let i = 1; i < lines.length; i++) {
@@ -58,12 +59,18 @@ export function BulkImportDialog({ onImported }: { onImported: () => void }) {
         errors.push(`Red ${i + 1}: Nedovoljno kolona (potrebno 5: code,name,type,serialNumber,location)`)
         continue
       }
+      const department = (parts[5] ?? '').toUpperCase()
+      if (department && department !== 'TEHNICKA_SLUZBA' && department !== 'SLUZBA_PO') {
+        errors.push(`Red ${i + 1}: Nepoznata služba "${parts[5]}" (dozvoljeno: TEHNICKA_SLUZBA ili SLUZBA_PO)`)
+        continue
+      }
       items.push({
         code: parts[0].toUpperCase(),
         name: parts[1],
         type: parts[2].toUpperCase(),
         serialNumber: parts[3] || undefined,
         location: parts[4],
+        department: department || 'TEHNICKA_SLUZBA',
       })
     }
 
@@ -87,10 +94,10 @@ export function BulkImportDialog({ onImported }: { onImported: () => void }) {
   }
 
   const downloadTemplate = () => {
-    const template = `code,name,type,serialNumber,location
-TOW-22,Tow Tractor Goldhofer AST-3,TOW_TRACTOR,GH-2025-001,Platforma B
-GPU-05,GPU ITW GSE 1400,GPU,ITW-2024-050,Platforma - stajanka
-BLT-11,Belt Loader TLD TB-150,BELT_LOADER,TLD-2024-300,Platforma A`
+    const template = `code,name,type,serialNumber,location,department
+TOW-22,Tow Tractor Goldhofer AST-3,TOW_TRACTOR,GH-2025-001,Platforma B,TEHNICKA_SLUZBA
+GPU-05,GPU ITW GSE 1400,GPU,ITW-2024-050,Platforma - stajanka,TEHNICKA_SLUZBA
+BLT-11,Belt Loader TLD TB-150,BELT_LOADER,TLD-2024-300,Platforma A,SLUZBA_PO`
     const blob = new Blob([template], { type: 'text/csv' })
     const url = URL.createObjectURL(blob)
     const link = document.createElement('a')
@@ -116,7 +123,7 @@ BLT-11,Belt Loader TLD TB-150,BELT_LOADER,TLD-2024-300,Platforma A`
                 Bulk import opreme iz CSV
               </CardTitle>
               <p className="text-sm text-muted-foreground">
-                CSV format: <code className="bg-muted px-1 py-0.5 rounded text-xs">code,name,type,serialNumber,location</code>
+                CSV format: <code className="bg-muted px-1 py-0.5 rounded text-xs">code,name,type,serialNumber,location[,department]</code>
               </p>
             </CardHeader>
             <CardContent className="space-y-4">
@@ -144,7 +151,7 @@ BLT-11,Belt Loader TLD TB-150,BELT_LOADER,TLD-2024-300,Platforma A`
                   value={csvText}
                   onChange={(e) => { setCsvText(e.target.value); setResult(null) }}
                   rows={8}
-                  placeholder="code,name,type,serialNumber,location&#10;TOW-22,Tow Tractor Goldhofer,TOW_TRACTOR,GH-2025-001,Platforma B"
+                  placeholder="code,name,type,serialNumber,location,department&#10;TOW-22,Tow Tractor Goldhofer,TOW_TRACTOR,GH-2025-001,Platforma B,TEHNICKA_SLUZBA"
                   className="font-mono text-xs"
                 />
               </div>

@@ -1161,6 +1161,7 @@ export async function bulkImportEquipment(items: Array<{
   type: string
   serialNumber?: string
   location: string
+  department?: string
 }>) {
   await requireRole(['admin'])
 
@@ -1183,6 +1184,7 @@ export async function bulkImportEquipment(items: Array<{
             type: item.type,
             serialNumber: item.serialNumber ?? null,
             location: item.location,
+            department: item.department ?? null,
             status: 'AVAILABLE',
           },
         })
@@ -1195,6 +1197,7 @@ export async function bulkImportEquipment(items: Array<{
           type: item.type,
           serial_number: item.serialNumber ?? null,
           location: item.location,
+          department: item.department ?? null,
           status: 'AVAILABLE',
         })
         if (error) {

@@ -159,8 +159,8 @@ async function main() {
   for (const e of equipment) {
     await db.equipment.upsert({
       where: { code: e.code },
-      // update: { department: (e as any).department ?? null },
-         update: {},
+      // Kolona department sada postoji u šemi - ponovno seedanje popunjava službu i postojećoj opremi
+      update: { department: (e as any).department ?? null },
       create: {
         code: e.code,
         name: e.name,

@@ -50,6 +50,16 @@ model Equipment {
   // Access Control - admin može ograničiti ko može zadužiti sredstvo
   restrictedAccess Boolean @default(false)
 
+  // Služba kojoj sredstvo pripada: TEHNICKA_SLUZBA | SLUZBA_PO (null = TEHNICKA_SLUZBA).
+  // Koristi se za grupisanje dnevnih pregleda i štampu obrazaca PRO.03.04.OBR1/OBR2.
+  department String?
+
+  // Semafor čeklista: aktivna ograničenja upotrebe (JSON niz RestrictionFlag)
+  activeRestrictions String?
+
+  // Nakon odobrene popravke prvi radnik mora potvrditi ispravnost pri zaduživanju
+  needsFirstUseConfirmation Boolean @default(false)
+
   // Fuel / Charging state
   fuelType         String? // DIESEL | PETROL | ELECTRIC | HYBRID | LPG
   fuelLevel        Float? // current level: % for electric, liters for fuel
@@ -140,6 +150,20 @@ model DamageReport {
   preventiveAction  String?
   insuranceClaimRef String?
   estimatedCost     Float?
+
+  // Kategorija kvara (MEHANIKA | ELEKTRIKA | HIDRAULIKA | BEZBJEDNOST | OPSTE) -
+  // određuje koji radnik radionice smije preuzeti popravku
+  category String?
+
+  // Tok popravke: preuzeto -> popravljeno -> odobreno (šef službe)
+  acknowledgedAt   DateTime?
+  acknowledgedBy   String?
+  repairedByCardId String?
+  repairedByName   String?
+  repairedAt       DateTime?
+  approvedByCardId String?
+  approvedByName   String?
+  approvedAt       DateTime?
 
   equipment Equipment        @relation(fields: [equipmentId], references: [id])
   employee  Employee?        @relation(fields: [employeeId], references: [id])
@@ -1112,6 +1136,13 @@ model InspectionFinding {
   notamGenerated Boolean @default(false)
   notamNumber    String?
 
+  // Mjerenja i praćenje istog nedostatka kroz vrijeme (PRG.03.02 3.2.5.1)
+  lengthM         Float?
+  maxWidthCm      Float?
+  maxDepthCm      Float?
+  conditionRating String? // npr. A | B | C | NA
+  trackingGroupId String? // isti fizički nedostatak kroz više pregleda
+
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
@@ -1119,6 +1150,7 @@ model InspectionFinding {
   @@index([category])
   @@index([severity])
   @@index([status])
+  @@index([trackingGroupId])
 }
 
 // NOTAM (Notice to Airmen) — generisani na osnovu findings
@@ -1748,4 +1780,22 @@ model DocumentDistribution {
   @@index([recipientDepartment])
   @@index([status])
   @@index([distributionDate])
+}
+
+// Kvalifikacije radionice po kategoriji kvara (MEHANIKA | ELEKTRIKA | HIDRAULIKA | BEZBJEDNOST | OPSTE)
+// - samo kvalifikovan radnik smije preuzeti popravku te kategorije
+model MaintenanceSkill {
+  id                String    @id @default(cuid())
+  employeeCardId    String
+  employeeName      String
+  category          String
+  level             String    @default("CERTIFIED") // JUNIOR | CERTIFIED | SENIOR
+  certifiedBy       String?
+  certificateNumber String?
+  validUntil        DateTime?
+  createdAt         DateTime  @default(now())
+
+  @@unique([employeeCardId, category])
+  @@index([employeeCardId])
+  @@index([category])
 }

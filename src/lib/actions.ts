@@ -10,6 +10,8 @@ import { getChecklistForType, type ChecklistItem, type InspectionResult } from '
 import { isDemoMode } from '@/lib/auth-mode'
 import { getCurrentUser, type AppUser } from '@/lib/auth-server'
 import { createClientAsync as createSupabaseClient } from "@/lib/supabase/server"
+import { checkMaintenanceSkill } from '@/lib/actions-maintenance-skills'
+import { createMaintenanceLog } from '@/lib/actions-advanced'
 
 // =====================================================
 // AUTH HELPERS
@@ -46,6 +48,7 @@ type SupabaseEquipment = {
   location: string
   status: string
   notes: string | null
+  department?: string | null
 }
 
 // =====================================================
@@ -102,6 +105,7 @@ export async function getAllEquipment() {
     location: e.location,
     status: e.status,
     notes: e.notes,
+    department: e.department ?? null,
     createdAt: new Date(),
     updatedAt: new Date(),
     _count: { damages: damagesCount[e.id] ?? 0 },
@@ -327,6 +331,15 @@ export async function getOpenDamages() {
     resolvedAt: d.resolved_at ? new Date(d.resolved_at) : null,
     createdAt: new Date(d.created_at),
     updatedAt: new Date(d.updated_at),
+    category: d.category ?? null,
+    acknowledgedAt: d.acknowledged_at ? new Date(d.acknowledged_at) : null,
+    acknowledgedBy: d.acknowledged_by ?? null,
+    repairedByCardId: d.repaired_by_card_id ?? null,
+    repairedByName: d.repaired_by_name ?? null,
+    repairedAt: d.repaired_at ? new Date(d.repaired_at) : null,
+    approvedByCardId: d.approved_by_card_id ?? null,
+    approvedByName: d.approved_by_name ?? null,
+    approvedAt: d.approved_at ? new Date(d.approved_at) : null,
     equipment: d.equipment
       ? {
           id: d.equipment.id,
@@ -375,6 +388,15 @@ export async function getAllDamages() {
     resolvedAt: d.resolved_at ? new Date(d.resolved_at) : null,
     createdAt: new Date(d.created_at),
     updatedAt: new Date(d.updated_at),
+    category: d.category ?? null,
+    acknowledgedAt: d.acknowledged_at ? new Date(d.acknowledged_at) : null,
+    acknowledgedBy: d.acknowledged_by ?? null,
+    repairedByCardId: d.repaired_by_card_id ?? null,
+    repairedByName: d.repaired_by_name ?? null,
+    repairedAt: d.repaired_at ? new Date(d.repaired_at) : null,
+    approvedByCardId: d.approved_by_card_id ?? null,
+    approvedByName: d.approved_by_name ?? null,
+    approvedAt: d.approved_at ? new Date(d.approved_at) : null,
     equipment: d.equipment
       ? {
           id: d.equipment.id,
@@ -926,6 +948,7 @@ export async function updateEquipment(params: {
   location?: string
   serialNumber?: string
   notes?: string
+  department?: string
 }) {
   await requireRole(['admin'])
 
@@ -947,6 +970,7 @@ export async function updateEquipment(params: {
   if (data.location !== undefined) update.location = data.location
   if (data.serialNumber !== undefined) update.serial_number = data.serialNumber
   if (data.notes !== undefined) update.notes = data.notes
+  if (data.department !== undefined) update.department = data.department
 
   const supabase = await createSupabaseClient()
   const { error } = await supabase.from('equipment').update(update).eq('id', equipmentId)
@@ -961,6 +985,7 @@ export async function createEquipment(params: {
   type: string
   serialNumber?: string
   location: string
+  department?: string
 }) {
   await requireRole(['admin'])
 
@@ -975,6 +1000,7 @@ export async function createEquipment(params: {
         type: params.type,
         serialNumber: params.serialNumber ?? null,
         location: params.location,
+        department: params.department ?? null,
         status: 'AVAILABLE',
       },
     })
@@ -989,6 +1015,7 @@ export async function createEquipment(params: {
     type: params.type,
     serial_number: params.serialNumber ?? null,
     location: params.location,
+    department: params.department ?? null,
     status: 'AVAILABLE',
   })
 
@@ -1099,6 +1126,190 @@ export async function updateDamageStatus(params: {
     .eq('id', params.damageId)
 
   if (error) throw error
+  revalidatePath('/')
+  return { ok: true }
+}
+
+// =====================================================
+// TOK POPRAVKE KVARA: preuzmi (radionica) -> označi popravljeno -> odobri (šef)
+// Isti redoslijed kao fn_mark_repaired / fn_approve_repair u migraciji 017.
+// =====================================================
+
+export async function acknowledgeDamage(damageId: string) {
+  const user = await requireRole(['engineer', 'admin'])
+  const now = new Date()
+
+  if (isDemoMode()) {
+    await db.damageReport.update({
+      where: { id: damageId },
+      data: {
+        status: 'IN_REPAIR',
+        acknowledgedAt: now,
+        acknowledgedBy: user.full_name,
+      },
+    })
+    revalidatePath('/')
+    return { ok: true }
+  }
+
+  const supabase = await createSupabaseClient()
+  const { error } = await supabase
+    .from('damage_reports')
+    .update({
+      status: 'IN_REPAIR',
+      acknowledged_at: now.toISOString(),
+      acknowledged_by: user.full_name,
+    })
+    .eq('id', damageId)
+  if (error) throw error
+  revalidatePath('/')
+  return { ok: true }
+}
+
+export async function markRepaired(params: {
+  damageId: string
+  repairNotes: string
+  category?: string
+}): Promise<{ ok: boolean; error?: string }> {
+  const user = await requireRole(['engineer', 'admin'])
+  const notes = params.repairNotes.trim()
+  if (!notes) return { ok: false, error: 'Unesite kratak opis popravke' }
+
+  // Kategorija: iz prijave (izvedena iz čeklista) ili ručno odabrana za slobodne prijave
+  let category: string | null = null
+  if (isDemoMode()) {
+    const dr = await db.damageReport.findUnique({ where: { id: params.damageId } })
+    if (!dr) return { ok: false, error: 'Prijava kvara nije pronađena' }
+    category = dr.category ?? params.category ?? null
+  } else {
+    const supabase = await createSupabaseClient()
+    const { data: dr } = await supabase.from('damage_reports').select('category').eq('id', params.damageId).maybeSingle()
+    if (!dr) return { ok: false, error: 'Prijava kvara nije pronađena' }
+    category = dr.category ?? params.category ?? null
+  }
+  if (!category) return { ok: false, error: 'Odaberite kategoriju kvara' }
+
+  // Samo radnik sa važećom kvalifikacijom za kategoriju smije označiti popravku
+  const skill = await checkMaintenanceSkill(user.card_id, category)
+  if (!skill.qualified) return { ok: false, error: skill.reason ?? 'Niste kvalifikovani za ovu kategoriju' }
+
+  const now = new Date()
+  if (isDemoMode()) {
+    await db.damageReport.update({
+      where: { id: params.damageId },
+      data: {
+        status: 'AWAITING_APPROVAL',
+        category,
+        resolution: notes,
+        repairedByCardId: user.card_id,
+        repairedByName: user.full_name,
+        repairedAt: now,
+      },
+    })
+    revalidatePath('/')
+    return { ok: true }
+  }
+
+  const supabase = await createSupabaseClient()
+  const { error } = await supabase
+    .from('damage_reports')
+    .update({
+      status: 'AWAITING_APPROVAL',
+      category,
+      resolution: notes,
+      repaired_by_card_id: user.card_id,
+      repaired_by_name: user.full_name,
+      repaired_at: now.toISOString(),
+    })
+    .eq('id', params.damageId)
+  if (error) return { ok: false, error: error.message }
+  revalidatePath('/')
+  return { ok: true }
+}
+
+export async function approveRepair(params: {
+  damageId: string
+  cost?: number
+  partsReplaced?: string
+  durationHours?: number
+}): Promise<{ ok: boolean; error?: string; crsNumber?: string }> {
+  const user = await requireRole(['admin'])
+  const now = new Date()
+
+  let equipmentId: string | null = null
+  let resolution = ''
+  let repairedByName: string | null = null
+  let repairedByCardId: string | null = null
+
+  if (isDemoMode()) {
+    const dr = await db.damageReport.findUnique({ where: { id: params.damageId } })
+    if (!dr) return { ok: false, error: 'Prijava kvara nije pronađena' }
+    if (dr.status !== 'AWAITING_APPROVAL') return { ok: false, error: 'Popravka nije označena kao završena' }
+    equipmentId = dr.equipmentId
+    resolution = dr.resolution ?? ''
+    repairedByName = dr.repairedByName
+    repairedByCardId = dr.repairedByCardId
+
+    await db.damageReport.update({
+      where: { id: params.damageId },
+      data: {
+        status: 'RESOLVED',
+        approvedByCardId: user.card_id,
+        approvedByName: user.full_name,
+        approvedAt: now,
+        resolvedAt: now,
+      },
+    })
+    await db.equipment.update({
+      where: { id: dr.equipmentId },
+      data: {
+        status: 'AVAILABLE',
+        needsFirstUseConfirmation: true,
+        notes: 'Popravka odobrena - čeka potvrdu prvog radnika pri zaduživanju',
+      },
+    })
+  } else {
+    const supabase = await createSupabaseClient()
+    const { data: dr } = await supabase
+      .from('damage_reports')
+      .select('equipment_id, status, resolution, repaired_by_name, repaired_by_card_id')
+      .eq('id', params.damageId)
+      .maybeSingle()
+    if (!dr) return { ok: false, error: 'Prijava kvara nije pronađena' }
+    if (dr.status !== 'AWAITING_APPROVAL') return { ok: false, error: 'Popravka nije označena kao završena' }
+    equipmentId = dr.equipment_id
+    resolution = dr.resolution ?? ''
+    repairedByName = dr.repaired_by_name
+    repairedByCardId = dr.repaired_by_card_id
+
+    // Atomično: isto što i fn_approve_repair (status RESOLVED + oprema AVAILABLE)
+    const { error } = await supabase.rpc('fn_approve_repair', {
+      p_damage_id: params.damageId,
+      p_approved_by_card_id: user.card_id,
+      p_approved_by_name: user.full_name,
+    })
+    if (error) return { ok: false, error: error.message }
+  }
+
+  // Zapis u evidenciju održavanja (Part-145) - samo ako imamo sredstvo
+  if (equipmentId) {
+    try {
+      await createMaintenanceLog({
+        equipmentId,
+        maintenanceType: 'CORRECTIVE',
+        description: resolution || 'Korektivna popravka po prijavi kvara',
+        performedBy: repairedByName ?? undefined,
+        performedByCardId: repairedByCardId ?? undefined,
+        cost: params.cost,
+        durationHours: params.durationHours,
+        partsReplaced: params.partsReplaced,
+      })
+    } catch (e) {
+      // Popravka je već odobrena - neuspjeh evidencije ne smije poništiti odobrenje
+      console.error('approveRepair: maintenance log nije upisan', e)
+    }
+  }
+
   revalidatePath('/')
   return { ok: true }
 }
