@@ -52,3 +52,4 @@ prompt
 server.log
 # Skills directory
 /skills/
+!src/lib/local-day.ts
