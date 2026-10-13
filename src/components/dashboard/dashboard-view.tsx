@@ -5,6 +5,7 @@ import { QRCodeSVG } from 'qrcode.react'
 import { printQrLabels, svgOf } from '@/lib/qr-print'
 import { RestrictionBadges } from '@/components/restriction-badges'
 import { DamageRowCard } from '@/components/dashboard/damage-row-card'
+import { DailyListView, DailyStatsView, EquipmentReportView, InspectionLogView } from '@/components/dashboard/daily-reports-view'
 import { OverviewDetailTable, type OverviewKind } from '@/components/dashboard/overview-detail-table'
 import { deleteEquipment } from '@/lib/actions-admin-edit'
 import {
@@ -37,6 +38,8 @@ import {
   Plane,
   Shield,
   ClipboardCheck,
+  ClipboardList,
+  CalendarDays,
   FileText,
   AlertTriangle,
   Bird,
@@ -159,6 +162,10 @@ const NAV_GROUPS: NavGroup[] = [
     items: [
       { value: 'mytasks', label: 'Moj zadatak', icon: ListChecks },
       { value: 'overview', label: 'Pregled', icon: Activity },
+      { value: 'daily-list', label: 'Dnevna lista pregleda', icon: ClipboardList },
+      { value: 'inspection-log', label: 'Evidencija pregleda', icon: ClipboardCheck },
+      { value: 'daily-stats', label: 'Pregledi po datumima', icon: CalendarDays },
+      { value: 'equipment-report', label: 'Izvještaj po sredstvu', icon: FileText },
       { value: 'statistics', label: 'Statistika', icon: TrendingUp, minRole: 'engineer' },
       { value: 'activity', label: 'Aktivnost', icon: Clock, minRole: 'engineer' },
     ],
@@ -243,6 +250,7 @@ export function DashboardView({ currentUser }: { currentUser: AppUser }) {
   const [allDamages, setAllDamages] = useState<DamageRow[]>([])
   const [inspectionAlerts, setInspectionAlerts] = useState<InspectionAlertLike[]>([])
   const [loading, setLoading] = useState(true)
+  const [dailyDate, setDailyDate] = useState<string | undefined>(undefined)
   const [detail, setDetail] = useState<OverviewKind | null>(null)
   const toggleDetail = (k: OverviewKind) => setDetail((d) => (d === k ? null : k))
 
@@ -508,6 +516,22 @@ export function DashboardView({ currentUser }: { currentUser: AppUser }) {
           </div>
         </TabsContent>
 
+        <TabsContent value="daily-list" className="space-y-4">
+          <DailyListView initialDate={dailyDate} />
+        </TabsContent>
+
+        <TabsContent value="inspection-log" className="space-y-4">
+          <InspectionLogView />
+        </TabsContent>
+
+        <TabsContent value="daily-stats" className="space-y-4">
+          <DailyStatsView onPickDate={(d) => { setDailyDate(d); setTab('daily-list') }} />
+        </TabsContent>
+
+        <TabsContent value="equipment-report" className="space-y-4">
+          <EquipmentReportView equipment={equipment} />
+        </TabsContent>
+
         <TabsContent value="equipment" className="space-y-4">
           {/* Filters */}
           <Card>
@@ -607,6 +631,9 @@ export function DashboardView({ currentUser }: { currentUser: AppUser }) {
                         </TableCell>
                         <TableCell className="text-right">
                           <div className="flex justify-end gap-1">
+                            <Button variant="ghost" size="sm" title="Karton sredstva (PDF)" aria-label={`Karton ${e.code}`} onClick={() => window.open(`/api/reports/gse-equipment-card?code=${encodeURIComponent(e.code)}`, '_blank')}>
+                              <FileText className="h-4 w-4" />
+                            </Button>
                             {currentUser.role === 'admin' && (
                               <AccessControlDialog equipmentId={e.id} equipmentCode={e.code} equipmentName={e.name} />
                             )}
@@ -1062,6 +1089,12 @@ function EditEquipmentDialog({
                 onClick={() => printQrLabels([{ svg: svgOf(qrBoxRef.current), code: equipment.code, name: equipment.name, location: equipment.location }])}
               >
                 <Printer className="h-4 w-4 mr-1.5" />Štampaj QR
+              </Button>
+              <Button
+                type="button" variant="outline" size="sm" className="ml-1.5"
+                onClick={() => window.open(`/api/reports/gse-equipment-card?code=${encodeURIComponent(equipment.code)}`, '_blank')}
+              >
+                <FileText className="h-4 w-4 mr-1.5" />Karton (PDF)
               </Button>
             </div>
           </div>
