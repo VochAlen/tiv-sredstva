@@ -277,7 +277,7 @@ function WorkerPageInner() {
             {/* Konzolni panel - svijetao "ekran" uložen u tamnu/fotografsku
                 kućicu, sadrži netaknut WorkerView alat. */}
             <div className="order-1 lg:order-2 w-full">
-              <div className="rounded-xl overflow-hidden shadow-[0_20px_60px_-20px_rgba(0,0,0,0.75)]" style={{ backgroundColor: '#F4F5F7' }}>
+              <div className="force-light rounded-xl overflow-hidden shadow-[0_20px_60px_-20px_rgba(0,0,0,0.75)]" style={{ backgroundColor: '#F4F5F7' }}>
                 <div className="h-[3px]" style={{ backgroundColor: '#F2A516' }} />
                 <div className="px-3 py-4 sm:px-5 sm:py-5">
                   <WorkerView initialScan={initialScan} />

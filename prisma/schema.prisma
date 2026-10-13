@@ -875,7 +875,9 @@ model FodReport {
   description String
 
   aircraftPartSuspected Boolean @default(false) // ako da - obavijestiti operatere aviona
-  removed               Boolean @default(true)
+  removed               Boolean @default(false)
+  removedAt             DateTime?
+  removedBy             String?
   atcNotified           Boolean @default(false)
 
   foundByCardId String?
@@ -901,6 +903,12 @@ model WildlifeReport {
 
   actionTaken String? // npr. "Otjerano", "Prijavljeno nadleznom organu"
   damageDescription String?
+
+  // Obrada prijave (admin)
+  status     String   @default("NEW") // NEW | IN_REVIEW | CLOSED
+  adminNotes String?
+  updatedBy  String?
+  updatedAt  DateTime @default(now()) @updatedAt
 
   reportedByCardId String?
   reportedByName   String

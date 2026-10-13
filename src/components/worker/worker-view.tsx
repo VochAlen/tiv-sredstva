@@ -273,16 +273,17 @@ export function WorkerView({
 
   // Izdvojeno iz handleInspectSubmit da i brza dugmad (markAllPassed +
   // submit, quickCheckIn) mogu pozvati isti kod bez events-a.
-  const submitInspect = (overrides?: { damageDescription?: string }) => {
+  const submitInspect = (overrides?: { damageDescription?: string; firstUseConfirmed?: boolean }) => {
     if (!equipment) return
     // Radnik ne mora ukucati ništa ako je dao sliku ili kategoriju (foto-prvo prijava)
     const damageActive = actionType === 'CHECK_OUT' ? inspectionResult !== 'OK' : reportDamageIn
+    const quick = overrides?.damageDescription !== undefined // brza dugmad: bez prijave kvara
     const typedDamage = overrides?.damageDescription ?? damageDescription
     const effectiveDamageDescription =
-      typedDamage.trim() || (!overrides && damageActive && (damageCategory || damagePhotos.length > 0)
+      typedDamage.trim() || (!quick && damageActive && (damageCategory || damagePhotos.length > 0)
         ? fallbackDamageDescription(damageCategory, damagePhotos.length)
         : '')
-    const extras = damageActive && !overrides
+    const extras = damageActive && !quick
       ? { damageCategory: damageCategory || undefined, damagePhotos: damagePhotos.length ? damagePhotos : undefined }
       : {}
 
@@ -299,16 +300,22 @@ export function WorkerView({
             damageDescription: inspectionResult !== 'OK' ? effectiveDamageDescription.trim() : undefined,
             damageSeverity,
             ...extras,
+            firstUseConfirmed: overrides?.firstUseConfirmed,
           })
+          if ((res as any).needsFirstUseConfirmation) {
+            // Sredstvo je nedavno popravljeno — prvi radnik mora potvrditi da ga je pregledao
+            if (window.confirm(`${res.error}\n\nPotvrđujem da sam pregledao/la sredstvo i da je ispravno.`)) {
+              submitInspect({ ...overrides, firstUseConfirmed: true })
+            }
+            return
+          }
           setAssignmentId((res as any).assignmentId ?? null)
           if (res.ok) {
+            // Zaduženo; ako je uz to prijavljeno oštećenje koje ne blokira, radionica je obaviještena
+            setStep('success')
             if (res.damageReportId && inspectionResult !== 'OK') {
-              // Ažuriraj lokalni state - sredstvo je sad OUT_OF_SERVICE
-              setEquipment((prev) => prev ? { ...prev, status: 'OUT_OF_SERVICE', notes: `Oštećenje prijavljeno: ${effectiveDamageDescription.trim().slice(0, 100)}` } : prev)
-              setStep('blocked')
-              toast.warning('Zaduživanje uslovljeno oštećenjem - prijava zabilježena')
+              toast.warning('Zaduženo. Prijava oštećenja je zabilježena i proslijeđena radionici.')
             } else {
-              setStep('success')
               toast.success('Uspješno zaduženo!')
             }
           } else {

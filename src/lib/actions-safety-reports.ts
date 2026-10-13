@@ -42,7 +42,7 @@ export async function createFodReport(params: {
       data: {
         location: params.location, itemType: params.itemType, description: params.description,
         aircraftPartSuspected: params.aircraftPartSuspected ?? false,
-        removed: params.removed ?? true, atcNotified: params.atcNotified ?? false,
+        removed: params.removed ?? false, atcNotified: params.atcNotified ?? false,
         foundByCardId: params.foundByCardId ?? null, foundByName: params.foundByName,
       },
     })
@@ -58,13 +58,31 @@ export async function createFodReport(params: {
     id,
     location: params.location, item_type: params.itemType, description: params.description,
     aircraft_part_suspected: params.aircraftPartSuspected ?? false,
-    removed: params.removed ?? true, atc_notified: params.atcNotified ?? false,
+    removed: params.removed ?? false, atc_notified: params.atcNotified ?? false,
     found_by_card_id: params.foundByCardId ?? null, found_by_name: params.foundByName,
   })
 
   if (error) throw error
   revalidatePath('/dashboard')
   return { ok: true, id }
+}
+
+/** Označava da je FOD stvarno uklonjen (inženjer/admin). Upisuje ko i kada. */
+export async function markFodRemoved(id: string): Promise<{ ok: boolean; error?: string }> {
+  const user = await requireRole(['engineer', 'admin'])
+  const now = new Date()
+  if (isDemoMode()) {
+    await db.fodReport.update({ where: { id }, data: { removed: true, removedAt: now, removedBy: user.full_name } })
+  } else {
+    const supabase = await createSupabaseClient()
+    const { error } = await supabase
+      .from('fod_reports')
+      .update({ removed: true, removed_at: now.toISOString(), removed_by: user.full_name })
+      .eq('id', id)
+    if (error) return { ok: false, error: error.message }
+  }
+  revalidatePath('/dashboard')
+  return { ok: true }
 }
 
 export async function getFodReports(params?: { limit?: number }) {
@@ -80,6 +98,7 @@ export async function getFodReports(params?: { limit?: number }) {
   return (data ?? []).map((f: any) => ({
     id: f.id, location: f.location, itemType: f.item_type, description: f.description,
     aircraftPartSuspected: f.aircraft_part_suspected, removed: f.removed, atcNotified: f.atc_notified,
+    removedAt: f.removed_at ? new Date(f.removed_at) : null, removedBy: f.removed_by ?? null,
     foundByCardId: f.found_by_card_id, foundByName: f.found_by_name,
     foundAt: new Date(f.found_at), createdAt: new Date(f.created_at),
   }))
@@ -170,9 +189,67 @@ export async function getWildlifeReports(params?: { limit?: number }) {
   return (data ?? []).map((w: any) => ({
     id: w.id, species: w.species, count: w.count, location: w.location, strike: w.strike,
     actionTaken: w.action_taken, damageDescription: w.damage_description,
+    status: w.status ?? 'NEW', adminNotes: w.admin_notes ?? null, updatedBy: w.updated_by ?? null,
     reportedByCardId: w.reported_by_card_id, reportedByName: w.reported_by_name,
     observedAt: new Date(w.observed_at), createdAt: new Date(w.created_at),
   }))
+}
+
+const WILDLIFE_STATUSES = ['NEW', 'IN_REVIEW', 'CLOSED'] as const
+
+/** Admin uređuje prijavu opažanja/sudara i određuje status obrade. */
+export async function updateWildlifeReport(
+  id: string,
+  patch: {
+    species?: string
+    count?: number
+    location?: string
+    strike?: boolean
+    actionTaken?: string | null
+    damageDescription?: string | null
+    status?: (typeof WILDLIFE_STATUSES)[number]
+    adminNotes?: string | null
+  },
+): Promise<{ ok: boolean; error?: string }> {
+  const user = await requireRole(['admin'])
+  if (patch.status && !WILDLIFE_STATUSES.includes(patch.status)) return { ok: false, error: 'Nepoznat status' }
+  if (patch.species !== undefined && !patch.species.trim()) return { ok: false, error: 'Vrsta je obavezna' }
+  if (patch.location !== undefined && !patch.location.trim()) return { ok: false, error: 'Lokacija je obavezna' }
+  if (patch.count !== undefined && (!Number.isInteger(patch.count) || patch.count < 1)) return { ok: false, error: 'Broj jedinki mora biti 1 ili više' }
+
+  const norm = (v: string | null | undefined) => (v === undefined ? undefined : v && v.trim() ? v.trim() : null)
+
+  if (isDemoMode()) {
+    await db.wildlifeReport.update({
+      where: { id },
+      data: {
+        ...(patch.species !== undefined && { species: patch.species.trim() }),
+        ...(patch.count !== undefined && { count: patch.count }),
+        ...(patch.location !== undefined && { location: patch.location.trim() }),
+        ...(patch.strike !== undefined && { strike: patch.strike }),
+        ...(patch.actionTaken !== undefined && { actionTaken: norm(patch.actionTaken) }),
+        ...(patch.damageDescription !== undefined && { damageDescription: norm(patch.damageDescription) }),
+        ...(patch.status !== undefined && { status: patch.status }),
+        ...(patch.adminNotes !== undefined && { adminNotes: norm(patch.adminNotes) }),
+        updatedBy: user.full_name,
+      },
+    })
+  } else {
+    const row: Record<string, unknown> = { updated_by: user.full_name, updated_at: new Date().toISOString() }
+    if (patch.species !== undefined) row.species = patch.species.trim()
+    if (patch.count !== undefined) row.count = patch.count
+    if (patch.location !== undefined) row.location = patch.location.trim()
+    if (patch.strike !== undefined) row.strike = patch.strike
+    if (patch.actionTaken !== undefined) row.action_taken = norm(patch.actionTaken)
+    if (patch.damageDescription !== undefined) row.damage_description = norm(patch.damageDescription)
+    if (patch.status !== undefined) row.status = patch.status
+    if (patch.adminNotes !== undefined) row.admin_notes = norm(patch.adminNotes)
+    const supabase = await createSupabaseClient()
+    const { error } = await supabase.from('wildlife_reports').update(row).eq('id', id)
+    if (error) return { ok: false, error: error.message }
+  }
+  revalidatePath('/dashboard')
+  return { ok: true }
 }
 
 export async function getWildlifeStats() {

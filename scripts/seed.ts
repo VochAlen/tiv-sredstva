@@ -106,6 +106,7 @@ const employees = [
   { cardId: 'EMP-1008', name: 'Stefan Kovačević', department: 'Medical', role: 'Medicinar', pin: '1008' },
   { cardId: 'EMP-1009', name: 'Vladimir Stanić', department: 'Maintenance', role: 'Tehničar - elektrika', pin: '1009' },
   { cardId: 'EMP-1010', name: 'Filip Bulatović', department: 'Maintenance', role: 'Tehničar - hidraulika', pin: '1010' },
+  { cardId: 'EMP-1011', name: 'Alen Vočanec', department: 'Maintenance', role: 'Služba tehnike - sva ovlašćenja', pin: '1011' },
 ]
 
 // =====================================================
@@ -130,6 +131,7 @@ const qualificationsByCard: Record<string, string[]> = {
   'EMP-1008': MEDICAL_TYPES,
   'EMP-1009': ALL_TYPES,
   'EMP-1010': ALL_TYPES,
+  'EMP-1011': [...ALL_TYPES, 'OTHER'], // Alen Vočanec - služba tehnike, sva sredstva
 }
 
 // =====================================================
@@ -144,6 +146,7 @@ const maintenanceSkillsByCard: Record<string, string[]> = {
   'EMP-1009': ['ELEKTRIKA', 'OPSTE'], // Vladimir - elektrika
   'EMP-1010': ['HIDRAULIKA', 'MEHANIKA'], // Filip - hidraulika
   'EMP-1005': ['MEHANIKA', 'ELEKTRIKA', 'HIDRAULIKA', 'BEZBJEDNOST', 'OPSTE'], // šef - sve (nadzor/zamjena)
+  'EMP-1011': ['MEHANIKA', 'ELEKTRIKA', 'HIDRAULIKA', 'BEZBJEDNOST', 'OPSTE'], // Alen Vočanec - sve kategorije
 }
 
 // =====================================================
@@ -217,8 +220,8 @@ async function main() {
         employeeCardId: emp.cardId,
         employeeName: emp.name,
         category1: true,
-        category2: emp.cardId === 'EMP-1003' || emp.cardId === 'EMP-1005',
-        category3: emp.cardId === 'EMP-1005',
+        category2: emp.cardId === 'EMP-1003' || emp.cardId === 'EMP-1005' || emp.cardId === 'EMP-1011',
+        category3: emp.cardId === 'EMP-1005' || emp.cardId === 'EMP-1011',
         licenseNumber: `ADP-${emp.cardId.slice(-4)}`,
         issuedAt: new Date('2025-01-15'),
         validUntil,
@@ -244,7 +247,7 @@ async function main() {
           employeeCardId: cardId,
           employeeName: emp.name,
           category,
-          level: cardId === 'EMP-1005' ? 'SENIOR' : 'CERTIFIED',
+          level: cardId === 'EMP-1005' || cardId === 'EMP-1011' ? 'SENIOR' : 'CERTIFIED',
           certifiedBy: 'Šef službe GSE',
           validUntil,
         },

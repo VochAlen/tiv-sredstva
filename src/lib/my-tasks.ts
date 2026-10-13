@@ -43,6 +43,8 @@ export function computeMyTasks(
   role: string,
   damages: TaskDamage[],
   inspections: TaskInspectionRow[],
+  openFodCount = 0,
+  newWildlifeCount = 0,
 ): MyTask[] {
   const tasks: MyTask[] = []
 
@@ -59,6 +61,30 @@ export function computeMyTasks(
         tone: fresh.some((d) => d.severity === 'CRITICAL') ? 'red' : 'amber',
       })
     }
+  }
+
+  // FOD prijavljen, ali još nije potvrđeno uklanjanje
+  if (roleAtLeast(role, 'engineer') && openFodCount > 0) {
+    tasks.push({
+      key: 'open-fod',
+      title: 'FOD čeka uklanjanje',
+      detail: 'Označite uklonjeno kad se predmet stvarno ukloni',
+      count: openFodCount,
+      tab: 'fod-wildlife',
+      tone: 'amber',
+    })
+  }
+
+  // Wildlife prijave koje admin još nije obradio
+  if (roleAtLeast(role, 'admin') && newWildlifeCount > 0) {
+    tasks.push({
+      key: 'new-wildlife',
+      title: 'Wildlife prijave čekaju obradu',
+      detail: 'Odredite status i preduzetu mjeru',
+      count: newWildlifeCount,
+      tab: 'fod-wildlife',
+      tone: 'amber',
+    })
   }
 
   // Popravke koje čekaju odobrenje — samo šef (admin)

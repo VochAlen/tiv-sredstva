@@ -493,6 +493,7 @@ export async function checkOutEquipment(params: {
   damageSeverity?: 'MINOR' | 'MAJOR' | 'CRITICAL'
   damageCategory?: string
   damagePhotos?: string[]
+  firstUseConfirmed?: boolean
 }) {
   // checkOut je JAVNA akcija - radnici se identifikuju preko PIN-a/ID kartice
   // (ne zahtijeva auth login)
@@ -515,149 +516,108 @@ export async function checkOutEquipment(params: {
     return checkOutPrisma(params)
   }
 
-  // Supabase
+  // Supabase: anonimni radnik NE smije pisati direktno u tabele (RLS, migracija 016).
+  // Sve ide kroz SECURITY DEFINER funkciju koja atomično provjerava pravila (dozvola vozača,
+  // kvalifikacija, semafor) i upisuje zaduženje, kvar i status sredstva.
   const supabase = await createSupabaseClient()
-
-  const { data: equipment, error: eqError } = await supabase
-    .from('equipment')
-    .select('*')
-    .eq('code', equipmentCode)
-    .single()
-
-  if (eqError || !equipment) {
-    return { ok: false, error: 'Sredstvo nije pronađeno' }
+  const rpcArgs: Record<string, unknown> = {
+    p_equipment_code: equipmentCode,
+    p_employee_card_id: employeeCardId,
+    p_employee_name: employeeName,
+    p_checklist: checklist,
+    p_inspection_notes: inspectionNotes ?? null,
+    p_shift: shift ?? null,
+    p_damage_description: damageDescription ?? null,
+    p_damage_severity: damageSeverity,
   }
+  // Šalje se samo kad je true, da radi i sa starijom verzijom funkcije (bez ovog parametra)
+  if (params.firstUseConfirmed) rpcArgs.p_first_use_confirmed = true
 
-  if (equipment.status === 'OUT_OF_SERVICE' || equipment.status === 'MAINTENANCE') {
+  const { data, error } = await supabase.rpc('fn_check_out_equipment', rpcArgs)
+  if (error) {
+    console.error('fn_check_out_equipment failed:', error)
+    const missing = error.code === 'PGRST202' || /function .* does not exist|Could not find the function/i.test(error.message)
     return {
       ok: false,
-      error: `Sredstvo je trenutno u statusu: ${equipment.status}. Zaduživanje nije moguće.`,
+      error: missing
+        ? 'Baza nije ažurirana (nedostaje funkcija za zaduživanje). Obavijestite administratora.'
+        : 'Greška pri bilježenju zaduženja u bazi',
     }
   }
 
-  // Access Control - provjeri da li radnik ima dozvolu za ovo sredstvo
-  if (equipment.restricted_access) {
-    const { checkEquipmentAccess } = await import('./actions-access')
-    const accessResult = await checkEquipmentAccess(equipment.id, employeeCardId)
-    if (!accessResult.allowed) {
-      return { ok: false, error: accessResult.reason ?? 'Nemate dozvolu za ovo sredstvo' }
-    }
+  const res = (data ?? {}) as {
+    ok?: boolean; error?: string; damageReportId?: string; assignmentId?: string
+    semaforResult?: string; restrictions?: unknown; needsFirstUseConfirmation?: boolean
   }
 
-  // ADR.OPS.C.005 - Provjeri Driver Authorization za Movement Area
-  const { checkDriverAuthorization } = await import('./actions-driver-auth')
-  const driverAuth = await checkDriverAuthorization(employeeCardId)
-  if (!driverAuth.authorized) {
-    return { ok: false, error: driverAuth.reason ?? 'Nemate važeću airside vozačku dozvolu' }
-  }
+  let damageReportId: string | null = res.damageReportId ?? null
 
-  // Upsert employee
-  const { data: employee } = await supabase
-    .from('employees')
-    .upsert(
-      { card_id: employeeCardId, name: employeeName },
-      { onConflict: 'card_id' }
-    )
-    .select()
-    .single()
-
-  // Ako je pronađeno oštećenje
-  let damageReportId: string | null = null
-  if (inspectionResult !== 'OK' && damageDescription) {
-    const { data: dr, error: drError } = await supabase
-      .from('damage_reports')
-      .insert({
-        equipment_id: equipment.id,
-        equipment_code: equipment.code,
-        equipment_name: equipment.name,
-        reported_by_card_id: employeeCardId,
-        reported_by_name: employeeName,
-        employee_id: employee?.id ?? null,
-        severity: damageSeverity,
-        description: damageDescription,
-        status: 'OPEN',
-      })
-      .select()
-      .single()
-
-    if (!drError && dr) {
-      damageReportId = dr.id
-      await saveDamageExtras(dr.id, equipment.id, damageCategory, damagePhotos, employeeCardId, employeeName, { code: equipment.code, severity: damageSeverity, description: damageDescription ?? '' })
-    }
-
-    // Bilo koja prijava oštećenja → OUT_OF_SERVICE
-    await supabase
-      .from('equipment')
-      .update({
-        status: 'OUT_OF_SERVICE',
-        notes: `Oštećenje prijavljeno ${new Date().toISOString().slice(0, 10)} od ${employeeName}: ${damageDescription.slice(0, 100)}`,
-      })
-      .eq('id', equipment.id)
-
-    const { data: blockedAssignRow, error: assignErr1 } = await supabase
-      .from('assignments')
-      .insert({
-        equipment_id: equipment.id,
-        equipment_code: equipment.code,
-        equipment_name: equipment.name,
-        employee_id: employee?.id ?? null,
-        employee_card_id: employeeCardId,
-        employee_name: employeeName,
-        action: 'CHECK_OUT',
-        inspection_result: inspectionResult,
-        inspection_notes: inspectionNotes ?? null,
-        checklist_json: JSON.stringify(checklist),
-        shift: shift ?? null,
-        damage_report_id: damageReportId,
-      })
-      .select('id')
-      .single()
-    if (assignErr1) {
-      console.error('Assignment insert (blocked) failed:', assignErr1)
-      return { ok: false, error: 'Greška pri bilježenju zaduženja u bazi' }
-    }
-
-    revalidatePath('/')
-    return {
-      ok: false,
-      error: 'Sredstvo ne može biti zaduženo zbog oštećenja. Status promijenjen u OUT_OF_SERVICE.',
-      damageReportId,
-      assignmentId: blockedAssignRow?.id,
-    }
-  }
-
-  // Sve OK - dozvoli zaduživanje
-  const { error: eqUpdateErr } = await supabase.from('equipment').update({ status: 'ASSIGNED' }).eq('id', equipment.id)
-  if (eqUpdateErr) {
-    console.error('Equipment status update failed:', eqUpdateErr)
-    return { ok: false, error: 'Greška pri ažuriranju statusa opreme' }
-  }
-
-  const { data: assignRow2, error: assignErr2 } = await supabase
-    .from('assignments')
-    .insert({
-      equipment_id: equipment.id,
-      equipment_code: equipment.code,
-      equipment_name: equipment.name,
-      employee_id: employee?.id ?? null,
-      employee_card_id: employeeCardId,
-      employee_name: employeeName,
-      action: 'CHECK_OUT',
-      inspection_result: inspectionResult,
-      inspection_notes: inspectionNotes ?? null,
-      checklist_json: JSON.stringify(checklist),
-      shift: shift ?? null,
-      damage_report_id: damageReportId,
+  // Kvar nađen u checklisti: funkcija ga je već upisala. Dopuni kategoriju/slike i obavijesti radionicu.
+  if (damageReportId) {
+    await saveDamageExtras(damageReportId, (await getEquipmentIdByCode(equipmentCode)) ?? '', damageCategory, damagePhotos, employeeCardId, employeeName, {
+      code: equipmentCode, severity: damageSeverity, description: damageDescription ?? 'Kvar utvrđen na pre-use checklisti',
     })
-    .select('id')
-    .single()
-  if (assignErr2) {
-    console.error('Assignment insert failed:', assignErr2)
-    return { ok: false, error: 'Greška pri bilježenju zaduženja u bazi' }
+  } else if (inspectionResult !== 'OK' && damageDescription && (res.ok || res.semaforResult)) {
+    // Radnik je prijavio oštećenje koje checklista ne obuhvata (npr. samo ograničenje):
+    // funkcija ga ne bilježi, pa se upisuje ovdje (server-side, service-role).
+    damageReportId = await createFreeFormDamage({
+      equipmentCode, employeeCardId, employeeName, severity: damageSeverity,
+      description: damageDescription, category: damageCategory, photos: damagePhotos,
+    })
   }
 
   revalidatePath('/')
-  return { ok: true, damageReportId, assignmentId: assignRow2?.id }
+  return {
+    ok: !!res.ok,
+    error: res.error,
+    damageReportId,
+    assignmentId: res.assignmentId,
+    semaforResult: res.semaforResult,
+    restrictions: res.restrictions,
+    needsFirstUseConfirmation: !!res.needsFirstUseConfirmation,
+  }
+}
+
+async function getEquipmentIdByCode(code: string): Promise<string | null> {
+  try {
+    const supabase = hasServiceClient() ? createServiceClient() : await createSupabaseClient()
+    const { data } = await supabase.from('equipment').select('id').eq('code', code).maybeSingle()
+    return data?.id ?? null
+  } catch {
+    return null
+  }
+}
+
+// Prijava oštećenja izvan checkliste (server-side, service-role). Best-effort.
+async function createFreeFormDamage(p: {
+  equipmentCode: string; employeeCardId: string; employeeName: string
+  severity: string; description: string; category?: string; photos?: string[]
+}): Promise<string | null> {
+  if (!hasServiceClient()) {
+    console.error('createFreeFormDamage: SUPABASE_SERVICE_ROLE_KEY nije postavljen')
+    return null
+  }
+  try {
+    const supabase = createServiceClient()
+    const { data: eq } = await supabase.from('equipment').select('id,code,name').eq('code', p.equipmentCode).maybeSingle()
+    if (!eq) return null
+    const { data: dr, error } = await supabase.from('damage_reports').insert({
+      equipment_id: eq.id, equipment_code: eq.code, equipment_name: eq.name,
+      reported_by_card_id: p.employeeCardId.trim().toUpperCase(), reported_by_name: p.employeeName,
+      severity: p.severity, description: p.description, status: 'OPEN',
+    }).select('id').single()
+    if (error || !dr) {
+      console.error('createFreeFormDamage failed:', error?.message)
+      return null
+    }
+    await saveDamageExtras(dr.id, eq.id, p.category, p.photos, p.employeeCardId, p.employeeName, {
+      code: eq.code, severity: p.severity, description: p.description,
+    })
+    return dr.id
+  } catch (e) {
+    console.error('createFreeFormDamage failed:', e)
+    return null
+  }
 }
 
 // Prisma fallback za Demo Mode
@@ -822,88 +782,34 @@ export async function checkInEquipment(params: {
 
   const { equipmentCode, employeeCardId, employeeName, notes, foundDamage, damageSeverity = 'MINOR', damageCategory, damagePhotos } = params
 
+  // Anonimni radnik ne piše direktno u tabele (RLS) — sve ide kroz SECURITY DEFINER funkciju.
   const supabase = await createSupabaseClient()
-  const { data: equipment, error } = await supabase
-    .from('equipment')
-    .select('*')
-    .eq('code', equipmentCode)
-    .single()
-
-  if (error || !equipment) return { ok: false, error: 'Sredstvo nije pronađeno' }
-  if (equipment.status === 'AVAILABLE') {
-    return { ok: false, error: 'Ovo sredstvo je već razduženo.' }
-  }
-
-  const { data: employee } = await supabase
-    .from('employees')
-    .upsert(
-      { card_id: employeeCardId, name: employeeName },
-      { onConflict: 'card_id' }
-    )
-    .select()
-    .single()
-
-  let damageReportId: string | null = null
-  let inspectionResult: InspectionResult = 'OK'
-
-  if (foundDamage && foundDamage.trim().length > 0) {
-    const { data: dr } = await supabase
-      .from('damage_reports')
-      .insert({
-        equipment_id: equipment.id,
-        equipment_code: equipment.code,
-        equipment_name: equipment.name,
-        reported_by_card_id: employeeCardId,
-        reported_by_name: employeeName,
-        employee_id: employee?.id ?? null,
-        severity: damageSeverity,
-        description: foundDamage,
-        status: 'OPEN',
-      })
-      .select()
-      .single()
-
-    if (dr) {
-      damageReportId = dr.id
-      await saveDamageExtras(dr.id, equipment.id, damageCategory, damagePhotos, employeeCardId, employeeName, { code: equipment.code, severity: damageSeverity, description: foundDamage ?? '' })
-    }
-    inspectionResult = damageSeverity === 'CRITICAL' ? 'OUT_OF_SERVICE' : damageSeverity === 'MAJOR' ? 'MAJOR_DAMAGE' : 'MINOR_DAMAGE'
-
-    if (damageSeverity === 'CRITICAL' || damageSeverity === 'MAJOR') {
-      await supabase.from('equipment').update({ status: 'OUT_OF_SERVICE' }).eq('id', equipment.id)
-    } else {
-      await supabase
-        .from('equipment')
-        .update({
-          status: 'AVAILABLE',
-          notes: `Manje oštećenje prijavljeno ${new Date().toISOString().slice(0, 10)}`,
-        })
-        .eq('id', equipment.id)
-    }
-  } else {
-    await supabase.from('equipment').update({ status: 'AVAILABLE', notes: null }).eq('id', equipment.id)
-  }
-
-  const { error: checkInAssignErr } = await supabase.from('assignments').insert({
-    equipment_id: equipment.id,
-    equipment_code: equipment.code,
-    equipment_name: equipment.name,
-    employee_id: employee?.id ?? null,
-    employee_card_id: employeeCardId,
-    employee_name: employeeName,
-    action: 'CHECK_IN',
-    inspection_result: inspectionResult,
-    inspection_notes: notes ?? null,
-    checklist_json: JSON.stringify(getChecklistForType(equipment.type).map((i) => ({ ...i, passed: true }))),
-    damage_report_id: damageReportId,
+  const { data, error } = await supabase.rpc('fn_check_in_equipment', {
+    p_equipment_code: equipmentCode,
+    p_employee_card_id: employeeCardId,
+    p_employee_name: employeeName,
+    p_notes: notes ?? null,
+    p_found_damage: foundDamage && foundDamage.trim() ? foundDamage.trim() : null,
+    p_damage_severity: damageSeverity,
   })
-  if (checkInAssignErr) {
-    console.error('Check-in assignment insert failed:', checkInAssignErr)
-    return { ok: false, error: 'Greška pri bilježenju razduživanja u bazi' }
+  if (error) {
+    console.error('fn_check_in_equipment failed:', error)
+    const missing = error.code === 'PGRST202' || /Could not find the function/i.test(error.message)
+    return {
+      ok: false,
+      error: missing
+        ? 'Baza nije ažurirana (nedostaje funkcija za razduživanje). Obavijestite administratora.'
+        : 'Greška pri bilježenju razduživanja u bazi',
+    }
   }
-
+  const res = (data ?? {}) as { ok?: boolean; error?: string; damageReportId?: string }
+  if (res.ok && res.damageReportId) {
+    await saveDamageExtras(res.damageReportId, (await getEquipmentIdByCode(equipmentCode)) ?? '', damageCategory, damagePhotos, employeeCardId, employeeName, {
+      code: equipmentCode, severity: damageSeverity, description: foundDamage ?? '',
+    })
+  }
   revalidatePath('/')
-  return { ok: true, damageReportId }
+  return { ok: !!res.ok, error: res.error, damageReportId: res.damageReportId ?? null }
 }
 
 async function checkInPrisma(params: {

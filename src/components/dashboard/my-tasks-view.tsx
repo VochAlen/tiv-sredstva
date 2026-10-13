@@ -6,6 +6,7 @@ import { formatExpiryLine, type ExpiryItem } from '@/lib/expiry'
 import { Card, CardContent } from '@/components/ui/card'
 import { getDailyInspectionStatus } from '@/lib/actions-adr'
 import { getExpiringSoon } from '@/lib/actions-expiry'
+import { getFodReports, getWildlifeReports } from '@/lib/actions-safety-reports'
 import { roleAtLeast, computeMyTasks, type TaskDamage, type MyTask } from '@/lib/my-tasks'
 
 const TONE: Record<MyTask['tone'], string> = {
@@ -27,10 +28,14 @@ export function MyTasksView({
 }) {
   const [inspections, setInspections] = useState<Awaited<ReturnType<typeof getDailyInspectionStatus>> | null>(null)
 
+  const [openFod, setOpenFod] = useState(0)
+  const [newWildlife, setNewWildlife] = useState(0)
   const [expiring, setExpiring] = useState<(ExpiryItem & { days: number })[]>([])
   useEffect(() => {
     if (!roleAtLeast(role, 'engineer')) return
     getExpiringSoon().then(setExpiring).catch(() => setExpiring([]))
+    if (role === 'admin') getWildlifeReports({ limit: 200 }).then((r) => setNewWildlife(r.filter((w: any) => (w.status ?? 'NEW') === 'NEW').length)).catch(() => setNewWildlife(0))
+    getFodReports({ limit: 200 }).then((r) => setOpenFod(r.filter((f: any) => !f.removed).length)).catch(() => setOpenFod(0))
   }, [role])
 
   useEffect(() => {
@@ -42,8 +47,8 @@ export function MyTasksView({
   }, [])
 
   const tasks = useMemo(
-    () => computeMyTasks(role, damages, inspections ?? []),
-    [role, damages, inspections],
+    () => computeMyTasks(role, damages, inspections ?? [], openFod, newWildlife),
+    [role, damages, inspections, openFod, newWildlife],
   )
 
   return (

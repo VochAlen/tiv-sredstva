@@ -39,6 +39,8 @@ export function QuickReportDialog({
   const [itemType, setItemType] = useState('OTHER')
   const [description, setDescription] = useState('')
   const [aircraftPartSuspected, setAircraftPartSuspected] = useState(false)
+  // Nije "uklonjeno" dok radnik to ne potvrdi — prijava ne smije sama tvrditi da je predmet sklonjen
+  const [removed, setRemoved] = useState(false)
   const [foundByName, setFoundByName] = useState('')
 
   // Wildlife polja
@@ -47,7 +49,7 @@ export function QuickReportDialog({
   const [strike, setStrike] = useState(false)
 
   const reset = () => {
-    setLocation(''); setItemType('OTHER'); setDescription(''); setAircraftPartSuspected(false); setFoundByName('')
+    setLocation(''); setItemType('OTHER'); setDescription(''); setAircraftPartSuspected(false); setRemoved(false); setFoundByName('')
     setSpecies(''); setCount('1'); setStrike(false)
   }
 
@@ -70,7 +72,7 @@ export function QuickReportDialog({
       try {
         if (type === 'FOD') {
           await createFodReport({
-            location, itemType, description, aircraftPartSuspected,
+            location, itemType, description, aircraftPartSuspected, removed,
             foundByName,
           })
           toast.success('FOD prijava poslana. Hvala!')
@@ -128,6 +130,10 @@ export function QuickReportDialog({
               <label className="flex items-center gap-2 text-sm cursor-pointer p-2 border rounded">
                 <input type="checkbox" checked={aircraftPartSuspected} onChange={(e) => setAircraftPartSuspected(e.target.checked)} className="h-4 w-4" />
                 Sumnja se da je dio vazduhoplova
+              </label>
+              <label className="flex items-center gap-2 text-sm cursor-pointer p-2 border rounded">
+                <input type="checkbox" checked={removed} onChange={(e) => setRemoved(e.target.checked)} className="h-4 w-4" />
+                Predmet sam već uklonio/la
               </label>
             </>
           ) : (

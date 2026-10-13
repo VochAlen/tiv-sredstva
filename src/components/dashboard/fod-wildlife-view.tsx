@@ -5,15 +5,17 @@ import { AlertTriangle, Bird, Loader2, MapPin, User, Clock, Download, Plane } fr
 import { Card, CardContent } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
+import { toast } from 'sonner'
 import {
   Tabs, TabsList, TabsTrigger, TabsContent,
 } from '@/components/ui/tabs'
 import {
-  getFodReports, getFodStats, getWildlifeReports, getWildlifeStats,
+  getFodReports, markFodRemoved, getFodStats, getWildlifeReports, getWildlifeStats,
 } from '@/lib/actions-safety-reports'
+import { WildlifeEditDialog, WILDLIFE_STATUS_LABELS } from './wildlife-edit-dialog'
 import { FOD_ITEM_TYPE_LABELS } from '@/lib/constants-export'
 
-export function FodWildlifeView() {
+export function FodWildlifeView({ isAdmin = false }: { isAdmin?: boolean }) {
   const [tab, setTab] = useState('fod')
   const [fodReports, setFodReports] = useState<any[]>([])
   const [fodStats, setFodStats] = useState<any>(null)
@@ -79,15 +81,32 @@ export function FodWildlifeView() {
                       <div className="flex items-center gap-2 flex-wrap mb-1">
                         <Badge variant="secondary" className="text-xs">{FOD_ITEM_TYPE_LABELS[f.itemType] || f.itemType}</Badge>
                         {f.aircraftPartSuspected && <Badge className="bg-red-100 text-red-800 text-xs"><Plane className="h-3 w-3 mr-0.5" />Sumnja — dio aviona</Badge>}
-                        {f.removed && <Badge className="bg-emerald-100 text-emerald-800 text-xs">Uklonjeno</Badge>}
+                        {f.removed ? <Badge className="bg-emerald-100 text-emerald-800 text-xs">Uklonjeno</Badge> : <Badge className="bg-amber-100 text-amber-800 text-xs">Nije uklonjeno</Badge>}
                       </div>
                       <div className="text-sm">{f.description}</div>
+                      {f.removed && f.removedBy && (
+                        <div className="text-xs text-muted-foreground mt-0.5">
+                          Uklonio/la: {f.removedBy}{f.removedAt ? `, ${new Date(f.removedAt).toLocaleString('hr-HR')}` : ''}
+                        </div>
+                      )}
                       <div className="text-xs text-muted-foreground mt-1 flex items-center gap-3 flex-wrap">
                         <span className="flex items-center gap-1"><MapPin className="h-3 w-3" />{f.location}</span>
                         <span className="flex items-center gap-1"><Clock className="h-3 w-3" />{new Date(f.foundAt).toLocaleString('hr-HR')}</span>
                         <span className="flex items-center gap-1"><User className="h-3 w-3" />{f.foundByName}</span>
                       </div>
                     </div>
+                    {!f.removed && (
+                      <Button
+                        size="sm"
+                        onClick={async () => {
+                          const r = await markFodRemoved(f.id)
+                          if (r.ok) { toast.success('Označeno kao uklonjeno'); load() }
+                          else toast.error(r.error ?? 'Greška')
+                        }}
+                      >
+                        Označi kao uklonjeno
+                      </Button>
+                    )}
                   </div>
                 </Card>
               ))}
@@ -116,14 +135,19 @@ export function FodWildlifeView() {
                       <div className="flex items-center gap-2 flex-wrap mb-1">
                         <Badge variant="secondary" className="text-xs">{w.species} × {w.count}</Badge>
                         {w.strike && <Badge className="bg-red-100 text-red-800 text-xs">Sudar</Badge>}
+                        <Badge className={(w.status === 'CLOSED' ? 'bg-emerald-100 text-emerald-800' : w.status === 'IN_REVIEW' ? 'bg-blue-100 text-blue-800' : 'bg-amber-100 text-amber-800') + ' text-xs'}>
+                          {WILDLIFE_STATUS_LABELS[w.status ?? 'NEW'] ?? w.status}
+                        </Badge>
                       </div>
                       {w.actionTaken && <div className="text-sm">{w.actionTaken}</div>}
+                      {w.adminNotes && <div className="text-xs text-muted-foreground mt-0.5">Napomena: {w.adminNotes}{w.updatedBy ? ` (${w.updatedBy})` : ''}</div>}
                       <div className="text-xs text-muted-foreground mt-1 flex items-center gap-3 flex-wrap">
                         <span className="flex items-center gap-1"><MapPin className="h-3 w-3" />{w.location}</span>
                         <span className="flex items-center gap-1"><Clock className="h-3 w-3" />{new Date(w.observedAt).toLocaleString('hr-HR')}</span>
                         <span className="flex items-center gap-1"><User className="h-3 w-3" />{w.reportedByName}</span>
                       </div>
                     </div>
+                    {isAdmin && <WildlifeEditDialog report={w} onSaved={load} />}
                   </div>
                 </Card>
               ))}

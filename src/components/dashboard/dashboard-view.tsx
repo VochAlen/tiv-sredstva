@@ -684,7 +684,7 @@ export function DashboardView({ currentUser }: { currentUser: AppUser }) {
         </TabsContent>
 
         <TabsContent value="fod-wildlife" className="space-y-4">
-          <FodWildlifeView />
+          <FodWildlifeView isAdmin={currentUser.role === 'admin'} />
         </TabsContent>
 
         <TabsContent value="skills-admin" className="space-y-4">
