@@ -89,6 +89,31 @@ model Equipment {
   warrantyExpiry     DateTime?
   registrationNumber String?
 
+  // Eksterni serviser + redovni servisni plan (km / sati / najmanje jednom godišnje)
+  externallyMaintained  Boolean   @default(false)
+  serviceProvider       String?
+  serviceProviderPhone  String?
+  serviceProviderEmail  String?
+  serviceIntervalKm     Float?
+  serviceIntervalHours  Float?
+  serviceIntervalMonths Int       @default(12)
+  lastServiceDate       DateTime?
+  lastServiceKm         Float?
+  lastServiceHours      Float?
+  serviceNotifiedAt     DateTime?
+  serviceNotifiedStatus String?
+  // IATA AHM 917 program (IATA_4M | IATA_6M | OEM), zadnji major servis, isključene sekcije PM liste
+  serviceProgram        String?
+  lastMajorDate         DateTime?
+  lastMajorHours        Float?
+  pmExcludedSections    String?
+  // OEM program: intervali velikog (major) servisa, km pri zadnjem major servisu, dogovorena varijacija od OEM
+  lastMajorKm           Float?
+  majorIntervalMonths   Int?
+  majorIntervalHours    Float?
+  majorIntervalKm       Float?
+  serviceVariationNote  String?
+
   assignments     Assignment[]
   damages         DamageReport[]
   maintenanceLogs MaintenanceLog[]
@@ -1836,4 +1861,58 @@ model MaintenanceSkill {
   @@unique([employeeCardId, category])
   @@index([employeeCardId])
   @@index([category])
+}
+
+model ServiceRecord {
+  id            String   @id @default(cuid())
+  equipmentId   String
+  equipmentCode String
+  performedAt   DateTime
+  km            Float?
+  hours         Float?
+  performedBy   String   @default("INTERNAL")
+  kind          String?
+  provider      String?
+  invoiceNo     String?
+  cost          Float?
+  notes         String?
+  recordedBy    String?
+  createdAt     DateTime @default(now())
+
+  @@index([equipmentId, performedAt])
+}
+
+model NotificationSetting {
+  key       String   @id
+  value     String?
+  updatedBy String?
+  updatedAt DateTime @updatedAt
+}
+
+model PmWorkOrder {
+  id                 String    @id @default(cuid())
+  equipmentId        String
+  equipmentCode      String
+  checklistType      String
+  kind               String
+  status             String    @default("OPEN")
+  pmBasedOn          String?
+  meterHours         Float?
+  meterKm            Float?
+  leadMechanic       String?
+  additionalMechanic String?
+  items              String    @default("[]")
+  excludedSections   String?
+  hoursWorked        Float?
+  partsCost          Float?
+  tireCost           Float?
+  comment            String?
+  defectsRectified   Boolean?
+  serviceable        Boolean?
+  issuedAt           DateTime  @default(now())
+  completedAt        DateTime?
+  createdBy          String?
+  completedBy        String?
+
+  @@index([equipmentId, issuedAt])
 }

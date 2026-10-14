@@ -8,6 +8,8 @@ import { isDemoMode } from '@/lib/auth-mode'
 import { getCurrentUser, type AppUser } from '@/lib/auth-server'
 import { createClientAsync as createSupabaseClient } from '@/lib/supabase/server'
 import { revalidatePath } from 'next/cache'
+import { after } from 'next/server'
+import { notifyExternalFault } from '@/lib/service-notify'
 import { DAILY_INSPECTION_CHECKLIST } from '@/lib/constants-export'
 import { parseRestrictions, serializeRestrictions } from '@/lib/checklist-evaluation'
 
@@ -380,6 +382,18 @@ export async function getDailyInspections(equipmentId?: string, limit = 50) {
   }))
 }
 
+// Sredstvo na eksternom održavanju + neispravno/uslovno -> email šefu tehničke službe (poslije odgovora radniku).
+function queueExternalFaultMail(
+  params: { equipmentCode: string; inspectorName: string },
+  checklist: Array<{ label: string; passed: boolean }>,
+  result: string | undefined,
+) {
+  if (result !== 'UNFIT' && result !== 'CONDITIONAL') return
+  const failed = checklist.filter((c) => !c.passed).map((c) => c.label).join('; ')
+  const job = () => notifyExternalFault({ code: params.equipmentCode, source: 'INSPECTION', result, description: failed ? `Neispravne stavke: ${failed}` : 'Dnevni pregled sa nedostacima', reporter: params.inspectorName })
+  try { after(job) } catch { void job() }
+}
+
 export async function createDailyInspection(params: {
   equipmentCode: string
   inspectorCardId: string
@@ -476,6 +490,7 @@ export async function createDailyInspection(params: {
       },
     })
 
+    queueExternalFaultMail(params, checklist, result)
     revalidatePath('/dashboard')
     revalidatePath('/')
     return { ok: true, id: inspection.id, result, blocking: blocking.length, restrictive: restrictive.length, damageReports: created }
@@ -496,6 +511,7 @@ export async function createDailyInspection(params: {
   const rpcResult = data as { ok: boolean; error?: string; id?: string; result?: string; blocking?: number; restrictive?: number; damageReports?: number }
   if (!rpcResult.ok) return { ok: false, error: rpcResult.error ?? 'Greška pri snimanju inspekcije' }
 
+  queueExternalFaultMail(params, checklist, rpcResult.result)
   revalidatePath('/dashboard')
   revalidatePath('/')
   return { ok: true, id: rpcResult.id, result: rpcResult.result, blocking: rpcResult.blocking, restrictive: rpcResult.restrictive, damageReports: rpcResult.damageReports }

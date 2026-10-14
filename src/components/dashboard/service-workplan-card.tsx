@@ -7,10 +7,10 @@ import { CalendarClock, FileDown, Loader2 } from 'lucide-react'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { getServiceWorkPlan, type WorkPlan } from '@/lib/actions-service-plan'
-import { fmtDateBHS, HORIZON_LABEL, type WorkPlanHorizon } from '@/lib/service-plan'
+import { fmtDateBHS, HORIZON_LABEL, KIND_LABEL, type WorkPlanHorizon } from '@/lib/service-plan'
 
 const HORIZONS: WorkPlanHorizon[] = ['THIS_MONTH', 'NEXT_MONTH', 'QUARTER', 'YEAR']
-const REASON: Record<string, string> = { DATE: 'Rok (12 mj.)', KM: 'Kilometri', HOURS: 'Radni sati' }
+const REASON: Record<string, string> = { DATE: 'Rok (mjeseci)', KM: 'Kilometri', HOURS: 'Radni sati' }
 const MONTHS = ['Januar', 'Februar', 'Mart', 'April', 'Maj', 'Jun', 'Jul', 'Avgust', 'Septembar', 'Oktobar', 'Novembar', 'Decembar']
 const monthName = (k: string) => `${MONTHS[Number(k.slice(5, 7)) - 1]} ${k.slice(0, 4)}`
 
@@ -72,13 +72,14 @@ export function ServiceWorkPlanCard() {
                 <div className="overflow-x-auto rounded border">
                   <table className="w-full text-left">
                     <thead className="bg-muted/50 text-xs">
-                      <tr><th className="p-2">Datum</th><th className="p-2">Sredstvo</th><th className="p-2">Osnov</th><th className="p-2">Ko servisira</th></tr>
+                      <tr><th className="p-2">Datum</th><th className="p-2">Sredstvo</th><th className="p-2">Vrsta</th><th className="p-2">Osnov</th><th className="p-2">Ko servisira</th></tr>
                     </thead>
                     <tbody>
                       {g.items.map((i, idx) => (
                         <tr key={`${i.code}-${i.date}-${idx}`} className="border-t">
                           <td className="p-2 whitespace-nowrap">{i.overdue ? 'odmah' : fmtDateBHS(i.date)}</td>
                           <td className="p-2"><b>{i.code}</b> <span className="text-muted-foreground">{i.name}</span></td>
+                          <td className="p-2 whitespace-nowrap font-medium">{KIND_LABEL[i.kind]}</td>
                           <td className="p-2 whitespace-nowrap">{REASON[i.reason]}</td>
                           <td className="p-2">{i.external ? <span className="text-blue-800">{i.provider ?? 'Eksterni'}{i.phone ? ` · ${i.phone}` : ''}</span> : 'Interno'}</td>
                         </tr>

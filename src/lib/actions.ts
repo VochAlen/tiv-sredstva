@@ -6,6 +6,7 @@
 
 import { db } from '@/lib/db'
 import { revalidatePath } from 'next/cache'
+import { notifyExternalFault } from '@/lib/service-notify'
 import { after } from 'next/server'
 import { sendWebhookNotification } from '@/lib/webhook-notify'
 import { createServiceClient, hasServiceClient } from '@/lib/supabase/service'
@@ -459,6 +460,7 @@ async function saveDamageExtras(
     const msg = `GSE Control — novi kvar (${sev}): ${info.code} — ${info.description.slice(0, 200)} (prijavio/la: ${name})`
     try {
       after(() => sendWebhookNotification('triggerNewDamage', msg, { equipmentCode: info.code, severity: info.severity }))
+      after(() => notifyExternalFault({ equipmentId, code: info.code, source: 'DAMAGE', severity: info.severity, description: info.description, reporter: name }))
     } catch {
       /* after() nedostupan van request konteksta — obavještenje se preskače */
     }

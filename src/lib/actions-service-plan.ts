@@ -10,8 +10,9 @@ import { createServiceClient, hasServiceClient } from '@/lib/supabase/service'
 import { revalidatePath } from 'next/cache'
 import { logAudit } from '@/lib/actions-advanced'
 import { localDate, isValidDate } from '@/lib/local-day'
-import { projectServices, horizonRange, isHorizon, HORIZON_LABEL, type WorkPlanHorizon } from '@/lib/service-plan'
-import { loadPlanRows, type PlanRow } from '@/lib/service-plan-data'
+import { projectServices, horizonRange, isHorizon, isProgram, HORIZON_LABEL, type WorkPlanHorizon, type ServiceProgram, type ServiceKind } from '@/lib/service-plan'
+import { loadPlanRows, toServiceInput, type PlanRow } from '@/lib/service-plan-data'
+import { persistService, type RecordServiceInput } from '@/lib/service-plan-write'
 import { mailConfigured, parseEmails, sendMail } from '@/lib/mailer'
 import { CHIEF_EMAILS_KEY, getTechChiefEmails } from '@/lib/service-notify'
 
@@ -24,6 +25,7 @@ export interface ServiceRecordRow {
   km: number | null
   hours: number | null
   performedBy: 'INTERNAL' | 'EXTERNAL'
+  kind: ServiceKind | null
   provider: string | null
   invoiceNo: string | null
   cost: number | null
@@ -74,7 +76,7 @@ export async function getServiceHistory(equipmentId?: string): Promise<ServiceRe
   await requireRole('engineer')
   if (isDemoMode()) {
     const list = await db.serviceRecord.findMany({ where: equipmentId ? { equipmentId } : {}, orderBy: { performedAt: 'desc' }, take: 100 })
-    return list.map((r) => ({ id: r.id, equipmentCode: r.equipmentCode, performedAt: localDate(r.performedAt), km: r.km, hours: r.hours, performedBy: r.performedBy === 'EXTERNAL' ? 'EXTERNAL' : 'INTERNAL', provider: r.provider, invoiceNo: r.invoiceNo, cost: r.cost, notes: r.notes, recordedBy: r.recordedBy }))
+    return list.map((r) => ({ id: r.id, equipmentCode: r.equipmentCode, performedAt: localDate(r.performedAt), km: r.km, hours: r.hours, performedBy: r.performedBy === 'EXTERNAL' ? 'EXTERNAL' : 'INTERNAL', kind: r.kind === 'MAJOR' || r.kind === 'MINOR' ? r.kind : null, provider: r.provider, invoiceNo: r.invoiceNo, cost: r.cost, notes: r.notes, recordedBy: r.recordedBy }))
   }
   const supabase = await createSupabaseClient()
   let q = supabase.from('service_records').select('*').order('performed_at', { ascending: false }).order('created_at', { ascending: false }).limit(100)
@@ -83,7 +85,7 @@ export async function getServiceHistory(equipmentId?: string): Promise<ServiceRe
   if (error) throw new Error(/service_records/i.test(error.message) ? 'Pokrenite migraciju 032_service_plan_external.sql.' : error.message)
   return (data ?? []).map((r) => ({
     id: r.id, equipmentCode: r.equipment_code, performedAt: r.performed_at, km: r.km == null ? null : Number(r.km), hours: r.hours == null ? null : Number(r.hours),
-    performedBy: r.performed_by === 'EXTERNAL' ? 'EXTERNAL' : 'INTERNAL', provider: r.provider, invoiceNo: r.invoice_no, cost: r.cost == null ? null : Number(r.cost), notes: r.notes, recordedBy: r.recorded_by,
+    performedBy: r.performed_by === 'EXTERNAL' ? 'EXTERNAL' : 'INTERNAL', kind: r.kind === 'MAJOR' || r.kind === 'MINOR' ? r.kind : null, provider: r.provider, invoiceNo: r.invoice_no, cost: r.cost == null ? null : Number(r.cost), notes: r.notes, recordedBy: r.recorded_by,
   }))
 }
 
@@ -100,35 +102,65 @@ export interface PlanConfigInput {
   provider?: string
   phone?: string
   email?: string
-  intervalKm?: number | string | null
+  // program održavanja po AHM 917
+  program: ServiceProgram
+  intervalKm?: number | string | null // OEM minor
   intervalHours?: number | string | null
-  intervalMonths?: number | string
+  intervalMonths?: number | string | null
+  majorMonths?: number | string | null // OEM major
+  majorHours?: number | string | null
+  majorKm?: number | string | null
+  variationNote?: string
   // početno stanje (prvi put / korekcija) - opciono
   lastDate?: string | null
   lastKm?: number | string | null
   lastHours?: number | string | null
+  lastMajorDate?: string | null
+  lastMajorKm?: number | string | null
+  lastMajorHours?: number | string | null
+  /** Isti program (bez baznih stanja, servisera i varijacije) primijeni na sva sredstva istog tipa */
+  applyProgramToType?: boolean
 }
 
-export async function saveServicePlanConfig(input: PlanConfigInput): Promise<Result> {
+export async function saveServicePlanConfig(input: PlanConfigInput): Promise<Result & { applied?: number }> {
   let user: AppUser
   try { user = await requireRole('admin') } catch (e) { return { ok: false, error: (e as Error).message } }
-  const km = optNum(input.intervalKm), hrs = optNum(input.intervalHours), lkm = optNum(input.lastKm), lh = optNum(input.lastHours)
-  if ([km, hrs, lkm, lh].includes('bad')) return { ok: false, error: 'Intervali i stanja brojača moraju biti brojevi ≥ 0' }
-  if ((km === 0) || (hrs === 0)) return { ok: false, error: 'Interval ne može biti 0 (ostavite prazno ako se ne koristi)' }
-  const months = Math.round(Number(input.intervalMonths ?? 12))
-  if (!Number.isFinite(months) || months < 1 || months > 12) return { ok: false, error: 'Rok servisa je od 1 do 12 mjeseci (godišnji servis je obavezan)' }
+  if (!isProgram(input.program)) return { ok: false, error: 'Izaberite program održavanja' }
+  const oem = input.program === 'OEM'
+  const nums = {
+    km: optNum(input.intervalKm), hrs: optNum(input.intervalHours), mHrs: optNum(input.majorHours), mKm: optNum(input.majorKm),
+    lkm: optNum(input.lastKm), lh: optNum(input.lastHours), lmkm: optNum(input.lastMajorKm), lmh: optNum(input.lastMajorHours),
+  }
+  if (Object.values(nums).includes('bad')) return { ok: false, error: 'Intervali i stanja brojača moraju biti brojevi ≥ 0' }
+  const v = nums as Record<keyof typeof nums, number | null>
+  if (oem && [v.km, v.hrs, v.mHrs, v.mKm].some((x) => x === 0)) return { ok: false, error: 'Interval ne može biti 0 (ostavite prazno ako se ne koristi)' }
+  const monthsOf = (raw: unknown): number | null | 'bad' => {
+    if (raw == null || raw === '') return null
+    const m = Math.round(Number(raw))
+    return Number.isFinite(m) && m >= 1 && m <= 12 ? m : 'bad' as const
+  }
+  const minorM = monthsOf(input.intervalMonths), majorM = monthsOf(input.majorMonths)
+  if (oem && (minorM === 'bad' || majorM === 'bad')) return { ok: false, error: 'Rok u mjesecima je od 1 do 12 (major servis je obavezan najmanje jednom godišnje)' }
+  const today = localDate(new Date())
+  const dateOk = (d: string | null | undefined) => !d || (isValidDate(d) && d <= today)
   const lastDate = input.lastDate ? String(input.lastDate) : null
-  if (lastDate && (!isValidDate(lastDate) || lastDate > localDate(new Date()))) return { ok: false, error: 'Datum zadnjeg servisa nije ispravan (ne može biti u budućnosti)' }
+  const lastMajorDate = input.lastMajorDate ? String(input.lastMajorDate) : null
+  if (!dateOk(lastDate) || !dateOk(lastMajorDate)) return { ok: false, error: 'Datum servisa nije ispravan (ne može biti u budućnosti)' }
+  if (lastDate && lastMajorDate && lastMajorDate > lastDate) return { ok: false, error: 'Zadnji major servis ne može biti noviji od zadnjeg servisa' }
   const email = optText(input.email, 120)
   if (email && !parseEmails(email).length) return { ok: false, error: 'Email servisera nije ispravan' }
   const ext = !!input.externallyMaintained
   const provider = optText(input.provider, 120), phone = optText(input.phone, 40)
   if (ext && !provider) return { ok: false, error: 'Za eksterno održavanje upišite naziv servisera' }
+  const note = oem ? optText(input.variationNote, 300) : null
 
-  const patchBase = {
-    ext, provider, phone, email, km: km as number | null, hrs: hrs as number | null, months,
-    lastDate, lkm: lkm as number | null, lh: lh as number | null,
+  // IATA programi koriste fiksne intervale - OEM polja se brišu (da ne zbunjuju)
+  const prog = {
+    program: input.program,
+    km: oem ? v.km : null, hrs: oem ? v.hrs : null, minorM: oem ? (minorM as number | null) ?? 12 : 12,
+    majorM: oem ? (majorM as number | null) : null, mHrs: oem ? v.mHrs : null, mKm: oem ? v.mKm : null, note,
   }
+  let applied = 0
 
   if (isDemoMode()) {
     const eq = await db.equipment.findUnique({ where: { id: input.equipmentId } })
@@ -137,83 +169,56 @@ export async function saveServicePlanConfig(input: PlanConfigInput): Promise<Res
       where: { id: eq.id },
       data: {
         externallyMaintained: ext, serviceProvider: provider, serviceProviderPhone: phone, serviceProviderEmail: email,
-        serviceIntervalKm: patchBase.km, serviceIntervalHours: patchBase.hrs, serviceIntervalMonths: months,
+        serviceProgram: prog.program, serviceIntervalKm: prog.km, serviceIntervalHours: prog.hrs, serviceIntervalMonths: prog.minorM,
+        majorIntervalMonths: prog.majorM, majorIntervalHours: prog.mHrs, majorIntervalKm: prog.mKm, serviceVariationNote: prog.note,
         ...(lastDate ? { lastServiceDate: new Date(`${lastDate}T12:00:00Z`) } : {}),
-        ...(lkm != null ? { lastServiceKm: patchBase.lkm } : {}), ...(lh != null ? { lastServiceHours: patchBase.lh } : {}),
+        ...(v.lkm != null ? { lastServiceKm: v.lkm } : {}), ...(v.lh != null ? { lastServiceHours: v.lh } : {}),
+        ...(lastMajorDate ? { lastMajorDate: new Date(`${lastMajorDate}T12:00:00Z`) } : {}),
+        ...(v.lmkm != null ? { lastMajorKm: v.lmkm } : {}), ...(v.lmh != null ? { lastMajorHours: v.lmh } : {}),
         serviceNotifiedStatus: null, serviceNotifiedAt: null,
       },
     })
+    if (input.applyProgramToType) {
+      const r = await db.equipment.updateMany({
+        where: { type: eq.type, id: { not: eq.id } },
+        data: { serviceProgram: prog.program, serviceIntervalKm: prog.km, serviceIntervalHours: prog.hrs, serviceIntervalMonths: prog.minorM, majorIntervalMonths: prog.majorM, majorIntervalHours: prog.mHrs, majorIntervalKm: prog.mKm, serviceNotifiedStatus: null, serviceNotifiedAt: null },
+      })
+      applied = r.count
+    }
   } else {
     const sb = await writer()
+    const { data: eq, error: e0 } = await sb.from('equipment').select('id,type').eq('id', input.equipmentId).maybeSingle()
+    if (e0 || !eq) return { ok: false, error: e0?.message ?? 'Sredstvo nije pronađeno' }
     const { error } = await sb.from('equipment').update({
       externally_maintained: ext, service_provider: provider, service_provider_phone: phone, service_provider_email: email,
-      service_interval_km: patchBase.km, service_interval_hours: patchBase.hrs, service_interval_months: months,
+      service_program: prog.program, service_interval_km: prog.km, service_interval_hours: prog.hrs, service_interval_months: prog.minorM,
+      major_interval_months: prog.majorM, major_interval_hours: prog.mHrs, major_interval_km: prog.mKm, service_variation_note: prog.note,
       ...(lastDate ? { last_service_date: lastDate } : {}),
-      ...(lkm != null ? { last_service_km: patchBase.lkm } : {}), ...(lh != null ? { last_service_hours: patchBase.lh } : {}),
+      ...(v.lkm != null ? { last_service_km: v.lkm } : {}), ...(v.lh != null ? { last_service_hours: v.lh } : {}),
+      ...(lastMajorDate ? { last_major_date: lastMajorDate } : {}),
+      ...(v.lmkm != null ? { last_major_km: v.lmkm } : {}), ...(v.lmh != null ? { last_major_hours: v.lmh } : {}),
       service_notified_status: null, service_notified_at: null,
     }).eq('id', input.equipmentId)
-    if (error) return { ok: false, error: error.message }
+    if (error) return { ok: false, error: /service_program|major_|last_major|service_variation/i.test(error.message) ? 'Pokrenite migracije 033 i 034 (supabase/MIGRATIONS.md).' : error.message }
+    if (input.applyProgramToType) {
+      const { data, error: e2 } = await sb.from('equipment').update({
+        service_program: prog.program, service_interval_km: prog.km, service_interval_hours: prog.hrs, service_interval_months: prog.minorM,
+        major_interval_months: prog.majorM, major_interval_hours: prog.mHrs, major_interval_km: prog.mKm,
+        service_notified_status: null, service_notified_at: null,
+      }).eq('type', eq.type).neq('id', eq.id).select('id')
+      if (e2) return { ok: false, error: `Sredstvo je snimljeno, ali primjena na tip nije uspjela: ${e2.message}` }
+      applied = data?.length ?? 0
+    }
   }
-  await logAudit('SERVICE_PLAN_CONFIG', 'equipment', input.equipmentId, JSON.stringify({ ext, provider, km, hrs, months, lastDate, by: user.email }))
+  await logAudit('SERVICE_PLAN_CONFIG', 'equipment', input.equipmentId, JSON.stringify({ ext, provider, program: prog.program, minor: [prog.km, prog.hrs, prog.minorM], major: [prog.mKm, prog.mHrs, prog.majorM], note, lastDate, lastMajorDate, applied, by: user.email }))
   revalidatePath('/dashboard')
-  return { ok: true }
-}
-
-export interface RecordServiceInput {
-  equipmentId: string
-  performedAt: string
-  km?: number | string | null
-  hours?: number | string | null
-  performedBy: 'INTERNAL' | 'EXTERNAL'
-  provider?: string
-  invoiceNo?: string
-  cost?: number | string | null
-  notes?: string
+  return { ok: true, applied }
 }
 
 export async function recordService(input: RecordServiceInput): Promise<Result> {
   let user: AppUser
   try { user = await requireRole('engineer') } catch (e) { return { ok: false, error: (e as Error).message } }
-  const today = localDate(new Date())
-  if (!isValidDate(input.performedAt) || input.performedAt > today) return { ok: false, error: 'Datum servisa nije ispravan (ne može biti u budućnosti)' }
-  const rKm = optNum(input.km), rH = optNum(input.hours), rC = optNum(input.cost, 100_000_000)
-  if ([rKm, rH, rC].includes('bad')) return { ok: false, error: 'Km, sati i trošak moraju biti brojevi ≥ 0' }
-  const km = rKm as number | null, hours = rH as number | null, cost = rC as number | null
-  const by = input.performedBy === 'EXTERNAL' ? 'EXTERNAL' : 'INTERNAL'
-  const provider = optText(input.provider, 120), invoice = optText(input.invoiceNo, 60), notes = optText(input.notes, 500)
-  const who = user.full_name || user.email
-
-  if (isDemoMode()) {
-    const eq = await db.equipment.findUnique({ where: { id: input.equipmentId } })
-    if (!eq) return { ok: false, error: 'Sredstvo nije pronađeno' }
-    await db.serviceRecord.create({ data: { equipmentId: eq.id, equipmentCode: eq.code, performedAt: new Date(`${input.performedAt}T12:00:00Z`), km, hours, performedBy: by, provider, invoiceNo: invoice, cost, notes, recordedBy: who } })
-    await db.equipment.update({
-      where: { id: eq.id },
-      data: {
-        lastServiceDate: new Date(`${input.performedAt}T12:00:00Z`),
-        lastServiceKm: km ?? eq.totalKm, lastServiceHours: hours ?? eq.totalOperatingHours,
-        ...(km != null && km > eq.totalKm ? { totalKm: km } : {}),
-        ...(hours != null && hours > eq.totalOperatingHours ? { totalOperatingHours: hours } : {}),
-        serviceNotifiedStatus: null, serviceNotifiedAt: null,
-      },
-    })
-  } else {
-    const sb = await writer()
-    const { data: eq, error: e1 } = await sb.from('equipment').select('id,code,total_km,total_operating_hours').eq('id', input.equipmentId).maybeSingle()
-    if (e1 || !eq) return { ok: false, error: e1?.message ?? 'Sredstvo nije pronađeno' }
-    const curKm = Number(eq.total_km ?? 0), curH = Number(eq.total_operating_hours ?? 0)
-    const { error: e2 } = await sb.from('service_records').insert({ equipment_id: eq.id, equipment_code: eq.code, performed_at: input.performedAt, km, hours, performed_by: by, provider, invoice_no: invoice, cost, notes, recorded_by: who })
-    if (e2) return { ok: false, error: /service_records/i.test(e2.message) ? 'Pokrenite migraciju 032_service_plan_external.sql.' : e2.message }
-    const { error: e3 } = await sb.from('equipment').update({
-      last_service_date: input.performedAt, last_service_km: km ?? curKm, last_service_hours: hours ?? curH,
-      ...(km != null && km > curKm ? { total_km: km } : {}), ...(hours != null && hours > curH ? { total_operating_hours: hours } : {}),
-      service_notified_status: null, service_notified_at: null,
-    }).eq('id', eq.id)
-    if (e3) return { ok: false, error: `Servis je upisan, ali plan nije osvježen: ${e3.message}` }
-  }
-  await logAudit('SERVICE_RECORDED', 'equipment', input.equipmentId, JSON.stringify({ performedAt: input.performedAt, km, hours, by, provider, invoice }))
-  revalidatePath('/dashboard')
-  return { ok: true }
+  return persistService(input, user.full_name || user.email)
 }
 
 export async function saveChiefEmails(raw: string): Promise<Result & { saved?: string }> {
@@ -252,6 +257,7 @@ export interface WorkPlanItem {
   date: string
   code: string
   name: string
+  kind: ServiceKind
   reason: 'DATE' | 'KM' | 'HOURS'
   overdue: boolean
   external: boolean
@@ -282,14 +288,11 @@ export async function getServiceWorkPlan(horizon: WorkPlanHorizon): Promise<Work
   const noBaseline: WorkPlan['noBaseline'] = []
   for (const r of rows) {
     if (!r.lastDate) { noBaseline.push({ code: r.code, name: r.name }); continue }
-    const events = projectServices({
-      totalKm: r.totalKm, totalHours: r.totalHours, intervalKm: r.intervalKm, intervalHours: r.intervalHours,
-      intervalMonths: r.intervalMonths, lastDate: r.lastDate, lastKm: r.lastKm, lastHours: r.lastHours,
-    }, today, to)
+    const events = projectServices(toServiceInput(r), today, to)
     for (const e of events) {
       // dospjele servise prikazujemo uvijek (kasne), ostale samo ako upadaju u period
       if (!e.overdue && e.date < from) continue
-      items.push({ date: e.date, code: r.code, name: r.name, reason: e.reason, overdue: e.overdue, external: r.external, provider: r.provider, phone: r.phone, department: r.department })
+      items.push({ date: e.date, code: r.code, name: r.name, kind: e.kind, reason: e.reason, overdue: e.overdue, external: r.external, provider: r.provider, phone: r.phone, department: r.department })
     }
   }
   items.sort((a, b) => (a.overdue === b.overdue ? a.date.localeCompare(b.date) || a.code.localeCompare(b.code) : a.overdue ? -1 : 1))

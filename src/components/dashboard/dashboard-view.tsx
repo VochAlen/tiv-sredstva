@@ -5,6 +5,7 @@ import { QRCodeSVG } from 'qrcode.react'
 import { printQrLabels, svgOf } from '@/lib/qr-print'
 import { RestrictionBadges } from '@/components/restriction-badges'
 import { DamageRowCard } from '@/components/dashboard/damage-row-card'
+import { ServicePlanView } from '@/components/dashboard/service-plan-view'
 import { UsersAdminView } from '@/components/dashboard/users-admin-view'
 import { DailyListView, DailyStatsView, EquipmentReportView, InspectionLogView } from '@/components/dashboard/daily-reports-view'
 import { OverviewDetailTable, type OverviewKind } from '@/components/dashboard/overview-detail-table'
@@ -41,6 +42,7 @@ import {
   ClipboardCheck,
   ClipboardList,
   CalendarDays,
+  CalendarClock,
   Users,
   FileText,
   AlertTriangle,
@@ -196,6 +198,7 @@ const NAV_GROUPS: NavGroup[] = [
   {
     label: 'Operacije',
     items: [
+      { value: 'service-plan', label: 'Servisni plan', icon: CalendarClock, minRole: 'engineer' },
       { value: 'scheduling', label: 'Servis & Dijelovi', icon: Calendar, minRole: 'engineer' },
       { value: 'driverauth', label: 'Driver Auth', icon: Car, minRole: 'engineer' },
       { value: 'fuelparking', label: 'Gorivo & Parking', icon: Fuel, minRole: 'engineer' },
@@ -521,6 +524,10 @@ export function DashboardView({ currentUser }: { currentUser: AppUser }) {
 
         <TabsContent value="daily-list" className="space-y-4">
           <DailyListView initialDate={dailyDate} />
+        </TabsContent>
+
+        <TabsContent value="service-plan" className="space-y-4">
+          <ServicePlanView />
         </TabsContent>
 
         <TabsContent value="users-admin" className="space-y-4">

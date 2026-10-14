@@ -16,7 +16,7 @@ import {
 export const dynamic = 'force-dynamic'
 
 const MONTHS = ['Januar', 'Februar', 'Mart', 'April', 'Maj', 'Jun', 'Jul', 'Avgust', 'Septembar', 'Oktobar', 'Novembar', 'Decembar']
-const REASON: Record<string, string> = { DATE: 'Rok 12 mj.', KM: 'Kilometri', HOURS: 'Radni sati' }
+const REASON: Record<string, string> = { DATE: 'Rok (mj.)', KM: 'Kilometri', HOURS: 'Radni sati' }
 const ROW = 13
 const BOTTOM = 70
 
@@ -44,7 +44,7 @@ export async function GET(request: NextRequest) {
     if (first) {
       const hb = drawHeader(c, {
         title: 'PLAN RADA - SERVISI SREDSTAVA',
-        subtitle: `${plan.label}  |  redovni servis po km / radnim satima / roku 12 mj.`,
+        subtitle: `${plan.label}  |  preventivno odrzavanje po IATA AHM 917 (minor / major)`,
         line3: 'GSE Control  -  Aerodrom Tivat (LYTV)',
         bigRight: prettyDate(plan.from),
         smallRight: `DO: ${prettyDate(plan.to)}`,
@@ -66,7 +66,7 @@ export async function GET(request: NextRequest) {
   }
 
   const cols = [
-    { label: 'DATUM', x: M + 6 }, { label: 'SREDSTVO', x: M + 62 }, { label: 'OSNOV', x: M + 250 }, { label: 'KO SERVISIRA / KONTAKT', x: M + 320 },
+    { label: 'DATUM', x: M + 6 }, { label: 'SREDSTVO', x: M + 62 }, { label: 'VRSTA', x: M + 218 }, { label: 'OSNOV', x: M + 258 }, { label: 'KO SERVISIRA / KONTAKT', x: M + 322 },
   ]
   let { c, y } = newPage(true)
 
@@ -98,10 +98,11 @@ export async function GET(request: NextRequest) {
       if (idx % 2 === 0) c.page.drawRectangle({ x: M, y: y - ROW, width: W - 2 * M, height: ROW, color: ZEBRA })
       const yy = y - 9
       c.T(it.overdue ? 'ODMAH' : fmtDateBHS(it.date), cols[0].x, yy, 7.4, bold, it.overdue ? RED : INK)
-      c.T(c.fit(`${it.code}  ${it.name}`, font, 7.4, 182), cols[1].x, yy, 7.4, font, INK)
-      c.T(REASON[it.reason], cols[2].x, yy, 7.2, font, INK)
+      c.T(c.fit(`${it.code}  ${it.name}`, font, 7.4, 150), cols[1].x, yy, 7.4, font, INK)
+      c.T(it.kind === 'MAJOR' ? 'Major' : 'Minor', cols[2].x, yy, 7.2, bold, it.kind === 'MAJOR' ? RED : NAVY)
+      c.T(REASON[it.reason], cols[3].x, yy, 7.2, font, INK)
       const who = it.external ? `${it.provider ?? 'Eksterni serviser'}${it.phone ? '  ' + it.phone : ''}` : 'Interno'
-      c.T(c.fit(who, it.external ? bold : font, 7.2, W - M - cols[3].x - 4), cols[3].x, yy, 7.2, it.external ? bold : font, it.external ? NAVY : MUTED)
+      c.T(c.fit(who, it.external ? bold : font, 7.2, W - M - cols[4].x - 4), cols[4].x, yy, 7.2, it.external ? bold : font, it.external ? NAVY : MUTED)
       y -= ROW
     })
     y -= 8

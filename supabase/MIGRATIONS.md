@@ -26,6 +26,9 @@ para je fiksan i ne smije se mijenjati:
 | 18 | 029_users_airport.sql |
 | 19 | 030_wildlife_map.sql |
 | 20 | 031_report_weather.sql |
+| 21 | 032_service_plan_external.sql |
+| 22 | 033_pm_ahm917.sql |
+| 23 | 034_ahm917_service_plan_extras.sql |
 
 Fajlovi **nisu** preimenovani namjerno: ako ste ih već pokretali ručno po broju, preimenovanje
 ništa ne popravlja a pravi zabunu. Duplirani brojevi smetaju samo Supabase CLI-ju (`supabase db push`),
