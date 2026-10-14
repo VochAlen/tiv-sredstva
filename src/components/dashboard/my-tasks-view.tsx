@@ -7,6 +7,7 @@ import { Card, CardContent } from '@/components/ui/card'
 import { getInspectableEquipment } from '@/lib/actions-daily-inspection'
 import { DailyInspectionDialog } from './daily-inspection-dialog'
 import { Button } from '@/components/ui/button'
+import { ServiceWorkPlanCard } from './service-workplan-card'
 import { ClipboardCheck } from 'lucide-react'
 import { getExpiringSoon } from '@/lib/actions-expiry'
 import { getFodReports, getWildlifeReports } from '@/lib/actions-safety-reports'
@@ -94,6 +95,8 @@ export function MyTasksView({
           {expiring.length > 6 && <div className="text-xs text-muted-foreground">… i još {expiring.length - 6}</div>}
         </div>
       )}
+
+      {roleAtLeast(role, 'engineer') && <ServiceWorkPlanCard />}
 
       {tasks.map((t) => (
         <button
