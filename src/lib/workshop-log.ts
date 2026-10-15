@@ -3,7 +3,7 @@ import { db } from '@/lib/db'
 import { isDemoMode } from '@/lib/auth-mode'
 import { createClientAsync as createSupabaseClient } from '@/lib/supabase/server'
 
-export type RepairEventKind = 'TAKEN' | 'ARRIVED' | 'STATUS' | 'CHIEF_OK' | 'CHIEF_FAILED' | 'HANDOVER'
+export type RepairEventKind = 'TAKEN' | 'ARRIVED' | 'STATUS' | 'CHIEF_OK' | 'CHIEF_FAILED' | 'HANDOVER' | 'EXTERNAL_SENT' | 'EXTERNAL_BACK'
 
 export async function logRepairEvent(e: { damageId: string; kind: RepairEventKind; text?: string | null; byName: string; byCardId?: string | null; warned?: boolean }): Promise<void> {
   try {

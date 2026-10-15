@@ -5,7 +5,7 @@
 // Status popravke se upisuje u bilo kom trenutku; svaka 3 dana bez promjene prikazuje se upozorenje i unos je obavezan.
 
 import { useCallback, useEffect, useState, useTransition } from 'react'
-import { AlertTriangle, Loader2, PackageCheck } from 'lucide-react'
+import { AlertTriangle, CheckCircle2, Loader2, PackageCheck, ShieldAlert } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
@@ -17,6 +17,9 @@ import {
   markArrivedInWorkshop, addWorkshopStatus, recordChiefFailed, recordHandover, getPendingHandovers, getWorkshopLog,
   type PendingHandover, type WorkshopLogRow,
 } from '@/lib/actions-workshop'
+import {
+  sendToExternalService, markExternalReturned, getReplacementOptions, type ReplacementOption,
+} from '@/lib/actions-workshop-extras'
 import { STATUS_PRESETS, fmtDT } from '@/lib/workshop'
 
 /** Lokalno "YYYY-MM-DDTHH:mm" za <input type="datetime-local">. */
@@ -128,21 +131,25 @@ export function ChiefDialog({ damage, open, onOpenChange, onDone }: {
   const [cost, setCost] = useState('')
   const [hours, setHours] = useState('')
   const [parts, setParts] = useState('')
+  const [testOk, setTestOk] = useState(false)
+  const [testNote, setTestNote] = useState('')
   const [pending, start] = useTransition()
   useEffect(() => {
     if (!open) return
-    setAt(localNow()); setResult(null); setNote('')
+    setAt(localNow()); setResult(null); setNote(''); setTestOk(false); setTestNote('')
     setCost(damage.workCost != null ? String(damage.workCost) : ''); setHours(damage.workHours != null ? String(damage.workHours) : ''); setParts(damage.partsText ?? '')
   }, [open, damage.workCost, damage.workHours, damage.partsText])
 
   const submit = (e: React.FormEvent) => {
     e.preventDefault()
     if (!result) return toast.error('Izaberite rezultat pregleda: prošao / nije prošao')
+    if (result === 'OK' && !testOk) return toast.error('Potvrdite da je probni rad / funkcionalni test urađen')
     const iso = new Date(at).toISOString()
     start(async () => {
       if (result === 'OK') {
         const r = await approveRepair({
           damageId: damage.id, chiefName: chief, inspectedAt: iso,
+          testDone: testOk, testNote: testNote.trim() || undefined,
           cost: cost.trim() ? Number(cost.replace(',', '.')) : undefined,
           durationHours: hours.trim() ? Number(hours.replace(',', '.')) : undefined,
           partsReplaced: parts.trim() || undefined,
@@ -184,6 +191,15 @@ export function ChiefDialog({ damage, open, onOpenChange, onDone }: {
             </div>
           )}
           {result === 'OK' && (
+            <div className="space-y-2 rounded-md border-2 border-green-500 bg-green-50 p-2">
+              <label className="flex items-start gap-2 text-sm font-medium">
+                <input type="checkbox" className="mt-0.5 h-5 w-5 shrink-0" checked={testOk} onChange={(e) => setTestOk(e.target.checked)} />
+                <span>Probni rad / funkcionalni test nakon popravke je urađen i zadovoljava *</span>
+              </label>
+              <Input value={testNote} maxLength={300} onChange={(e) => setTestNote(e.target.value)} placeholder="Šta je testirano (npr. probna vožnja 10 min, kočnice, svjetla)" />
+            </div>
+          )}
+          {result === 'OK' && (
             <details className="rounded-md border p-2 text-sm">
               <summary className="cursor-pointer font-medium">Dodatno (trošak, sati, dijelovi) — nije obavezno</summary>
               <div className="mt-2 grid grid-cols-2 gap-2">
@@ -195,7 +211,7 @@ export function ChiefDialog({ damage, open, onOpenChange, onDone }: {
           )}
           <DialogFooter>
             <Button type="button" variant="outline" onClick={() => onOpenChange(false)}>Odustani</Button>
-            <Button type="submit" disabled={pending || !result}>{pending && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}Upiši pregled</Button>
+            <Button type="submit" disabled={pending || !result || (result === 'OK' && !testOk)}>{pending && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}Upiši pregled</Button>
           </DialogFooter>
         </form>
       </DialogContent>
@@ -286,5 +302,131 @@ export function WorkshopStepper({ d }: { d: { createdAt?: unknown; acknowledgedA
         </li>
       ))}
     </ol>
+  )
+}
+
+
+/** Sredstvo se šalje vanjskom servisu / izvođaču (garancija, specijalistički posao). Upisuje se u istoriju popravke. */
+export function ExternalSendDialog({ damageId, code, defaultProvider, open, onOpenChange, onDone }: {
+  damageId: string; code: string; defaultProvider?: string | null; open: boolean; onOpenChange: (o: boolean) => void; onDone: () => void
+}) {
+  const [provider, setProvider] = useState('')
+  const [ref, setRef] = useState('')
+  const [expected, setExpected] = useState('')
+  const [pending, start] = useTransition()
+  useEffect(() => { if (open) { setProvider(defaultProvider ?? ''); setRef(''); setExpected('') } }, [open, defaultProvider])
+  const submit = (e: React.FormEvent) => {
+    e.preventDefault()
+    start(async () => {
+      const r = await sendToExternalService({ damageId, provider, ref, expectedAt: expected || undefined })
+      if (r.ok) { toast.success('Upisano: sredstvo je kod vanjskog servisa'); onOpenChange(false); onDone() } else toast.error(r.error ?? 'Greška')
+    })
+  }
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent>
+        <DialogHeader>
+          <DialogTitle>Poslano vanjskom servisu — {code}</DialogTitle>
+          <DialogDescription>Datum slanja i ko je upisao bilježe se automatski. Ovo se računa kao novi status popravke.</DialogDescription>
+        </DialogHeader>
+        <form onSubmit={submit} className="space-y-3">
+          <div className="space-y-1.5">
+            <Label>Vanjski servis / izvođač *</Label>
+            <Input autoFocus value={provider} onChange={(e) => setProvider(e.target.value)} placeholder="Naziv firme" />
+          </div>
+          <div className="grid grid-cols-2 gap-2">
+            <div className="space-y-1.5"><Label>Broj naloga / ponude</Label><Input value={ref} onChange={(e) => setRef(e.target.value)} /></div>
+            <div className="space-y-1.5"><Label>Očekivani povrat</Label><Input type="date" value={expected} onChange={(e) => setExpected(e.target.value)} /></div>
+          </div>
+          <DialogFooter>
+            <Button type="button" variant="outline" onClick={() => onOpenChange(false)}>Odustani</Button>
+            <Button type="submit" disabled={pending}>{pending && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}Upiši slanje</Button>
+          </DialogFooter>
+        </form>
+      </DialogContent>
+    </Dialog>
+  )
+}
+
+export function ExternalReturnDialog({ damageId, code, provider, open, onOpenChange, onDone }: {
+  damageId: string; code: string; provider?: string | null; open: boolean; onOpenChange: (o: boolean) => void; onDone: () => void
+}) {
+  const [note, setNote] = useState('')
+  const [pending, start] = useTransition()
+  useEffect(() => { if (open) setNote('') }, [open])
+  const submit = (e: React.FormEvent) => {
+    e.preventDefault()
+    start(async () => {
+      const r = await markExternalReturned({ damageId, note })
+      if (r.ok) { toast.success('Upisan povrat iz vanjskog servisa'); onOpenChange(false); onDone() } else toast.error(r.error ?? 'Greška')
+    })
+  }
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent>
+        <DialogHeader>
+          <DialogTitle>Vraćeno iz vanjskog servisa — {code}</DialogTitle>
+          <DialogDescription>{provider ? `Servis: ${provider}. ` : ''}Nakon povrata nastavlja se redovan tok: dolazak u radionicu, popravka završena, pregled šefa službe.</DialogDescription>
+        </DialogHeader>
+        <form onSubmit={submit} className="space-y-3">
+          <div className="space-y-1.5">
+            <Label>Broj računa / napomena</Label>
+            <Input autoFocus value={note} maxLength={200} onChange={(e) => setNote(e.target.value)} placeholder="npr. račun 123/2026, zamijenjen kompresor" />
+          </div>
+          <DialogFooter>
+            <Button type="button" variant="outline" onClick={() => onOpenChange(false)}>Odustani</Button>
+            <Button type="submit" disabled={pending}>{pending && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}Upiši povrat</Button>
+          </DialogFooter>
+        </form>
+      </DialogContent>
+    </Dialog>
+  )
+}
+
+/** Garancija: ako je sredstvo pod garancijom, prije popravke treba kontaktirati servis / proizvođača da se garancija ne izgubi. */
+export function WarrantyBanner({ expiry, provider, phone }: { expiry: Date | string | null | undefined; provider?: string | null; phone?: string | null }) {
+  if (!expiry) return null
+  const t = new Date(expiry)
+  if (!Number.isFinite(t.getTime()) || t.getTime() < Date.now() - 86_400_000) return null
+  return (
+    <div role="note" className="mt-2 flex items-start gap-2 rounded-md border-2 border-sky-500 bg-sky-50 p-2 text-sm text-sky-900">
+      <ShieldAlert className="mt-0.5 h-5 w-5 shrink-0" />
+      <span>
+        <strong>Sredstvo je pod garancijom do {t.toLocaleDateString('hr-HR')}.</strong> Prije popravke u vlastitoj radionici kontaktirajte ovlašteni servis / proizvođača{provider ? ` (${provider}${phone ? `, ${phone}` : ''})` : ''} da se garancija ne izgubi.
+      </span>
+    </div>
+  )
+}
+
+/** Dostupna sredstva istog tipa kao zamjena dok je ovo u radionici. Učitava se tek na klik (provjerava dnevni pregled svakog kandidata). */
+export function ReplacementPanel({ equipmentId, equipmentCode }: { equipmentId: string; equipmentCode: string }) {
+  const [data, setData] = useState<{ type: string; options: ReplacementOption[] } | null>(null)
+  useEffect(() => {
+    let alive = true
+    getReplacementOptions(equipmentId)
+      .then((r) => { if (alive) setData(r) })
+      .catch(() => { toast.error('Zamjena nije učitana'); if (alive) setData({ type: '', options: [] }) })
+    return () => { alive = false }
+  }, [equipmentId])
+  if (data === null) return <div className="flex items-center gap-2 py-2 text-sm text-muted-foreground"><Loader2 className="h-4 w-4 animate-spin" />Tražim zamjensko sredstvo…</div>
+  return (
+    <div className="rounded-lg border bg-background p-2">
+      <div className="mb-1 text-sm font-semibold">Zamjena za {equipmentCode} (isti tip, trenutno dostupno)</div>
+      {data.options.length === 0 && <p className="text-sm text-amber-800">Nema dostupnog sredstva istog tipa. Obavijestite operativu.</p>}
+      <ul className="space-y-1">
+        {data.options.map((o) => (
+          <li key={o.id} className="flex flex-wrap items-center gap-x-2 gap-y-0.5 rounded-md px-2 py-1.5 text-sm odd:bg-muted/40">
+            <span className="font-mono font-semibold">{o.code}</span>
+            <span className="min-w-0 flex-1 truncate">{o.name}</span>
+            <span className="text-xs text-muted-foreground">{o.location}</span>
+            {o.inspectedToday
+              ? <span className="inline-flex items-center gap-1 text-xs font-medium text-emerald-700"><CheckCircle2 className="h-3.5 w-3.5" />pregledano danas</span>
+              : <span className="text-xs font-medium text-amber-700">nije pregledano danas</span>}
+            {o.restrictions > 0 && <span className="text-xs text-orange-700">ima ograničenja ({o.restrictions})</span>}
+            {o.restrictedAccess && <span className="text-xs text-muted-foreground">ograničen pristup</span>}
+          </li>
+        ))}
+      </ul>
+    </div>
   )
 }

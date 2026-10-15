@@ -69,6 +69,12 @@ export async function proxy(request: NextRequest) {
   }
 
   // Pravi Supabase mode
+  // Auth provjera je potrebna samo na /login i /dashboard. Sve ostale rute
+  // (javna radnička stranica /, /fids...) ne čekaju mrežni poziv prema Supabase-u.
+  if (pathname !== '/login' && pathname !== '/dashboard') {
+    return NextResponse.next()
+  }
+
   let response = NextResponse.next({
     request: {
       headers: request.headers,
@@ -93,8 +99,10 @@ export async function proxy(request: NextRequest) {
     }
   )
 
-  // Osvježi session
-  const { data: { user } } = await supabase.auth.getUser()
+  // Osvježi session. getClaims() provjerava JWT lokalno (bez mrežnog poziva)
+  // kad projekat koristi asimetrične ključeve; inače automatski pada na getUser().
+  const { data: claimsData } = await supabase.auth.getClaims()
+  const user = claimsData?.claims ? { id: claimsData.claims.sub } : null
 
   // Ako user nije ulogovan i pokušava pristupiti /dashboard → preusmjeri na /login
   if (!user && pathname === '/dashboard') {

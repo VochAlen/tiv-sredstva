@@ -5,6 +5,7 @@
 
 import { db } from '@/lib/db'
 import { isDemoMode } from '@/lib/auth-mode'
+import { createServiceClient, hasServiceClient } from '@/lib/supabase/service'
 import { createClientAsync as createSupabaseClient } from "@/lib/supabase/server"
 
 export interface IdentifiedWorker {
@@ -39,7 +40,8 @@ export async function identifyWorkerByPin(pin: string): Promise<{ ok: boolean; w
   }
 
   // Supabase
-  const supabase = await createSupabaseClient()
+  // Radnik na javnoj stranici nije prijavljen, a RLS dozvoljava čitanje 'employees' samo prijavljenima - zato service klijent
+  const supabase = hasServiceClient() ? createServiceClient() : await createSupabaseClient()
   const { data, error } = await supabase
     .from('employees')
     .select('card_id, name, department, role')
@@ -89,7 +91,8 @@ export async function identifyWorkerByCardId(cardId: string): Promise<{ ok: bool
   }
 
   // Supabase
-  const supabase = await createSupabaseClient()
+  // Radnik na javnoj stranici nije prijavljen, a RLS dozvoljava čitanje 'employees' samo prijavljenima - zato service klijent
+  const supabase = hasServiceClient() ? createServiceClient() : await createSupabaseClient()
   const { data, error } = await supabase
     .from('employees')
     .select('card_id, name, department, role')

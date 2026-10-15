@@ -217,6 +217,17 @@ model DamageReport {
   lastStatusBy      String?
   staleNotifiedAt   DateTime?
 
+  // Probni rad / funkcionalni test prije puštanja u rad + eksterni servis
+  testDone            Boolean?
+  testNote            String?
+  testAt              DateTime?
+  testBy              String?
+  externalProvider    String?
+  externalRef         String?
+  externalSentAt      DateTime?
+  externalExpectedAt  DateTime?
+  externalReturnedAt  DateTime?
+
   equipment Equipment        @relation(fields: [equipmentId], references: [id])
   employee  Employee?        @relation(fields: [employeeId], references: [id])
   photos    EquipmentPhoto[]
@@ -735,6 +746,7 @@ model PartConsumption {
   equipmentId      String?
   equipmentCode    String? // na kojem vozilu je korišteno
   maintenanceLogId String? // povezano sa maintenance log
+  damageId         String? // radni nalog prijave kvara koji je potrošio dio
 
   quantity     Int    @default(1)
   unitPriceNet Float? // cijena bez PDV u trenutku utroška
@@ -747,6 +759,21 @@ model PartConsumption {
   @@index([partId])
   @@index([equipmentId])
   @@index([consumedAt])
+  @@index([damageId])
+}
+
+model MeterReading {
+  id            String   @id @default(cuid())
+  equipmentId   String
+  equipmentCode String
+  km            Float?
+  hours         Float?
+  byName        String
+  byCardId      String?
+  source        String   @default("CHECK_IN")
+  at            DateTime @default(now())
+
+  @@index([equipmentId, at])
 }
 
 // =====================================================

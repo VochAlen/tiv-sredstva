@@ -138,7 +138,11 @@ export async function getEquipmentByCode(code: string) {
         },
       },
     })
-    return e ? { ...e, inspectedToday: await wasInspectedToday(e.id) } : null
+    return e ? {
+      ...e,
+      inspectedToday: await wasInspectedToday(e.id),
+      meter: meterInfo({ km: e.totalKm, hours: e.totalOperatingHours, intervalKm: e.serviceIntervalKm, majorKm: e.majorIntervalKm, intervalHours: e.serviceIntervalHours, majorHours: e.majorIntervalHours, program: e.serviceProgram }),
+    } : null
   }
 
   const supabase = await createSupabaseClient()
@@ -171,6 +175,10 @@ export async function getEquipmentByCode(code: string) {
 
   return {
     inspectedToday,
+    meter: meterInfo({
+      km: (eq as any).total_km, hours: (eq as any).total_operating_hours, intervalKm: (eq as any).service_interval_km, majorKm: (eq as any).major_interval_km,
+      intervalHours: (eq as any).service_interval_hours, majorHours: (eq as any).major_interval_hours, program: (eq as any).service_program,
+    }),
     id: eq.id,
     code: eq.code,
     name: eq.name,
@@ -309,6 +317,85 @@ export async function getRecentActivity(limit = 50) {
   }))
 }
 
+/** Koja brojila se prate za servisni plan (radnik ih upisuje pri razduženju): km ako postoji km interval, sati osim kod OEM programa bez sati. */
+function meterInfo(i: { km?: number | null; hours?: number | null; intervalKm?: number | null; majorKm?: number | null; intervalHours?: number | null; majorHours?: number | null; program?: string | null }) {
+  const trackKm = !!(Number(i.intervalKm) > 0 || Number(i.majorKm) > 0)
+  const trackHours = i.program !== 'OEM' || !!(Number(i.intervalHours) > 0 || Number(i.majorHours) > 0)
+  return { km: Number(i.km ?? 0), hours: Number(i.hours ?? 0), trackKm, trackHours }
+}
+
+function mapDamageRow(d: any) {
+  return {
+    id: d.id,
+    equipmentId: d.equipment_id,
+    equipmentCode: d.equipment_code,
+    equipmentName: d.equipment_name,
+    reportedByCardId: d.reported_by_card_id,
+    reportedByName: d.reported_by_name,
+    employeeId: d.employee_id,
+    severity: d.severity,
+    description: d.description,
+    status: d.status,
+    resolution: d.resolution,
+    resolvedAt: d.resolved_at ? new Date(d.resolved_at) : null,
+    createdAt: new Date(d.created_at),
+    updatedAt: new Date(d.updated_at),
+    category: d.category ?? null,
+    acknowledgedAt: d.acknowledged_at ? new Date(d.acknowledged_at) : null,
+    acknowledgedBy: d.acknowledged_by ?? null,
+    repairedByCardId: d.repaired_by_card_id ?? null,
+    repairedByName: d.repaired_by_name ?? null,
+    repairedAt: d.repaired_at ? new Date(d.repaired_at) : null,
+    approvedByCardId: d.approved_by_card_id ?? null,
+    approvedByName: d.approved_by_name ?? null,
+    approvedAt: d.approved_at ? new Date(d.approved_at) : null,
+    restrictionCode: d.restriction_code ?? null,
+    restrictionLabel: d.restriction_label ?? null,
+    sourceItem: d.source_item ?? null,
+    partsJson: d.parts_json ? (typeof d.parts_json === 'string' ? d.parts_json : JSON.stringify(d.parts_json)) : null,
+    workHours: d.work_hours != null ? Number(d.work_hours) : null,
+    workCost: d.work_cost != null ? Number(d.work_cost) : null,
+    workerNames: d.worker_names ?? null,
+    workshopArrivedAt: d.workshop_arrived_at ? new Date(d.workshop_arrived_at) : null,
+    workshopArrivedBy: d.workshop_arrived_by ?? null,
+    chiefName: d.chief_name ?? null,
+    chiefInspectedAt: d.chief_inspected_at ? new Date(d.chief_inspected_at) : null,
+    chiefResult: d.chief_result ?? null,
+    chiefNote: d.chief_note ?? null,
+    handoverTo: d.handover_to ?? null,
+    handoverAt: d.handover_at ? new Date(d.handover_at) : null,
+    lastStatusText: d.last_status_text ?? null,
+    lastStatusAt: d.last_status_at ? new Date(d.last_status_at) : null,
+    lastStatusBy: d.last_status_by ?? null,
+    testDone: d.test_done ?? null,
+    testNote: d.test_note ?? null,
+    testAt: d.test_at ? new Date(d.test_at) : null,
+    testBy: d.test_by ?? null,
+    externalProvider: d.external_provider ?? null,
+    externalRef: d.external_ref ?? null,
+    externalSentAt: d.external_sent_at ? new Date(d.external_sent_at) : null,
+    externalExpectedAt: d.external_expected_at ? new Date(d.external_expected_at) : null,
+    externalReturnedAt: d.external_returned_at ? new Date(d.external_returned_at) : null,
+    equipment: d.equipment
+      ? {
+          id: d.equipment.id,
+          code: d.equipment.code,
+          name: d.equipment.name,
+          type: d.equipment.type,
+          serialNumber: d.equipment.serial_number,
+          location: d.equipment.location,
+          status: d.equipment.status,
+          notes: d.equipment.notes,
+          department: d.equipment.department ?? null,
+          warrantyExpiry: d.equipment.warranty_expiry ? new Date(d.equipment.warranty_expiry) : null,
+          serviceProvider: d.equipment.service_provider ?? null,
+          serviceProviderPhone: d.equipment.service_provider_phone ?? null,
+          externallyMaintained: !!d.equipment.externally_maintained,
+        }
+      : null,
+  }
+}
+
 export async function getOpenDamages() {
   await requireAuth()
 
@@ -329,62 +416,7 @@ export async function getOpenDamages() {
 
   if (error) throw error
 
-  return (data ?? []).map((d: any) => ({
-    id: d.id,
-    equipmentId: d.equipment_id,
-    equipmentCode: d.equipment_code,
-    equipmentName: d.equipment_name,
-    reportedByCardId: d.reported_by_card_id,
-    reportedByName: d.reported_by_name,
-    employeeId: d.employee_id,
-    severity: d.severity,
-    description: d.description,
-    status: d.status,
-    resolution: d.resolution,
-    resolvedAt: d.resolved_at ? new Date(d.resolved_at) : null,
-    createdAt: new Date(d.created_at),
-    updatedAt: new Date(d.updated_at),
-    category: d.category ?? null,
-    acknowledgedAt: d.acknowledged_at ? new Date(d.acknowledged_at) : null,
-    acknowledgedBy: d.acknowledged_by ?? null,
-    repairedByCardId: d.repaired_by_card_id ?? null,
-    repairedByName: d.repaired_by_name ?? null,
-    repairedAt: d.repaired_at ? new Date(d.repaired_at) : null,
-    approvedByCardId: d.approved_by_card_id ?? null,
-    approvedByName: d.approved_by_name ?? null,
-    approvedAt: d.approved_at ? new Date(d.approved_at) : null,
-    restrictionCode: d.restriction_code ?? null,
-    restrictionLabel: d.restriction_label ?? null,
-    sourceItem: d.source_item ?? null,
-    partsJson: d.parts_json ? (typeof d.parts_json === 'string' ? d.parts_json : JSON.stringify(d.parts_json)) : null,
-    workHours: d.work_hours != null ? Number(d.work_hours) : null,
-    workCost: d.work_cost != null ? Number(d.work_cost) : null,
-    workerNames: d.worker_names ?? null,
-    workshopArrivedAt: d.workshop_arrived_at ? new Date(d.workshop_arrived_at) : null,
-    workshopArrivedBy: d.workshop_arrived_by ?? null,
-    chiefName: d.chief_name ?? null,
-    chiefInspectedAt: d.chief_inspected_at ? new Date(d.chief_inspected_at) : null,
-    chiefResult: d.chief_result ?? null,
-    chiefNote: d.chief_note ?? null,
-    handoverTo: d.handover_to ?? null,
-    handoverAt: d.handover_at ? new Date(d.handover_at) : null,
-    lastStatusText: d.last_status_text ?? null,
-    lastStatusAt: d.last_status_at ? new Date(d.last_status_at) : null,
-    lastStatusBy: d.last_status_by ?? null,
-    equipment: d.equipment
-      ? {
-          id: d.equipment.id,
-          code: d.equipment.code,
-          name: d.equipment.name,
-          type: d.equipment.type,
-          serialNumber: d.equipment.serial_number,
-          location: d.equipment.location,
-          status: d.equipment.status,
-          notes: d.equipment.notes,
-          department: d.equipment.department ?? null,
-        }
-      : null,
-  }))
+  return (data ?? []).map(mapDamageRow)
 }
 
 export async function getAllDamages() {
@@ -405,62 +437,7 @@ export async function getAllDamages() {
 
   if (error) throw error
 
-  return (data ?? []).map((d: any) => ({
-    id: d.id,
-    equipmentId: d.equipment_id,
-    equipmentCode: d.equipment_code,
-    equipmentName: d.equipment_name,
-    reportedByCardId: d.reported_by_card_id,
-    reportedByName: d.reported_by_name,
-    employeeId: d.employee_id,
-    severity: d.severity,
-    description: d.description,
-    status: d.status,
-    resolution: d.resolution,
-    resolvedAt: d.resolved_at ? new Date(d.resolved_at) : null,
-    createdAt: new Date(d.created_at),
-    updatedAt: new Date(d.updated_at),
-    category: d.category ?? null,
-    acknowledgedAt: d.acknowledged_at ? new Date(d.acknowledged_at) : null,
-    acknowledgedBy: d.acknowledged_by ?? null,
-    repairedByCardId: d.repaired_by_card_id ?? null,
-    repairedByName: d.repaired_by_name ?? null,
-    repairedAt: d.repaired_at ? new Date(d.repaired_at) : null,
-    approvedByCardId: d.approved_by_card_id ?? null,
-    approvedByName: d.approved_by_name ?? null,
-    approvedAt: d.approved_at ? new Date(d.approved_at) : null,
-    restrictionCode: d.restriction_code ?? null,
-    restrictionLabel: d.restriction_label ?? null,
-    sourceItem: d.source_item ?? null,
-    partsJson: d.parts_json ? (typeof d.parts_json === 'string' ? d.parts_json : JSON.stringify(d.parts_json)) : null,
-    workHours: d.work_hours != null ? Number(d.work_hours) : null,
-    workCost: d.work_cost != null ? Number(d.work_cost) : null,
-    workerNames: d.worker_names ?? null,
-    workshopArrivedAt: d.workshop_arrived_at ? new Date(d.workshop_arrived_at) : null,
-    workshopArrivedBy: d.workshop_arrived_by ?? null,
-    chiefName: d.chief_name ?? null,
-    chiefInspectedAt: d.chief_inspected_at ? new Date(d.chief_inspected_at) : null,
-    chiefResult: d.chief_result ?? null,
-    chiefNote: d.chief_note ?? null,
-    handoverTo: d.handover_to ?? null,
-    handoverAt: d.handover_at ? new Date(d.handover_at) : null,
-    lastStatusText: d.last_status_text ?? null,
-    lastStatusAt: d.last_status_at ? new Date(d.last_status_at) : null,
-    lastStatusBy: d.last_status_by ?? null,
-    equipment: d.equipment
-      ? {
-          id: d.equipment.id,
-          code: d.equipment.code,
-          name: d.equipment.name,
-          type: d.equipment.type,
-          serialNumber: d.equipment.serial_number,
-          location: d.equipment.location,
-          status: d.equipment.status,
-          notes: d.equipment.notes,
-          department: d.equipment.department ?? null,
-        }
-      : null,
-  }))
+  return (data ?? []).map(mapDamageRow)
 }
 
 // =====================================================
@@ -1346,11 +1323,16 @@ export async function approveRepair(params: {
   /** Šef službe koji je pregledao vozilo i datum/vrijeme njegovog pregleda (ISO). Upisuje radionica ili admin. */
   chiefName: string
   inspectedAt?: string
+  /** Probni rad / funkcionalni test nakon popravke je urađen i zadovoljava (obavezno prije puštanja u rad). */
+  testDone: boolean
+  testNote?: string
 }): Promise<{ ok: boolean; error?: string; crsNumber?: string }> {
   const user = await requireRole(['engineer', 'admin'])
   const now = new Date()
   const chiefName = (params.chiefName ?? '').trim().slice(0, 120)
   if (chiefName.length < 3) return { ok: false, error: 'Upišite ime i prezime šefa službe koji je pregledao vozilo' }
+  if (params.testDone !== true) return { ok: false, error: 'Potvrdite da je probni rad / funkcionalni test nakon popravke urađen i da zadovoljava' }
+  const testNote = (params.testNote ?? '').trim().replace(/\s+/g, ' ').slice(0, 300) || null
   const inspectedAt = params.inspectedAt ? new Date(params.inspectedAt) : now
   if (!Number.isFinite(inspectedAt.getTime()) || inspectedAt.getTime() > now.getTime() + 10 * 60_000) return { ok: false, error: 'Datum i vrijeme pregleda nisu ispravni (ne mogu biti u budućnosti)' }
 
@@ -1388,6 +1370,10 @@ export async function approveRepair(params: {
         chiefName,
         chiefInspectedAt: inspectedAt,
         chiefResult: 'OK',
+        testDone: true,
+        testNote,
+        testAt: inspectedAt,
+        testBy: chiefName,
       },
     })
     await db.equipment.update({
@@ -1420,10 +1406,10 @@ export async function approveRepair(params: {
       p_approved_by_name: user.full_name,
     })
     if (error) return { ok: false, error: error.message }
-    await supabase.from('damage_reports').update({ chief_name: chiefName, chief_inspected_at: inspectedAt.toISOString(), chief_result: 'OK' }).eq('id', params.damageId)
+    await supabase.from('damage_reports').update({ chief_name: chiefName, chief_inspected_at: inspectedAt.toISOString(), chief_result: 'OK', test_done: true, test_note: testNote, test_at: inspectedAt.toISOString(), test_by: chiefName }).eq('id', params.damageId)
   }
 
-  await logRepairEvent({ damageId: params.damageId, kind: 'CHIEF_OK', text: `Pregled šefa službe: ${chiefName} — OK`, byName: user.full_name, byCardId: user.card_id })
+  await logRepairEvent({ damageId: params.damageId, kind: 'CHIEF_OK', text: `Pregled šefa službe: ${chiefName} — OK. Probni rad / funkcionalni test: zadovoljava${testNote ? ` (${testNote})` : ''}`, byName: user.full_name, byCardId: user.card_id })
 
   // Zapis u evidenciju održavanja (Part-145) - samo ako imamo sredstvo
   if (equipmentId) {

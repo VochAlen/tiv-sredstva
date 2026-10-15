@@ -52,6 +52,7 @@ import { toast } from 'sonner'
 import { HelpButton } from '@/components/ui/help-button'
 import { RestrictionBadges, toRestrictions } from '@/components/restriction-badges'
 import { recordFitnessDeclaration } from '@/lib/actions-safety-reports'
+import { recordMeterReading } from '@/lib/actions-meter'
 
 type Step = 'scan' | 'identify' | 'inspect' | 'success' | 'blocked'
 
@@ -68,6 +69,8 @@ interface EquipmentInfo {
   activeRestrictions?: string | null
   /** false = dnevni pregled danas nije urađen: sredstvo se ne može zadužiti, može se samo prijaviti kvar */
   inspectedToday?: boolean
+  /** brojila za servisni plan: trenutno stanje i šta se prati */
+  meter?: { km: number; hours: number; trackKm: boolean; trackHours: boolean }
 }
 
 // Normalizuje ono što je skenirano u kod opreme
@@ -120,6 +123,8 @@ export function WorkerView({
   const [remembered, setRemembered] = useState<{ cardId: string; name: string } | null>(null)
   const [editingWorker, setEditingWorker] = useState(false)
   // Automatsko učitavanje imena i prezimena čim se unese broj ID kartice
+  const [meterKm, setMeterKm] = useState('')
+  const [meterHours, setMeterHours] = useState('')
   const [lookup, setLookup] = useState<'idle' | 'loading' | 'found' | 'notfound'>('idle')
 
   useEffect(() => {
@@ -178,6 +183,8 @@ export function WorkerView({
     setEmployeeName(remembered?.name ?? defaultEmployeeName)
     setEditingWorker(false)
     setMode('none')
+    setMeterKm('')
+    setMeterHours('')
     setBlockedMsg(null)
     setInspectionResult('OK')
     setNotes('')
@@ -212,7 +219,9 @@ export function WorkerView({
         notes: eq.notes,
         manualUrl: (eq as any).manualUrl ?? null,
         inspectedToday: (eq as any).inspectedToday !== false,
+        meter: (eq as any).meter ?? undefined,
       })
+      setMeterKm(''); setMeterHours('')
 
       // Ako je neispravno ili na održavanju - odmah blokiraj
       if (eq.status === 'OUT_OF_SERVICE' || eq.status === 'MAINTENANCE') {
@@ -396,6 +405,12 @@ export function WorkerView({
           if (res.ok) {
             setStep('success')
             toast.success('Uspješno razduženo!')
+            // Brojilo (opciono): greška ne poništava razduženje, samo se prikaže
+            if (meterKm.trim() || meterHours.trim()) {
+              const m = await recordMeterReading({ equipmentCode: equipment.code, employeeCardId: cardId.trim(), km: meterKm, hours: meterHours })
+              if (!m.ok) toast.warning(`Brojač nije upisan: ${m.error ?? 'greška'}`)
+              else if (m.updated) toast.success('Brojač upisan')
+            }
           } else {
             toast.error(res.error ?? 'Greška')
           }
@@ -717,6 +732,27 @@ export function WorkerView({
                   <div className="bg-muted/30 p-3 rounded-lg text-sm">
                     <p>Potvrđujete da razdužujete ovo sredstvo i da ste ga vratili u istom stanju (ili prijavljujete novo oštećenje).</p>
                   </div>
+
+                  {equipment.meter && (equipment.meter.trackKm || equipment.meter.trackHours) && (
+                    <div className="rounded-lg border bg-muted/20 p-2.5">
+                      <Label className="text-sm font-medium">Stanje brojila (nije obavezno)</Label>
+                      <p className="mb-2 text-xs text-muted-foreground">Služi za servisni plan. Upišite ono što pokazuje brojač sada.</p>
+                      <div className="grid grid-cols-2 gap-2">
+                        {equipment.meter.trackKm && (
+                          <div className="space-y-1">
+                            <Label htmlFor="meter-km" className="text-xs">Kilometri (km)</Label>
+                            <Input id="meter-km" inputMode="decimal" className="h-12 text-base" value={meterKm} onChange={(e) => setMeterKm(e.target.value)} placeholder={String(Math.round(equipment.meter.km))} />
+                          </div>
+                        )}
+                        {equipment.meter.trackHours && (
+                          <div className="space-y-1">
+                            <Label htmlFor="meter-h" className="text-xs">Radni sati (h)</Label>
+                            <Input id="meter-h" inputMode="decimal" className="h-12 text-base" value={meterHours} onChange={(e) => setMeterHours(e.target.value)} placeholder={String(Math.round(equipment.meter.hours))} />
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  )}
 
                   <Button
                     type="button"

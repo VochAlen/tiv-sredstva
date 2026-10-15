@@ -1,7 +1,7 @@
 'use client'
 
 import { useEffect, useState, useTransition } from 'react'
-import { Wrench, Plus, Loader2, Calendar, Award, FileText, Search, Download, AlertOctagon, User, Pencil, Trash2 } from 'lucide-react'
+import { Wrench, Repeat, BarChart3, Plus, Loader2, Calendar, Award, FileText, Search, Download, AlertOctagon, User, Pencil, Trash2 } from 'lucide-react'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
@@ -28,6 +28,9 @@ import {
 } from '@/lib/types-advanced'
 import { EQUIPMENT_TYPE_LABELS } from '@/lib/types'
 import { DamageRowCard } from '@/components/dashboard/damage-row-card'
+import { DowntimeView } from '@/components/dashboard/downtime-view'
+import { getRepeatDefects } from '@/lib/actions-workshop-extras'
+import { REPEAT_ADVICE, REPEAT_WINDOW_DAYS, type RepeatGroup } from '@/lib/repeat-defects'
 import { staleInfo } from '@/lib/workshop'
 import { PendingHandoverList } from '@/components/dashboard/workshop-actions'
 import { updateMaintenanceLog, updateQualification, deleteQualification, updateDamageReport } from '@/lib/actions-admin-edit'
@@ -41,23 +44,26 @@ type OpenDamage = Awaited<ReturnType<typeof getOpenDamages>>[number]
 
 export function MaintenanceView({ currentUser }: { currentUser: AppUser }) {
   const isAdmin = currentUser.role === 'admin'
-  const [tab, setTab] = useState<'faults' | 'logs' | 'qualifications'>('faults')
+  const [tab, setTab] = useState<'faults' | 'logs' | 'qualifications' | 'downtime'>('faults')
   const [damages, setDamages] = useState<OpenDamage[]>([])
   const [logs, setLogs] = useState<MaintenanceLog[]>([])
   const [qualifications, setQualifications] = useState<Qualification[]>([])
   const [inspectionAlerts, setInspectionAlerts] = useState<InspectionAlertLike[]>([])
+  const [repeats, setRepeats] = useState<RepeatGroup[]>([])
   const [loading, setLoading] = useState(true)
   const [isPending, startTransition] = useTransition()
 
   const load = async () => {
     setLoading(true)
     try {
-      const [d, l, q, ia] = await Promise.all([
+      const [d, l, q, ia, rp] = await Promise.all([
         getOpenDamages(),
         getMaintenanceLogs(),
         getQualifications(),
         getInspectionAlerts(),
+        getRepeatDefects().catch(() => [] as RepeatGroup[]),
       ])
+      setRepeats(rp)
       setDamages(d)
       setLogs(l)
       setQualifications(q)
@@ -123,6 +129,13 @@ export function MaintenanceView({ currentUser }: { currentUser: AppUser }) {
           Kvarovi ({damages.length})
         </button>
         <button
+          onClick={() => setTab('downtime')}
+          className={`px-4 py-2 text-sm font-medium border-b-2 transition ${tab === 'downtime' ? 'border-primary text-primary' : 'border-transparent text-muted-foreground hover:text-foreground'}`}
+        >
+          <BarChart3 className="h-4 w-4 inline mr-1.5" />
+          Zastoji
+        </button>
+        <button
           onClick={() => setTab('logs')}
           className={`px-4 py-2 text-sm font-medium border-b-2 transition ${tab === 'logs' ? 'border-primary text-primary' : 'border-transparent text-muted-foreground hover:text-foreground'}`}
         >
@@ -143,7 +156,12 @@ export function MaintenanceView({ currentUser }: { currentUser: AppUser }) {
           <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
         </div>
       ) : tab === 'faults' ? (
-        <OpenFaultsList damages={damages} onChanged={load} currentUser={currentUser} />
+        <>
+          <RepeatSummary groups={repeats} />
+          <OpenFaultsList damages={damages} onChanged={load} currentUser={currentUser} repeats={repeats} />
+        </>
+      ) : tab === 'downtime' ? (
+        <DowntimeView />
       ) : tab === 'logs' ? (
         <MaintenanceLogsList logs={logs} isAdmin={isAdmin} onChanged={load} />
       ) : (
@@ -159,7 +177,31 @@ const URGENCY_ORDER: Record<DamageUrgency, number> = { CRITICAL: 0, HIGH: 1, MED
 // (zaduživanje/razduživanje GSE) - automatski se pojavljuju ovdje, bez
 // dodatnog koraka, sortirane po hitnosti (najhitnije prvo), da
 // održavanje odmah vidi koje sredstvo i koji dio je u kvaru.
-function OpenFaultsList({ damages, onChanged, currentUser }: { damages: OpenDamage[]; onChanged: () => void; currentUser: AppUser }) {
+function RepeatSummary({ groups }: { groups: RepeatGroup[] }) {
+  if (groups.length === 0) return null
+  return (
+    <Card className="border-2 border-orange-400 bg-orange-50/60">
+      <CardHeader className="pb-2">
+        <CardTitle className="flex items-center gap-2 text-sm text-orange-950">
+          <Repeat className="h-4 w-4" />
+          Ponavljajući kvarovi — isti kvar 3+ puta u {REPEAT_WINDOW_DAYS} dana ({groups.length})
+        </CardTitle>
+      </CardHeader>
+      <CardContent className="space-y-1.5 pt-0 text-sm">
+        {groups.map((g) => (
+          <div key={g.kind + g.equipmentId + g.key} className="flex flex-wrap items-center gap-x-2 rounded-md bg-white px-2 py-1.5">
+            <span className="font-mono font-semibold">{g.equipmentCode}</span>
+            <span className="min-w-0 flex-1">{g.label} — <strong>{g.count}×</strong>{g.hasOpen ? ' (ima otvorenih)' : ''}</span>
+            <span className="text-xs text-muted-foreground">{new Date(g.firstAt).toLocaleDateString('hr-HR')} – {new Date(g.lastAt).toLocaleDateString('hr-HR')}</span>
+          </div>
+        ))}
+        <p className="text-xs text-orange-950">{REPEAT_ADVICE}</p>
+      </CardContent>
+    </Card>
+  )
+}
+
+function OpenFaultsList({ damages, onChanged, currentUser, repeats }: { damages: OpenDamage[]; onChanged: () => void; currentUser: AppUser; repeats: RepeatGroup[] }) {
   const isAdmin = currentUser.role === 'admin'
   const [editing, setEditing] = useState<OpenDamage | null>(null)
 
@@ -220,7 +262,7 @@ function OpenFaultsList({ damages, onChanged, currentUser }: { damages: OpenDama
                     </Button>
                   )}
                 </div>
-                <DamageRowCard damage={d as any} onResolved={onChanged} currentUser={currentUser} />
+                <DamageRowCard damage={d as any} onResolved={onChanged} currentUser={currentUser} repeats={repeats} />
               </div>
             )
           })}

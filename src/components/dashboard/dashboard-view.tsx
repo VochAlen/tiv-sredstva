@@ -49,8 +49,7 @@ import {
   AlertTriangle,
   Bird,
   ListChecks,
-  Bell,
-} from 'lucide-react'
+  Bell, FileStack } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
@@ -652,9 +651,14 @@ export function DashboardView({ currentUser }: { currentUser: AppUser }) {
                         </TableCell>
                         <TableCell className="text-right">
                           <div className="flex justify-end gap-1">
-                            <Button variant="ghost" size="sm" title="Karton sredstva (PDF)" aria-label={`Karton ${e.code}`} onClick={() => window.open(`/api/reports/gse-equipment-card?code=${encodeURIComponent(e.code)}`, '_blank')}>
+                            <Button variant="ghost" size="sm" title="Karton ispravnosti (PDF, zadnjih 30 dana)" aria-label={`Karton ${e.code}`} onClick={() => window.open(`/api/reports/gse-equipment-card?code=${encodeURIComponent(e.code)}`, '_blank')}>
                               <FileText className="h-4 w-4" />
                             </Button>
+                            {(currentUser.role === 'admin' || currentUser.role === 'engineer') && (
+                              <Button variant="ghost" size="sm" title="Puni karton sredstva (PDF): kvarovi, popravke, servisi, pregledi" aria-label={`Puni karton ${e.code}`} onClick={() => window.open(`/api/reports/karton-sredstva?code=${encodeURIComponent(e.code)}`, '_blank')}>
+                                <FileStack className="h-4 w-4" />
+                              </Button>
+                            )}
                             {currentUser.role === 'admin' && (
                               <AccessControlDialog equipmentId={e.id} equipmentCode={e.code} equipmentName={e.name} />
                             )}
