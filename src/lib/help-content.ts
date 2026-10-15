@@ -43,15 +43,15 @@ export const HELP_CONTENT: Record<string, HelpTopic> = {
     ],
   },
   'worker.inspect': {
-    title: 'Dnevni pregled (checklist)',
-    summary: 'Prođite kroz listu provjera prije preuzimanja ili vraćanja sredstva.',
+    title: 'Pregled sredstva',
+    summary: 'Prije zaduživanja vizuelno pregledajte sredstvo.',
     steps: [
-      'Ako je sve u redu, najbrži način je dugme "Sve stavke ispravne" (ili "Sve OK — brzo razduženje" kod vraćanja) na vrhu liste - jedan klik za cijelu listu.',
-      'Ako nešto NIJE u redu, pritisnite tu stavku i obilježite je kao neispravnu, pa ukratko opišite kvar u polju ispod.',
-      'Stavke obilježene "blokira zaduživanje" moraju biti ispravne da bi se sredstvo moglo preuzeti.',
-      'Na kraju pritisnite veliko dugme na dnu ekrana da potvrdite.',
+      'Ako je sve u redu, pritisnite "Sredstvo sam vizuelno pregledao i utvrdio da je ispravno", pa "Zaduži sredstvo".',
+      'Ako uočite kvar ili oštećenje, pritisnite "Uočio sam kvar / oštećenje — prijavi odmah", izaberite težinu i dodajte sliku ili kratak opis.',
+      'Kod većeg ili kritičnog kvara sredstvo je "nije za upotrebu" i ne može se zadužiti.',
+      'Zaduživati se mogu samo sredstva kojima je danas urađen dnevni pregled. Ako nije, možete samo prijaviti kvar.',
     ],
-    tip: 'Za opis kvara ne morate pisati puno - dovoljno je par riječi, npr. "guma ispuhana" ili "ne radi svjetlo".',
+    tip: 'Za opis kvara dovoljno je par riječi ili slika, npr. "guma ispuhana" ili "ne radi svjetlo".',
   },
   'worker.success': {
     title: 'Gotovo',
@@ -62,7 +62,7 @@ export const HELP_CONTENT: Record<string, HelpTopic> = {
     ],
   },
   'worker.blocked': {
-    title: 'Sredstvo je blokirano',
+    title: 'Sredstvo nije za upotrebu',
     summary: 'Sredstvo se trenutno ne može preuzeti jer je prijavljen kvar ili nije ispravno.',
     steps: [
       'Pregledajte razlog blokade na ekranu.',

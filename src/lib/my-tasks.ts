@@ -3,12 +3,16 @@
 
 export type TaskRole = 'operator' | 'engineer' | 'admin'
 
+import { staleInfo } from '@/lib/workshop'
+
 export interface TaskDamage {
   id: string
   status: string
   severity?: string | null
   equipmentCode?: string | null
   acknowledgedAt?: Date | string | null
+  workshopArrivedAt?: Date | string | null
+  lastStatusAt?: Date | string | null
 }
 
 export interface TaskInspectionRow {
@@ -60,6 +64,21 @@ export function computeMyTasks(
         count: fresh.length,
         tab: 'damages',
         tone: fresh.some((d) => d.severity === 'CRITICAL') ? 'red' : 'amber',
+      })
+    }
+  }
+
+  // Sredstva u radionici bez promjene statusa 3+ dana - upozorenje, obavezan unos statusa
+  if (roleAtLeast(role, 'engineer')) {
+    const stale = damages.filter((d) => staleInfo(d).due)
+    if (stale.length > 0) {
+      tasks.unshift({
+        key: 'stale-workshop',
+        title: 'UPOZORENJE: sredstva predugo u radionici bez statusa',
+        detail: list(stale.map((d) => `${d.equipmentCode} (${staleInfo(d).days} d)`)),
+        count: stale.length,
+        tab: 'maintenance',
+        tone: 'red',
       })
     }
   }

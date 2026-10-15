@@ -8,7 +8,7 @@ import { parseRestrictions } from '@/lib/checklist-evaluation'
 import type { RestrictionFlag } from '@/lib/types'
 
 const SHORT: Record<string, { text: string; icon: 'sun' | 'rain' }> = {
-  DAYTIME_ONLY: { text: 'SAMO PO DANU', icon: 'sun' },
+  DAYTIME_ONLY: { text: 'NE U SMANJENOJ VIDLJIVOSTI', icon: 'sun' },
   FAIR_WEATHER_ONLY: { text: 'SAMO LIJEPO VRIJEME', icon: 'rain' },
 }
 

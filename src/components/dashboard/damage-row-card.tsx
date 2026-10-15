@@ -7,7 +7,7 @@
 // razdvojene kopije bi vremenom počele da se razilaze.
 
 import { useState, useTransition } from 'react'
-import { Wrench, ShieldCheck, User, Calendar, CheckCircle2, Loader2, FileDown, Image as ImageIcon, ClipboardList, Plus, Trash2 } from 'lucide-react'
+import { History, Truck, ClipboardEdit, UserCheck, Wrench, ShieldCheck, User, Calendar, CheckCircle2, Loader2, FileDown, Image as ImageIcon, ClipboardList, Plus, Trash2 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import {
@@ -19,7 +19,9 @@ import { Textarea } from '@/components/ui/textarea'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { toast } from 'sonner'
 import { CHECKLIST_CATEGORY_LABELS, CHECKLIST_CATEGORY_ORDER } from '@/lib/types'
-import { resolveDamageReport, acknowledgeDamage, markRepaired, approveRepair, getOpenDamages } from '@/lib/actions'
+import { resolveDamageReport, acknowledgeDamage, markRepaired, getOpenDamages } from '@/lib/actions'
+import { staleInfo, fmtDT } from '@/lib/workshop'
+import { WorkshopStepper, StaleBanner, ArrivedDialog, StatusDialog, ChiefDialog, WorkshopHistory } from '@/components/dashboard/workshop-actions'
 import { getPhotosForDamage } from '@/lib/actions-advanced'
 import { saveRepairWork } from '@/lib/actions-repair'
 import type { AppUser } from '@/lib/auth-server'
@@ -112,7 +114,7 @@ export function DamageRowCard({
   const handleAcknowledge = () => {
     startTransition(async () => {
       await acknowledgeDamage(damage.id)
-      toast.success('Prijava preuzeta u radionicu')
+      toast.success('Prijava preuzeta — upisano ko i kada')
       onResolved()
     })
   }
@@ -179,35 +181,19 @@ export function DamageRowCard({
   const canWork = currentUser.role !== 'operator' && damage.status !== 'RESOLVED'
   const partsText = savedParts.map((p) => `${p.name} ×${p.qty}`).join(', ')
 
-  const [approveOpen, setApproveOpen] = useState(false)
-  const [approveCost, setApproveCost] = useState('')
-  const [approveParts, setApproveParts] = useState('')
-  const [approveDuration, setApproveDuration] = useState('')
-
-  const handleApprove = (e: React.FormEvent) => {
-    e.preventDefault()
-    startTransition(async () => {
-      const res = await approveRepair({
-        damageId: damage.id,
-        cost: approveCost.trim() ? Number(approveCost) : undefined,
-        partsReplaced: approveParts.trim() || undefined,
-        durationHours: approveDuration.trim() ? Number(approveDuration) : undefined,
-      })
-      if (res.ok) {
-        toast.success(res.crsNumber ? `Popravka odobrena - izdat CRS ${res.crsNumber}` : 'Popravka odobrena - sredstvo vraćeno u upotrebu (čeka potvrdu prvog radnika)')
-        setApproveOpen(false)
-        onResolved()
-      } else {
-        toast.error(res.error ?? 'Greška')
-      }
-    })
-  }
+  // ---- Tok radionice: dolazak, status, pregled šefa ----
+  const [arrivedOpen, setArrivedOpen] = useState(false)
+  const [statusOpen, setStatusOpen] = useState(false)
+  const [histOpen, setHistOpen] = useState(false)
+  const [chiefOpen, setChiefOpen] = useState(false)
+  const stale = staleInfo(d)
+  const inRepairFlow = damage.status === 'IN_REPAIR' || damage.status === 'AWAITING_APPROVAL'
 
   const isNew = damage.status === 'OPEN' && !(damage as any).acknowledgedAt
 
   return (
     <div className={`p-3 rounded-lg border ${isNew ? 'border-red-400 bg-red-50 ring-2 ring-red-200' : damage.status === 'AWAITING_APPROVAL' ? 'border-purple-300 bg-purple-50/50' : damage.status === 'OPEN' ? 'border-red-200 bg-red-50/50' : damage.status === 'IN_REPAIR' ? 'border-amber-200 bg-amber-50/50' : 'border-emerald-200 bg-emerald-50/50'}`}>
-      <div className="flex items-start justify-between gap-2">
+      <div className="flex flex-col gap-3">
         <div className="flex-1 min-w-0">
           <div className="flex items-center gap-2 mb-1 flex-wrap">
             {isNew && (
@@ -232,6 +218,7 @@ export function DamageRowCard({
             )}
           </div>
           <div className="text-sm font-medium truncate">{damage.equipmentName}</div>
+          {!compact && <WorkshopStepper d={d} />}
           <div className="text-sm text-muted-foreground mt-1">{damage.description}</div>
           {photos === null ? (
             <button
@@ -259,6 +246,12 @@ export function DamageRowCard({
               {(damage as any).acknowledgedAt && (
                 <span className="flex items-center gap-1 text-amber-700"><Wrench className="h-3 w-3" />Preuzeo {(damage as any).acknowledgedBy} {new Date((damage as any).acknowledgedAt).toLocaleString('hr-HR')}</span>
               )}
+              {d.workshopArrivedAt && (
+                <span className="flex items-center gap-1 text-blue-700"><Truck className="h-3 w-3" />U radionici od {fmtDT(d.workshopArrivedAt)} (dovezao/la {d.workshopArrivedBy})</span>
+              )}
+              {d.chiefInspectedAt && (
+                <span className={`flex items-center gap-1 ${d.chiefResult === 'OK' ? 'text-emerald-700' : 'text-red-700'}`}><UserCheck className="h-3 w-3" />Pregled šefa {d.chiefName}: {d.chiefResult === 'OK' ? 'prošao' : 'NIJE prošao'} {fmtDT(d.chiefInspectedAt)}</span>
+              )}
               {(damage as any).repairedAt && (
                 <span className="flex items-center gap-1 text-purple-700"><Wrench className="h-3 w-3" />Popravio {(damage as any).repairedByName} {new Date((damage as any).repairedAt).toLocaleString('hr-HR')}</span>
               )}
@@ -270,6 +263,12 @@ export function DamageRowCard({
               )}
             </div>
           )}
+          {d.lastStatusText && inRepairFlow && (
+            <div className="mt-1.5 rounded border border-amber-300 bg-amber-50 p-1.5 text-xs">
+              <strong>Status:</strong> {d.lastStatusText} <span className="text-muted-foreground">({d.lastStatusBy}, {fmtDT(d.lastStatusAt)})</span>
+            </div>
+          )}
+          {stale.due && inRepairFlow && <StaleBanner days={stale.days} onAct={() => setStatusOpen(true)} />}
           {damage.resolution && (
             <div className="text-xs text-emerald-700 mt-1.5 p-1.5 bg-emerald-50 rounded">
               <strong>Šta je urađeno:</strong> {damage.resolution}
@@ -286,81 +285,35 @@ export function DamageRowCard({
             </div>
           )}
         </div>
-        <div className="flex flex-col gap-1">
-          <Button
-            size="sm"
-            variant="outline"
-            className="h-7 text-xs"
-            onClick={() => window.open(`/api/reports/prijava-kvara?id=${damage.id}`, '_blank')}
-          >
-            <FileDown className="h-3.5 w-3.5 mr-1" />
-            Prijava kvara PDF
-          </Button>
+        <div className="flex flex-col gap-2">
+          {/* SLJEDEĆI KORAK - uvijek samo jedno veliko dugme */}
           {isNew && (
-            <Button size="sm" className="h-8 text-xs bg-red-600 hover:bg-red-700" disabled={isPending} onClick={handleAcknowledge}>
-              <Wrench className="h-3.5 w-3.5 mr-1" />
-              Preuzmi u radionicu
+            <Button size="lg" className="w-full h-16 text-lg font-bold bg-red-600 hover:bg-red-700 text-white animate-pulse" disabled={isPending} onClick={handleAcknowledge}>
+              <Wrench className="h-5 w-5 mr-2" />
+              PREUZMI PRIJAVU
             </Button>
           )}
-
-          {canWork && (
-            <Dialog open={workOpen} onOpenChange={openWork}>
-              <DialogTrigger asChild>
-                <Button size="sm" variant="outline" className="h-8 text-xs">
-                  <ClipboardList className="h-3.5 w-3.5 mr-1" />
-                  Radni nalog
-                </Button>
-              </DialogTrigger>
-              <DialogContent className="max-h-[90vh] overflow-y-auto">
-                <DialogHeader>
-                  <DialogTitle>Radni nalog — {damage.equipmentCode}</DialogTitle>
-                  <DialogDescription>
-                    Upišite šta je urađeno, koji dijelovi i u kojoj količini, ko je radio. Snimanjem se ne mijenja status prijave.
-                  </DialogDescription>
-                </DialogHeader>
-                <form onSubmit={handleSaveWork} className="space-y-3">
-                  <div className="space-y-1.5">
-                    <Label>Opis popravke</Label>
-                    <Textarea rows={3} value={workNotes} onChange={(e) => setWorkNotes(e.target.value)} placeholder="npr. Zamijenjena sijalica prednjeg lijevog farova, testirano" />
-                  </div>
-                  <div className="space-y-1.5">
-                    <Label>Rezervni dijelovi</Label>
-                    {workParts.map((p, i) => (
-                      <div key={i} className="flex gap-1.5">
-                        <Input className="flex-1" placeholder="Naziv dijela" value={p.name} onChange={(e) => setWorkParts((ps) => ps.map((x, j) => j === i ? { ...x, name: e.target.value } : x))} />
-                        <Input className="w-20" inputMode="decimal" placeholder="Kol." value={p.qty} onChange={(e) => setWorkParts((ps) => ps.map((x, j) => j === i ? { ...x, qty: e.target.value } : x))} />
-                        <Button type="button" variant="ghost" size="icon" aria-label="Ukloni dio" onClick={() => setWorkParts((ps) => ps.filter((_, j) => j !== i))}><Trash2 className="h-4 w-4" /></Button>
-                      </div>
-                    ))}
-                    <Button type="button" variant="outline" size="sm" onClick={() => setWorkParts((ps) => [...ps, { name: '', qty: '1' }])}><Plus className="h-4 w-4 mr-1" />Dodaj dio</Button>
-                  </div>
-                  <div className="space-y-1.5">
-                    <Label>Ko je radio popravku</Label>
-                    <Input value={workWorkers} onChange={(e) => setWorkWorkers(e.target.value)} placeholder="ime i prezime (više osoba odvojite zarezom)" />
-                  </div>
-                  <div className="grid grid-cols-2 gap-2">
-                    <div className="space-y-1.5"><Label>Utrošeno sati</Label><Input inputMode="decimal" value={workHours} onChange={(e) => setWorkHours(e.target.value)} /></div>
-                    <div className="space-y-1.5"><Label>Trošak (€)</Label><Input inputMode="decimal" value={workCost} onChange={(e) => setWorkCost(e.target.value)} /></div>
-                  </div>
-                  <DialogFooter>
-                    <Button type="button" variant="outline" onClick={() => setWorkOpen(false)}>Odustani</Button>
-                    <Button type="submit" disabled={isPending}>
-                      {isPending && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}
-                      Snimi radni nalog
-                    </Button>
-                  </DialogFooter>
-                </form>
-              </DialogContent>
-            </Dialog>
+          {/* Korak 2: sredstvo doveženo u radionicu (ko + kada) */}
+          {damage.status === 'IN_REPAIR' && !d.workshopArrivedAt && (
+            <Button size="lg" className="w-full h-16 text-lg font-bold bg-blue-600 hover:bg-blue-700 text-white" onClick={() => setArrivedOpen(true)}>
+              <Truck className="h-5 w-5 mr-2" />
+              Sredstvo doveženo u radionicu
+            </Button>
           )}
-
+          {/* Korak 4: pregled šefa službe (upisuje radionica ili admin: ime šefa + vrijeme pregleda) */}
+          {damage.status === 'AWAITING_APPROVAL' && (
+            <Button size="lg" className="w-full h-16 text-lg font-bold bg-purple-600 hover:bg-purple-700 text-white" onClick={() => setChiefOpen(true)}>
+              <UserCheck className="h-5 w-5 mr-2" />
+              Pregled šefa službe
+            </Button>
+          )}
           {/* Korak 1: mehaničar (engineer/admin) označava da je popravka gotova */}
           {damage.status === 'IN_REPAIR' && (
             <Dialog open={repairOpen} onOpenChange={(o) => { setRepairOpen(o); if (o && !repairNotes && damage.resolution) setRepairNotes(damage.resolution) }}>
               <DialogTrigger asChild>
-                <Button size="sm" className="h-9 text-xs bg-amber-600 hover:bg-amber-700">
-                  <CheckCircle2 className="h-3.5 w-3.5 mr-1" />
-                  Označi kao popravljeno
+                <Button size="lg" className={d.workshopArrivedAt ? 'w-full h-16 text-lg font-bold bg-amber-600 hover:bg-amber-700 text-white' : 'h-10 text-sm'} variant={d.workshopArrivedAt ? 'default' : 'outline'}>
+                  <CheckCircle2 className="h-5 w-5 mr-2" />
+                  {d.workshopArrivedAt ? 'POPRAVKA ZAVRŠENA' : 'Popravljeno na licu mjesta'}
                 </Button>
               </DialogTrigger>
               <DialogContent>
@@ -414,56 +367,85 @@ export function DamageRowCard({
             </Dialog>
           )}
 
-          {/* Korak 2: šef službe (samo admin) pregleda i odobrava */}
-          {damage.status === 'AWAITING_APPROVAL' && currentUser.role === 'admin' && (
-            <Dialog open={approveOpen} onOpenChange={(o) => { setApproveOpen(o); if (o) { setApproveCost(d.workCost != null ? String(d.workCost) : ''); setApproveDuration(d.workHours != null ? String(d.workHours) : ''); setApproveParts(partsText) } }}>
+          <div className="flex flex-wrap gap-2">
+          {/* Status popravke - kad je upozorenje aktivno, dugme je crveno i obavezno */}
+          {inRepairFlow && (
+            <Button size="sm" variant={stale.due ? 'default' : 'outline'} className={`h-10 text-sm ${stale.due ? 'bg-red-600 hover:bg-red-700 text-white animate-pulse' : ''}`} onClick={() => setStatusOpen(true)}>
+              <ClipboardEdit className="h-3.5 w-3.5 mr-1" />
+              {stale.due ? 'Upiši status (obavezno)' : 'Upiši status'}
+            </Button>
+          )}
+
+          <Button size="sm" variant={histOpen ? 'default' : 'outline'} className="h-10 text-sm" onClick={() => setHistOpen((v) => !v)}>
+            <History className="h-3.5 w-3.5 mr-1" />
+            Istorija popravke
+          </Button>
+          {canWork && (
+            <Dialog open={workOpen} onOpenChange={openWork}>
               <DialogTrigger asChild>
-                <Button size="sm" className="h-9 text-xs bg-purple-600 hover:bg-purple-700">
-                  <ShieldCheck className="h-3.5 w-3.5 mr-1" />
-                  Odobri popravku
+                <Button size="sm" variant="outline" className="h-8 text-xs">
+                  <ClipboardList className="h-3.5 w-3.5 mr-1" />
+                  Radni nalog
                 </Button>
               </DialogTrigger>
-              <DialogContent>
+              <DialogContent className="max-h-[90vh] overflow-y-auto">
                 <DialogHeader>
-                  <DialogTitle>Odobri popravku</DialogTitle>
+                  <DialogTitle>Radni nalog — {damage.equipmentCode}</DialogTitle>
                   <DialogDescription>
-                    Popunjeno iz radnog naloga radionice (možete ispraviti). Upisuje se u servisni nalog (MaintenanceLog), zajedno sa imenom ko je radio i ko je odobrio.
-                    {(damage.severity === 'MAJOR' || damage.severity === 'CRITICAL') && ' Za ovu težinu kvara automatski se izdaje i Certificate of Release (EASA Part-145.A.50).'}
+                    Upišite šta je urađeno, koji dijelovi i u kojoj količini, ko je radio. Snimanjem se ne mijenja status prijave.
                   </DialogDescription>
                 </DialogHeader>
-                <form onSubmit={handleApprove} className="space-y-3">
-                  <div className="grid grid-cols-2 gap-2">
-                    <div className="space-y-1.5">
-                      <Label>Trošak (€)</Label>
-                      <Input type="number" inputMode="decimal" value={approveCost} onChange={(e) => setApproveCost(e.target.value)} placeholder="opciono" />
-                    </div>
-                    <div className="space-y-1.5">
-                      <Label>Trajanje (h)</Label>
-                      <Input type="number" inputMode="decimal" value={approveDuration} onChange={(e) => setApproveDuration(e.target.value)} placeholder="opciono" />
-                    </div>
+                <form onSubmit={handleSaveWork} className="space-y-3">
+                  <div className="space-y-1.5">
+                    <Label>Opis popravke</Label>
+                    <Textarea rows={3} value={workNotes} onChange={(e) => setWorkNotes(e.target.value)} placeholder="npr. Zamijenjena sijalica prednjeg lijevog farova, testirano" />
                   </div>
                   <div className="space-y-1.5">
-                    <Label>Zamijenjeni djelovi</Label>
-                    <Input value={approveParts} onChange={(e) => setApproveParts(e.target.value)} placeholder="opciono, npr. kabl napajanja 3x2.5mm" />
+                    <Label>Rezervni dijelovi</Label>
+                    {workParts.map((p, i) => (
+                      <div key={i} className="flex gap-1.5">
+                        <Input className="flex-1" placeholder="Naziv dijela" value={p.name} onChange={(e) => setWorkParts((ps) => ps.map((x, j) => j === i ? { ...x, name: e.target.value } : x))} />
+                        <Input className="w-20" inputMode="decimal" placeholder="Kol." value={p.qty} onChange={(e) => setWorkParts((ps) => ps.map((x, j) => j === i ? { ...x, qty: e.target.value } : x))} />
+                        <Button type="button" variant="ghost" size="icon" aria-label="Ukloni dio" onClick={() => setWorkParts((ps) => ps.filter((_, j) => j !== i))}><Trash2 className="h-4 w-4" /></Button>
+                      </div>
+                    ))}
+                    <Button type="button" variant="outline" size="sm" onClick={() => setWorkParts((ps) => [...ps, { name: '', qty: '1' }])}><Plus className="h-4 w-4 mr-1" />Dodaj dio</Button>
+                  </div>
+                  <div className="space-y-1.5">
+                    <Label>Ko je radio popravku</Label>
+                    <Input value={workWorkers} onChange={(e) => setWorkWorkers(e.target.value)} placeholder="ime i prezime (više osoba odvojite zarezom)" />
+                  </div>
+                  <div className="grid grid-cols-2 gap-2">
+                    <div className="space-y-1.5"><Label>Utrošeno sati</Label><Input inputMode="decimal" value={workHours} onChange={(e) => setWorkHours(e.target.value)} /></div>
+                    <div className="space-y-1.5"><Label>Trošak (€)</Label><Input inputMode="decimal" value={workCost} onChange={(e) => setWorkCost(e.target.value)} /></div>
                   </div>
                   <DialogFooter>
-                    <Button type="button" variant="outline" onClick={() => setApproveOpen(false)}>Odustani</Button>
+                    <Button type="button" variant="outline" onClick={() => setWorkOpen(false)}>Odustani</Button>
                     <Button type="submit" disabled={isPending}>
                       {isPending && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}
-                      Odobri
+                      Snimi radni nalog
                     </Button>
                   </DialogFooter>
                 </form>
               </DialogContent>
             </Dialog>
           )}
-          {damage.status === 'AWAITING_APPROVAL' && currentUser.role !== 'admin' && (
-            <div className="text-xs text-purple-700 flex items-center gap-1 max-w-[140px] text-right">
-              <ShieldCheck className="h-3.5 w-3.5 flex-shrink-0" />
-              Čeka odobrenje šefa
-            </div>
-          )}
 
+          <Button
+            size="sm"
+            variant="outline"
+            className="h-10 text-sm"
+            onClick={() => window.open(`/api/reports/prijava-kvara?id=${damage.id}`, '_blank')}
+          >
+            <FileDown className="h-3.5 w-3.5 mr-1" />
+            Prijava PDF
+          </Button>
+          {currentUser.role !== 'operator' && damage.status !== 'RESOLVED' && (
+            <Button size="sm" variant="outline" className="h-10 text-sm border-red-400 text-red-700" onClick={() => window.open(`/api/reports/placard-neispravno?id=${damage.id}`, '_blank')}>
+              <FileDown className="h-3.5 w-3.5 mr-1" />
+              Plakat NEISPRAVNO
+            </Button>
+          )}
           {/* Napredna ručna izmjena - samo admin, kao izlaz u nuždi */}
           {currentUser.role === 'admin' && damage.status !== 'RESOLVED' && damage.status !== 'AWAITING_APPROVAL' && (
             <Dialog open={open} onOpenChange={setOpen}>
@@ -504,6 +486,15 @@ export function DamageRowCard({
               </DialogContent>
             </Dialog>
           )}
+          </div>
+          {histOpen && <WorkshopHistory damageId={damage.id} />}
+          <ChiefDialog
+            damage={{ id: damage.id, equipmentCode: damage.equipmentCode, department: d.equipment?.department ?? null, workCost: d.workCost, workHours: d.workHours, partsText, severity: damage.severity }}
+            open={chiefOpen} onOpenChange={setChiefOpen} onDone={onResolved}
+          />
+          <ArrivedDialog damageId={damage.id} code={damage.equipmentCode} open={arrivedOpen} onOpenChange={setArrivedOpen} onDone={onResolved} />
+          <StatusDialog damageId={damage.id} code={damage.equipmentCode} staleDays={stale.due ? stale.days : null} open={statusOpen} onOpenChange={setStatusOpen} onDone={onResolved} />
+
         </div>
       </div>
     </div>

@@ -5,6 +5,8 @@
 // Sve mutacije provjeravaju auth i role
 
 import { db } from '@/lib/db'
+import { wasInspectedToday, NOT_INSPECTED_MSG } from '@/lib/inspection-gate'
+import { logRepairEvent } from '@/lib/workshop-log'
 import { revalidatePath } from 'next/cache'
 import { notifyExternalFault } from '@/lib/service-notify'
 import { after } from 'next/server'
@@ -123,7 +125,7 @@ export async function getEquipmentByCode(code: string) {
   // ali će akcije koje slijede provjeravati auth
 
   if (isDemoMode()) {
-    return db.equipment.findUnique({
+    const e = await db.equipment.findUnique({
       where: { code },
       include: {
         assignments: {
@@ -136,6 +138,7 @@ export async function getEquipmentByCode(code: string) {
         },
       },
     })
+    return e ? { ...e, inspectedToday: await wasInspectedToday(e.id) } : null
   }
 
   const supabase = await createSupabaseClient()
@@ -164,7 +167,10 @@ export async function getEquipmentByCode(code: string) {
       .limit(5),
   ])
 
+  const inspectedToday = await wasInspectedToday(eq.id)
+
   return {
+    inspectedToday,
     id: eq.id,
     code: eq.code,
     name: eq.name,
@@ -354,6 +360,17 @@ export async function getOpenDamages() {
     workHours: d.work_hours != null ? Number(d.work_hours) : null,
     workCost: d.work_cost != null ? Number(d.work_cost) : null,
     workerNames: d.worker_names ?? null,
+    workshopArrivedAt: d.workshop_arrived_at ? new Date(d.workshop_arrived_at) : null,
+    workshopArrivedBy: d.workshop_arrived_by ?? null,
+    chiefName: d.chief_name ?? null,
+    chiefInspectedAt: d.chief_inspected_at ? new Date(d.chief_inspected_at) : null,
+    chiefResult: d.chief_result ?? null,
+    chiefNote: d.chief_note ?? null,
+    handoverTo: d.handover_to ?? null,
+    handoverAt: d.handover_at ? new Date(d.handover_at) : null,
+    lastStatusText: d.last_status_text ?? null,
+    lastStatusAt: d.last_status_at ? new Date(d.last_status_at) : null,
+    lastStatusBy: d.last_status_by ?? null,
     equipment: d.equipment
       ? {
           id: d.equipment.id,
@@ -364,6 +381,7 @@ export async function getOpenDamages() {
           location: d.equipment.location,
           status: d.equipment.status,
           notes: d.equipment.notes,
+          department: d.equipment.department ?? null,
         }
       : null,
   }))
@@ -418,6 +436,17 @@ export async function getAllDamages() {
     workHours: d.work_hours != null ? Number(d.work_hours) : null,
     workCost: d.work_cost != null ? Number(d.work_cost) : null,
     workerNames: d.worker_names ?? null,
+    workshopArrivedAt: d.workshop_arrived_at ? new Date(d.workshop_arrived_at) : null,
+    workshopArrivedBy: d.workshop_arrived_by ?? null,
+    chiefName: d.chief_name ?? null,
+    chiefInspectedAt: d.chief_inspected_at ? new Date(d.chief_inspected_at) : null,
+    chiefResult: d.chief_result ?? null,
+    chiefNote: d.chief_note ?? null,
+    handoverTo: d.handover_to ?? null,
+    handoverAt: d.handover_at ? new Date(d.handover_at) : null,
+    lastStatusText: d.last_status_text ?? null,
+    lastStatusAt: d.last_status_at ? new Date(d.last_status_at) : null,
+    lastStatusBy: d.last_status_by ?? null,
     equipment: d.equipment
       ? {
           id: d.equipment.id,
@@ -428,6 +457,7 @@ export async function getAllDamages() {
           location: d.equipment.location,
           status: d.equipment.status,
           notes: d.equipment.notes,
+          department: d.equipment.department ?? null,
         }
       : null,
   }))
@@ -530,6 +560,14 @@ export async function checkOutEquipment(params: {
     damageCategory,
     damagePhotos,
   } = params
+
+  // Samo pregledano sredstvo (dnevni pregled danas urađen) smije se zadužiti - važi i za Demo i za Supabase
+  const gateEquipmentId = isDemoMode()
+    ? (await db.equipment.findUnique({ where: { code: equipmentCode }, select: { id: true } }))?.id ?? null
+    : await getEquipmentIdByCode(equipmentCode)
+  if (gateEquipmentId && !(await wasInspectedToday(gateEquipmentId))) {
+    return { ok: false, error: NOT_INSPECTED_MSG, notInspected: true, damageReportId: null as string | null, assignmentId: undefined as string | undefined }
+  }
 
   if (isDemoMode()) {
     return checkOutPrisma(params)
@@ -637,6 +675,60 @@ async function createFreeFormDamage(p: {
     console.error('createFreeFormDamage failed:', e)
     return null
   }
+}
+
+// Prijava kvara bez zaduživanja (javna akcija, radnik se identifikuje ID karticom). Koristi se kad radnik na
+// sredstvu uoči kvar, a sredstvo nije pregledano ili ga ne želi preuzeti. Veći/kritičan kvar stavlja sredstvo van upotrebe.
+export async function reportEquipmentFault(p: {
+  equipmentCode: string
+  employeeCardId: string
+  employeeName: string
+  severity: 'MINOR' | 'MAJOR' | 'CRITICAL'
+  description: string
+  category?: string
+  photos?: string[]
+}): Promise<{ ok: boolean; error?: string; damageReportId?: string | null }> {
+  const card = (p.employeeCardId ?? '').trim().toUpperCase()
+  let name = (p.employeeName ?? '').trim().slice(0, 120)
+  const description = (p.description ?? '').trim().slice(0, 1000)
+  if (!card || !name) return { ok: false, error: 'Unesite broj ID kartice i ime' }
+  if (!description) return { ok: false, error: 'Dodajte sliku, izaberite kategoriju ili upišite kratak opis kvara' }
+  const severity = p.severity === 'CRITICAL' || p.severity === 'MAJOR' ? p.severity : 'MINOR'
+  const blocking = severity !== 'MINOR'
+  const UNKNOWN_CARD = 'ID kartica nije pronađena u evidenciji aktivnih radnika. Provjerite broj kartice ili se obratite administratoru.'
+
+  if (isDemoMode()) {
+    // Prijavu može poslati samo aktivan radnik iz evidencije; ime se uzima iz evidencije, ne od klijenta
+    const emp = await db.employee.findUnique({ where: { cardId: card } })
+    if (!emp || !emp.active) return { ok: false, error: UNKNOWN_CARD }
+    name = emp.name
+    const eq = await db.equipment.findUnique({ where: { code: p.equipmentCode } })
+    if (!eq) return { ok: false, error: 'Sredstvo nije pronađeno' }
+    const dr = await db.damageReport.create({
+      data: { equipmentId: eq.id, equipmentCode: eq.code, equipmentName: eq.name, reportedByCardId: card, reportedByName: name, severity, description, status: 'OPEN' },
+    })
+    await saveDamageExtras(dr.id, eq.id, p.category, p.photos, card, name, { code: eq.code, severity, description })
+    if (blocking && eq.status !== 'ASSIGNED') {
+      await db.equipment.update({ where: { id: eq.id }, data: { status: 'OUT_OF_SERVICE', notes: `Kvar prijavljen ${new Date().toISOString().slice(0, 10)} od ${name}: ${description.slice(0, 100)}` } })
+    }
+    revalidatePath('/')
+    return { ok: true, damageReportId: dr.id }
+  }
+
+  if (!hasServiceClient()) return { ok: false, error: 'Prijava kvara trenutno nije dostupna (server nije podešen). Obavijestite administratora.' }
+  const sb = createServiceClient()
+  const { data: emp } = await sb.from('employees').select('name, active').eq('card_id', card).maybeSingle()
+  if (!emp || emp.active === false) return { ok: false, error: UNKNOWN_CARD }
+  name = emp.name || name
+  const { data: eq } = await sb.from('equipment').select('id, code, status').eq('code', p.equipmentCode).maybeSingle()
+  if (!eq) return { ok: false, error: 'Sredstvo nije pronađeno' }
+  const id = await createFreeFormDamage({ equipmentCode: eq.code, employeeCardId: card, employeeName: name, severity, description, category: p.category, photos: p.photos })
+  if (!id) return { ok: false, error: 'Prijava kvara nije upisana. Pokušajte ponovo ili obavijestite održavanje.' }
+  if (blocking && eq.status !== 'ASSIGNED') {
+    await sb.from('equipment').update({ status: 'OUT_OF_SERVICE', notes: `Kvar prijavljen ${new Date().toISOString().slice(0, 10)} od ${name}: ${description.slice(0, 100)}` }).eq('id', eq.id)
+  }
+  revalidatePath('/')
+  return { ok: true, damageReportId: id }
 }
 
 // Prisma fallback za Demo Mode
@@ -1156,6 +1248,7 @@ export async function acknowledgeDamage(damageId: string) {
         acknowledgedBy: user.full_name,
       },
     })
+    await logRepairEvent({ damageId, kind: 'TAKEN', text: 'Prijava preuzeta', byName: user.full_name, byCardId: user.card_id })
     revalidatePath('/')
     return { ok: true }
   }
@@ -1170,6 +1263,7 @@ export async function acknowledgeDamage(damageId: string) {
     })
     .eq('id', damageId)
   if (error) throw error
+  await logRepairEvent({ damageId, kind: 'TAKEN', text: 'Prijava preuzeta', byName: user.full_name, byCardId: user.card_id })
   revalidatePath('/')
   return { ok: true }
 }
@@ -1249,9 +1343,16 @@ export async function approveRepair(params: {
   cost?: number
   partsReplaced?: string
   durationHours?: number
+  /** Šef službe koji je pregledao vozilo i datum/vrijeme njegovog pregleda (ISO). Upisuje radionica ili admin. */
+  chiefName: string
+  inspectedAt?: string
 }): Promise<{ ok: boolean; error?: string; crsNumber?: string }> {
-  const user = await requireRole(['admin'])
+  const user = await requireRole(['engineer', 'admin'])
   const now = new Date()
+  const chiefName = (params.chiefName ?? '').trim().slice(0, 120)
+  if (chiefName.length < 3) return { ok: false, error: 'Upišite ime i prezime šefa službe koji je pregledao vozilo' }
+  const inspectedAt = params.inspectedAt ? new Date(params.inspectedAt) : now
+  if (!Number.isFinite(inspectedAt.getTime()) || inspectedAt.getTime() > now.getTime() + 10 * 60_000) return { ok: false, error: 'Datum i vrijeme pregleda nisu ispravni (ne mogu biti u budućnosti)' }
 
   let equipmentId: string | null = null
   let resolution = ''
@@ -1284,6 +1385,9 @@ export async function approveRepair(params: {
         approvedByName: user.full_name,
         approvedAt: now,
         resolvedAt: now,
+        chiefName,
+        chiefInspectedAt: inspectedAt,
+        chiefResult: 'OK',
       },
     })
     await db.equipment.update({
@@ -1316,7 +1420,10 @@ export async function approveRepair(params: {
       p_approved_by_name: user.full_name,
     })
     if (error) return { ok: false, error: error.message }
+    await supabase.from('damage_reports').update({ chief_name: chiefName, chief_inspected_at: inspectedAt.toISOString(), chief_result: 'OK' }).eq('id', params.damageId)
   }
+
+  await logRepairEvent({ damageId: params.damageId, kind: 'CHIEF_OK', text: `Pregled šefa službe: ${chiefName} — OK`, byName: user.full_name, byCardId: user.card_id })
 
   // Zapis u evidenciju održavanja (Part-145) - samo ako imamo sredstvo
   if (equipmentId) {

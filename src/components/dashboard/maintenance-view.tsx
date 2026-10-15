@@ -28,6 +28,8 @@ import {
 } from '@/lib/types-advanced'
 import { EQUIPMENT_TYPE_LABELS } from '@/lib/types'
 import { DamageRowCard } from '@/components/dashboard/damage-row-card'
+import { staleInfo } from '@/lib/workshop'
+import { PendingHandoverList } from '@/components/dashboard/workshop-actions'
 import { updateMaintenanceLog, updateQualification, deleteQualification, updateDamageReport } from '@/lib/actions-admin-edit'
 import type { AppUser } from '@/lib/auth-server'
 import { CHECKLIST_CATEGORY_ORDER, CHECKLIST_CATEGORY_LABELS } from '@/lib/types'
@@ -77,10 +79,10 @@ export function MaintenanceView({ currentUser }: { currentUser: AppUser }) {
         <div>
           <h2 className="text-lg font-semibold flex items-center gap-2">
             <Wrench className="h-5 w-5" />
-            Održavanje i kvalifikacije
+            Radionica
           </h2>
           <p className="text-sm text-muted-foreground">
-            EASA Part-145 compliance · IATA AHM 1110 operator qualifications
+            Kvarovi, popravke i povratak sredstava u rad
           </p>
         </div>
         <div className="flex gap-2">
@@ -118,14 +120,14 @@ export function MaintenanceView({ currentUser }: { currentUser: AppUser }) {
           className={`px-4 py-2 text-sm font-medium border-b-2 transition ${tab === 'faults' ? 'border-primary text-primary' : 'border-transparent text-muted-foreground hover:text-foreground'}`}
         >
           <AlertOctagon className="h-4 w-4 inline mr-1.5" />
-          Prijave kvarova ({damages.length})
+          Kvarovi ({damages.length})
         </button>
         <button
           onClick={() => setTab('logs')}
           className={`px-4 py-2 text-sm font-medium border-b-2 transition ${tab === 'logs' ? 'border-primary text-primary' : 'border-transparent text-muted-foreground hover:text-foreground'}`}
         >
           <Wrench className="h-4 w-4 inline mr-1.5" />
-          Maintenance Log ({logs.length})
+          Evidencija održavanja ({logs.length})
         </button>
         <button
           onClick={() => setTab('qualifications')}
@@ -170,33 +172,60 @@ function OpenFaultsList({ damages, onChanged, currentUser }: { damages: OpenDama
 
   if (sorted.length === 0) {
     return (
-      <Card>
-        <CardContent className="py-10 text-center text-sm text-muted-foreground">
-          Sva sredstva su ispravna — nema otvorenih prijava kvarova.
-        </CardContent>
-      </Card>
+      <div className="space-y-2">
+        <PendingHandoverList onChanged={onChanged} />
+        <Card>
+          <CardContent className="py-10 text-center text-sm text-muted-foreground">
+            Sva sredstva su ispravna — nema otvorenih prijava kvarova.
+          </CardContent>
+        </Card>
+      </div>
     )
   }
+
+  // Grupe po tome ŠTA treba uraditi (najhitnije prvo): upozorenje > čeka preuzimanje > u popravci > čeka pregled šefa
+  const groups = (() => {
+    const def = [
+      { key: 'stale', title: 'UPOZORENJE — bez statusa 3+ dana, upišite status', cls: 'bg-red-600 text-white', pick: (d: OpenDamage) => staleInfo(d as any).due },
+      { key: 'new', title: 'Čeka preuzimanje — pritisnite PREUZMI PRIJAVU', cls: 'bg-red-100 text-red-900', pick: (d: OpenDamage) => d.status === 'OPEN' },
+      { key: 'repair', title: 'U popravci', cls: 'bg-amber-100 text-amber-900', pick: (d: OpenDamage) => d.status === 'IN_REPAIR' },
+      { key: 'chief', title: 'Popravljeno — čeka pregled šefa službe', cls: 'bg-purple-100 text-purple-900', pick: (d: OpenDamage) => d.status === 'AWAITING_APPROVAL' },
+    ]
+    const left = new Set(sorted.map((d) => d.id))
+    return def.map((g) => {
+      const items = sorted.filter((d) => left.has(d.id) && g.pick(d))
+      items.forEach((d) => left.delete(d.id))
+      return { ...g, items }
+    }).filter((g) => g.items.length > 0)
+  })()
 
   // Ista kartica kao u "Neispravna sredstva": preuzmi → označi popravljeno → odobri (admin može i direktno riješiti)
   return (
     <div className="space-y-2">
-      {sorted.map((d) => {
-        const urgency = getDamageUrgency({ severity: d.severity, equipmentStatus: d.equipment?.status, status: d.status, createdAt: d.createdAt })
-        return (
-          <div key={d.id} className="space-y-1">
-            <div className="flex items-center gap-2 flex-wrap">
-              <Badge className={`text-xs font-semibold ${URGENCY_COLORS[urgency]}`}>Hitnost: {URGENCY_LABELS[urgency]}</Badge>
-              {isAdmin && (
-                <Button size="sm" variant="outline" className="h-7 ml-auto" onClick={() => setEditing(d)}>
-                  <Pencil className="h-3.5 w-3.5 mr-1" />Uredi prijavu
-                </Button>
-              )}
-            </div>
-            <DamageRowCard damage={d as any} onResolved={onChanged} currentUser={currentUser} />
-          </div>
-        )
-      })}
+      <PendingHandoverList onChanged={onChanged} />
+      {groups.map((g) => (
+        <section key={g.key} className="space-y-2">
+          <h3 className={`flex items-center gap-2 rounded-md px-3 py-2 text-sm font-bold ${g.cls}`}>
+            {g.title} <span className="rounded-full bg-white/70 px-2 text-xs">{g.items.length}</span>
+          </h3>
+          {g.items.map((d) => {
+            const urgency = getDamageUrgency({ severity: d.severity, equipmentStatus: d.equipment?.status, status: d.status, createdAt: d.createdAt })
+            return (
+              <div key={d.id} className="space-y-1">
+                <div className="flex items-center gap-2 flex-wrap">
+                  <Badge className={`text-xs font-semibold ${URGENCY_COLORS[urgency]}`}>Hitnost: {URGENCY_LABELS[urgency]}</Badge>
+                  {isAdmin && (
+                    <Button size="sm" variant="outline" className="h-7 ml-auto" onClick={() => setEditing(d)}>
+                      <Pencil className="h-3.5 w-3.5 mr-1" />Uredi prijavu
+                    </Button>
+                  )}
+                </div>
+                <DamageRowCard damage={d as any} onResolved={onChanged} currentUser={currentUser} />
+              </div>
+            )
+          })}
+        </section>
+      ))}
       {editing && <EditDamageDialog damage={editing} onClose={() => setEditing(null)} onSaved={() => { setEditing(null); onChanged() }} />}
     </div>
   )

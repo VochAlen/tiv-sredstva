@@ -1,6 +1,7 @@
 'use client'
 
 import { useState, useTransition, useEffect } from 'react'
+import { identifyWorkerByCardId } from '@/lib/worker-auth'
 import { DamageQuickFields, fallbackDamageDescription } from './damage-quick-fields'
 import {
   ArrowLeft,
@@ -32,8 +33,6 @@ import { Badge } from '@/components/ui/badge'
 import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group'
 import { Separator } from '@/components/ui/separator'
 import {
-  DEFAULT_CHECKLIST,
-  getChecklistForType,
   EQUIPMENT_TYPE_LABELS,
   STATUS_LABELS,
   STATUS_COLORS,
@@ -45,6 +44,7 @@ import {
   checkOutEquipment,
   checkInEquipment,
   getEquipmentByCode,
+  reportEquipmentFault,
 } from '@/lib/actions'
 import { getManualsForEquipment } from '@/lib/actions-manuals'
 import { type EquipmentManualData, MANUAL_TYPE_LABELS } from '@/lib/constants-export'
@@ -66,6 +66,8 @@ interface EquipmentInfo {
   notes: string | null
   manualUrl?: string | null
   activeRestrictions?: string | null
+  /** false = dnevni pregled danas nije urađen: sredstvo se ne može zadužiti, može se samo prijaviti kvar */
+  inspectedToday?: boolean
 }
 
 // Normalizuje ono što je skenirano u kod opreme
@@ -95,7 +97,9 @@ export function WorkerView({
   const [equipment, setEquipment] = useState<EquipmentInfo | null>(null)
   const [cardId, setCardId] = useState(defaultEmployeeCardId)
   const [employeeName, setEmployeeName] = useState(defaultEmployeeName)
-  const [checklist, setChecklist] = useState<ChecklistItem[]>(DEFAULT_CHECKLIST.map((i) => ({ ...i })))
+  // Zaduživanje: radnik samo potvrđuje vizuelni pregled ('ok') ili odmah prijavljuje kvar ('fault')
+  const [mode, setMode] = useState<'none' | 'ok' | 'fault'>('none')
+  const [blockedMsg, setBlockedMsg] = useState<string | null>(null)
   const [inspectionResult, setInspectionResult] = useState<InspectionResult>('OK')
   const [notes, setNotes] = useState('')
   const [damageDescription, setDamageDescription] = useState('')
@@ -115,6 +119,25 @@ export function WorkerView({
   // Radnik zapamćen za smjenu (samo ovaj tab/uređaj, sessionStorage, ~10h)
   const [remembered, setRemembered] = useState<{ cardId: string; name: string } | null>(null)
   const [editingWorker, setEditingWorker] = useState(false)
+  // Automatsko učitavanje imena i prezimena čim se unese broj ID kartice
+  const [lookup, setLookup] = useState<'idle' | 'loading' | 'found' | 'notfound'>('idle')
+
+  useEffect(() => {
+    const id = cardId.trim()
+    if (remembered && !editingWorker) return
+    if (id.length < 3) { setLookup('idle'); return }
+    let alive = true
+    setLookup('loading')
+    const timer = setTimeout(async () => {
+      try {
+        const r = await identifyWorkerByCardId(id)
+        if (!alive) return
+        if (r.ok && r.worker) { setEmployeeName(r.worker.name); setLookup('found') }
+        else setLookup('notfound')
+      } catch { if (alive) setLookup('notfound') }
+    }, 350)
+    return () => { alive = false; clearTimeout(timer) }
+  }, [cardId, remembered, editingWorker])
 
   useEffect(() => {
     try {
@@ -154,7 +177,8 @@ export function WorkerView({
     setCardId(remembered?.cardId ?? defaultEmployeeCardId)
     setEmployeeName(remembered?.name ?? defaultEmployeeName)
     setEditingWorker(false)
-    setChecklist(DEFAULT_CHECKLIST.map((i) => ({ ...i })))
+    setMode('none')
+    setBlockedMsg(null)
     setInspectionResult('OK')
     setNotes('')
     setDamageDescription('')
@@ -187,10 +211,8 @@ export function WorkerView({
         status: eq.status,
         notes: eq.notes,
         manualUrl: (eq as any).manualUrl ?? null,
+        inspectedToday: (eq as any).inspectedToday !== false,
       })
-
-      // Čeklista zavisi od tipa sredstva (identična papirnom obrascu)
-      setChecklist(getChecklistForType(eq.type))
 
       // Ako je neispravno ili na održavanju - odmah blokiraj
       if (eq.status === 'OUT_OF_SERVICE' || eq.status === 'MAINTENANCE') {
@@ -247,24 +269,40 @@ export function WorkerView({
     setStep('inspect')
   }
 
+  // Sredstvo bez današnjeg dnevnog pregleda: nema zaduživanja, samo prijava kvara
+  const faultOnly = actionType === 'CHECK_OUT' && equipment?.inspectedToday === false
+  const effectiveMode: 'none' | 'ok' | 'fault' = faultOnly ? 'fault' : mode
+  const checkoutSeverity: 'MINOR' | 'MAJOR' | 'CRITICAL' =
+    inspectionResult === 'OUT_OF_SERVICE' ? 'CRITICAL' : inspectionResult === 'MAJOR_DAMAGE' ? 'MAJOR' : 'MINOR'
+  const chooseResult = (r: InspectionResult) => {
+    setInspectionResult(r)
+    setDamageSeverity(r === 'OUT_OF_SERVICE' ? 'CRITICAL' : r === 'MAJOR_DAMAGE' ? 'MAJOR' : 'MINOR')
+  }
+  const chooseMode = (m: 'ok' | 'fault') => {
+    setMode(m)
+    if (m === 'ok') { setInspectionResult('OK'); setDamageSeverity('MINOR') } else chooseResult(inspectionResult === 'OK' ? 'MINOR_DAMAGE' : inspectionResult)
+  }
+  // Jedna stavka umjesto duge liste: potvrda vizuelnog pregleda ili uočeni kvar (veći kvar blokira sredstvo)
+  const buildChecklist = (): ChecklistItem[] =>
+    effectiveMode === 'fault'
+      ? [{
+          id: 'visual-fault', label: 'Kvar/oštećenje uočeno pri zaduživanju', passed: false,
+          ...(checkoutSeverity !== 'MINOR' ? { severity: 'BLOCKING' as const } : {}),
+          category: (damageCategory || 'OPSTE') as ChecklistItem['category'],
+        }]
+      : [{ id: 'visual-ok', label: 'Sredstvo vizuelno pregledano - ispravno', passed: true }]
+
   // Submit inspekcijske forme
   const handleInspectSubmit = (e: React.FormEvent) => {
     e.preventDefault()
     if (!equipment) return
 
-    // Ako je CHECK_OUT i rezultat je OK - obavezno sve iz checkliste prošlo
     if (actionType === 'CHECK_OUT') {
-      const unanswered = checklist.filter((i) => i.passed === null)
-      if (unanswered.length > 0) {
-        toast.error(`Morate odgovoriti na sva pitanja u checklisti (${unanswered.length} preostalo)`)
+      if (effectiveMode === 'none') {
+        toast.error('Potvrdite da ste sredstvo vizuelno pregledali ili prijavite kvar')
         return
       }
-      const failedItems = checklist.filter((i) => i.passed === false)
-      if (failedItems.length > 0 && inspectionResult === 'OK') {
-        toast.error(`Označili ste ${failedItems.length} neispravnih stavki, ali ste rezultat označili kao "Ispravno". Ispravite.`)
-        return
-      }
-      if (inspectionResult !== 'OK' && !damageDescription.trim() && !damageCategory && damagePhotos.length === 0) {
+      if (effectiveMode === 'fault' && !damageDescription.trim() && !damageCategory && damagePhotos.length === 0) {
         toast.error('Dodajte sliku, izaberite kategoriju ili upišite kratak opis kvara')
         return
       }
@@ -278,7 +316,7 @@ export function WorkerView({
   const submitInspect = (overrides?: { damageDescription?: string; firstUseConfirmed?: boolean }) => {
     if (!equipment) return
     // Radnik ne mora ukucati ništa ako je dao sliku ili kategoriju (foto-prvo prijava)
-    const damageActive = actionType === 'CHECK_OUT' ? inspectionResult !== 'OK' : reportDamageIn
+    const damageActive = actionType === 'CHECK_OUT' ? effectiveMode === 'fault' : reportDamageIn
     const quick = overrides?.damageDescription !== undefined // brza dugmad: bez prijave kvara
     const typedDamage = overrides?.damageDescription ?? damageDescription
     const effectiveDamageDescription =
@@ -291,16 +329,35 @@ export function WorkerView({
 
     startTransition(async () => {
       try {
+        if (actionType === 'CHECK_OUT' && faultOnly) {
+          const r = await reportEquipmentFault({
+            equipmentCode: equipment.code,
+            employeeCardId: cardId.trim(),
+            employeeName: employeeName.trim(),
+            severity: checkoutSeverity,
+            description: effectiveDamageDescription.trim(),
+            category: damageCategory || undefined,
+            photos: damagePhotos.length ? damagePhotos : undefined,
+          })
+          if (r.ok) {
+            setBlockedMsg(checkoutSeverity === 'MINOR'
+              ? 'Kvar je prijavljen i proslijeđen održavanju. Sredstvo danas nije pregledano, pa se ne može zadužiti dok se ne uradi dnevni pregled.'
+              : 'Kvar je prijavljen i proslijeđen održavanju. Sredstvo je prebačeno u status "Neispravno" i ne može se zadužiti.')
+            setStep('blocked')
+            toast.success('Kvar prijavljen')
+          } else toast.error(r.error ?? 'Greška')
+          return
+        }
         if (actionType === 'CHECK_OUT') {
           const res = await checkOutEquipment({
             equipmentCode: equipment.code,
             employeeCardId: cardId.trim(),
             employeeName: employeeName.trim(),
-            checklist,
-            inspectionResult,
+            checklist: buildChecklist(),
+            inspectionResult: effectiveMode === 'fault' ? inspectionResult : 'OK',
             inspectionNotes: notes.trim() || undefined,
-            damageDescription: inspectionResult !== 'OK' ? effectiveDamageDescription.trim() : undefined,
-            damageSeverity,
+            damageDescription: effectiveMode === 'fault' ? effectiveDamageDescription.trim() : undefined,
+            damageSeverity: checkoutSeverity,
             ...extras,
             firstUseConfirmed: overrides?.firstUseConfirmed,
           })
@@ -315,7 +372,7 @@ export function WorkerView({
           if (res.ok) {
             // Zaduženo; ako je uz to prijavljeno oštećenje koje ne blokira, radionica je obaviještena
             setStep('success')
-            if (res.damageReportId && inspectionResult !== 'OK') {
+            if (res.damageReportId && effectiveMode === 'fault') {
               toast.warning('Zaduženo. Prijava oštećenja je zabilježena i proslijeđena radionici.')
             } else {
               toast.success('Uspješno zaduženo!')
@@ -349,18 +406,6 @@ export function WorkerView({
     })
   }
 
-  // Update checklist item
-  const updateChecklistItem = (id: string, value: boolean) => {
-    setChecklist((prev) => prev.map((i) => (i.id === id ? { ...i, passed: value } : i)))
-  }
-
-  // Brzo zaduživanje - jednim klikom oznaci sve stavke kao ispravne
-  // (radnik ipak može kliknuti na pojedinačnu stavku ako primijeti kvar)
-  const markAllPassed = () => {
-    setChecklist((prev) => prev.map((i) => ({ ...i, passed: true })))
-    setInspectionResult('OK')
-  }
-
   // Brzo razduživanje - jednim klikom potvrdi "sve OK, nema novog
   // oštećenja" i odmah pošalji (isti obrazac kao markAllPassed za
   // zaduživanje, za CHECK_IN tok).
@@ -368,29 +413,6 @@ export function WorkerView({
     setDamageDescription('')
     submitInspect({ damageDescription: '' })
   }
-
-  // Auto-set inspection result na osnovu checkliste
-  useEffect(() => {
-    if (actionType !== 'CHECK_OUT') return
-    const allAnswered = checklist.every((i) => i.passed !== null)
-    if (!allAnswered) return
-    const failed = checklist.filter((i) => i.passed === false).length
-    if (failed === 0) setInspectionResult('OK')
-    else if (failed <= 2) setInspectionResult((prev) => (prev === 'OK' ? 'MINOR_DAMAGE' : prev))
-    else setInspectionResult((prev) => (prev === 'OK' ? 'MAJOR_DAMAGE' : prev))
-  }, [checklist, actionType])
-
-  // Automatski upiši naziv neispravne stavke u opis oštećenja, da
-  // održavanje odmah vidi koji dio sredstva je u kvaru - radnik ne
-  // mora ponovo kucati ono što je već oznacio u checklisti (ali može
-  // dopisati detalje).
-  useEffect(() => {
-    if (actionType !== 'CHECK_OUT') return
-    const failedLabels = checklist.filter((i) => i.passed === false).map((i) => i.label)
-    if (failedLabels.length === 0) return
-    const autoText = `Neispravno: ${failedLabels.join('; ')}`
-    setDamageDescription((prev) => (prev.trim() === '' || prev.startsWith('Neispravno: ') ? autoText : prev))
-  }, [checklist, actionType])
 
   return (
     <div className="max-w-md mx-auto pb-24">
@@ -437,7 +459,7 @@ export function WorkerView({
               <ol className="list-decimal list-inside space-y-0.5">
                 <li>Skeniraj QR kod na vozilu/opremi</li>
                 <li>Unesi broj ID kartice i ime</li>
-                <li>Pregledaj i potvrdi checklistu</li>
+                <li>Vizuelno pregledaj sredstvo i potvrdi (ili prijavi kvar)</li>
                 <li>Prijava završena — sredstvo je zaduženo</li>
               </ol>
             </CardContent>
@@ -464,6 +486,12 @@ export function WorkerView({
       {step === 'identify' && equipment && !lookupLoading && (
         <form onSubmit={handleIdentifySubmit} className="space-y-4">
           <EquipmentCard equipment={equipment} actionType={actionType} />
+
+          {actionType === 'CHECK_OUT' && equipment.inspectedToday === false && (
+            <div role="alert" className="rounded-lg border-2 border-red-500 bg-red-50 p-3 text-sm text-red-900">
+              <strong>Sredstvo danas nije pregledano.</strong> Zaduživanje nije moguće dok se ne uradi dnevni pregled. Možete samo prijaviti kvar.
+            </div>
+          )}
 
           {/* Uputstvo za upotrebu (EASA Part-145 §65) */}
           {manuals.length > 0 && (
@@ -533,9 +561,13 @@ export function WorkerView({
                   id="empName"
                   value={employeeName}
                   onChange={(e) => setEmployeeName(e.target.value)}
-                  placeholder="npr. Vukan Vojvodić"
+                  placeholder={lookup === 'loading' ? 'Učitavam…' : 'npr. Vukan Vojvodić'}
+                  readOnly={lookup === 'found'}
+                  className={lookup === 'found' ? 'bg-green-50 border-green-300 font-medium' : undefined}
                   required
                 />
+                {lookup === 'found' && <p className="text-xs text-green-700">Radnik pronađen u evidenciji.</p>}
+                {lookup === 'notfound' && <p className="text-xs text-amber-700">ID kartica nije pronađena u evidenciji. Unesite ime ručno ili provjerite broj.</p>}
               </div>
                 </>
               )}
@@ -569,104 +601,70 @@ export function WorkerView({
 
           {actionType === 'CHECK_OUT' ? (
             <>
-              <Card>
-                <CardHeader>
-                  <CardTitle className="text-base flex items-center gap-2">
-                    <ClipboardList className="h-4 w-4" />
-                    Pre-use inspection checklista
-                  </CardTitle>
-                  <p className="text-xs text-muted-foreground">
-                    Označite svaku stavku kao ispravnu ili neispravnu
-                  </p>
-                </CardHeader>
-                <CardContent className="space-y-3">
-                  <Button
-                    type="button"
-                    variant="outline"
-                    className="w-full border-emerald-300 text-emerald-700 hover:bg-emerald-50"
-                    onClick={markAllPassed}
-                  >
-                    <CheckCircle2 className="h-4 w-4 mr-2" />
-                    Sve stavke ispravne (brzo zaduživanje)
-                  </Button>
-                  <Separator />
-                  {checklist.map((item, idx) => {
-                    const prevGroup = idx > 0 ? checklist[idx - 1].group : undefined
-                    const showGroupHeader = item.group !== undefined && item.group !== prevGroup
-                    return (
-                      <div key={item.id} className="space-y-1.5">
-                        {showGroupHeader && (
-                          <div className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground pt-1">
-                            Grupa {item.group}
-                          </div>
-                        )}
-                        <div className="text-sm font-medium flex items-center gap-1.5">
-                          {idx + 1}. {item.label}
-                          {item.blocking && (
-                            <Badge variant="outline" className="text-[10px] border-red-300 text-red-700">
-                              blokira zaduživanje
-                            </Badge>
-                          )}
-                        </div>
-                        <div className="flex gap-2">
-                          <Button
-                            type="button"
-                            size="sm"
-                            variant={item.passed === true ? 'default' : 'outline'}
-                            className={item.passed === true ? 'bg-emerald-600 hover:bg-emerald-700' : ''}
-                            onClick={() => updateChecklistItem(item.id, true)}
-                          >
-                            <CheckCircle2 className="h-4 w-4 mr-1" />
-                            Ispravno
-                          </Button>
-                          <Button
-                            type="button"
-                            size="sm"
-                            variant={item.passed === false ? 'default' : 'outline'}
-                            className={item.passed === false ? 'bg-red-600 hover:bg-red-700' : ''}
-                            onClick={() => updateChecklistItem(item.id, false)}
-                          >
-                            <XCircle className="h-4 w-4 mr-1" />
-                            Neispravno
-                          </Button>
-                        </div>
-                        {idx < checklist.length - 1 && <Separator className="mt-3" />}
-                      </div>
-                    )
-                  })}
-                </CardContent>
-              </Card>
+              {faultOnly && (
+                <div role="alert" className="rounded-lg border-2 border-red-500 bg-red-50 p-3 text-sm text-red-900">
+                  <strong>Sredstvo danas nije pregledano</strong> (nema dnevnog pregleda), pa se ne može zadužiti.
+                  Ako ste uočili kvar ili oštećenje, prijavite ga ispod.
+                </div>
+              )}
 
-              <Card>
-                <CardHeader>
-                  <CardTitle className="text-base">Rezultat pregleda</CardTitle>
-                </CardHeader>
-                <CardContent className="space-y-3">
-                  <RadioGroup
-                    value={inspectionResult}
-                    onValueChange={(v) => setInspectionResult(v as InspectionResult)}
-                    className="grid grid-cols-2 gap-2"
-                  >
-                    <label className={`flex items-center gap-2 p-3 rounded-lg border-2 cursor-pointer transition ${inspectionResult === 'OK' ? 'border-emerald-500 bg-emerald-50' : 'border-border'}`}>
-                      <RadioGroupItem value="OK" />
-                      <span className="text-sm font-medium">Ispravno</span>
-                    </label>
-                    <label className={`flex items-center gap-2 p-3 rounded-lg border-2 cursor-pointer transition ${inspectionResult === 'MINOR_DAMAGE' ? 'border-amber-500 bg-amber-50' : 'border-border'}`}>
-                      <RadioGroupItem value="MINOR_DAMAGE" />
-                      <span className="text-sm font-medium">Manje oštećenje</span>
-                    </label>
-                    <label className={`flex items-center gap-2 p-3 rounded-lg border-2 cursor-pointer transition ${inspectionResult === 'MAJOR_DAMAGE' ? 'border-orange-500 bg-orange-50' : 'border-border'}`}>
-                      <RadioGroupItem value="MAJOR_DAMAGE" />
-                      <span className="text-sm font-medium">Veće oštećenje</span>
-                    </label>
-                    <label className={`flex items-center gap-2 p-3 rounded-lg border-2 cursor-pointer transition ${inspectionResult === 'OUT_OF_SERVICE' ? 'border-red-500 bg-red-50' : 'border-border'}`}>
-                      <RadioGroupItem value="OUT_OF_SERVICE" />
-                      <span className="text-sm font-medium">Neispravno</span>
-                    </label>
-                  </RadioGroup>
+              {!faultOnly && (
+                <Card>
+                  <CardHeader>
+                    <CardTitle className="text-base flex items-center gap-2">
+                      <ClipboardList className="h-4 w-4" />
+                      Pregled sredstva prije zaduživanja
+                    </CardTitle>
+                  </CardHeader>
+                  <CardContent className="space-y-2">
+                    <Button
+                      type="button"
+                      size="lg"
+                      variant={mode === 'ok' ? 'default' : 'outline'}
+                      className={`h-auto w-full whitespace-normal py-4 text-left text-base ${mode === 'ok' ? 'bg-emerald-600 hover:bg-emerald-700 text-white' : 'border-emerald-400 text-emerald-800 hover:bg-emerald-50'}`}
+                      onClick={() => chooseMode('ok')}
+                    >
+                      <CheckCircle2 className="h-5 w-5 mr-2 shrink-0" />
+                      Sredstvo sam vizuelno pregledao i utvrdio da je ispravno
+                    </Button>
+                    <Button
+                      type="button"
+                      size="lg"
+                      variant={mode === 'fault' ? 'default' : 'outline'}
+                      className={`h-auto w-full whitespace-normal py-3 text-left ${mode === 'fault' ? 'bg-red-600 hover:bg-red-700 text-white' : 'border-red-300 text-red-700 hover:bg-red-50'}`}
+                      onClick={() => chooseMode('fault')}
+                    >
+                      <AlertTriangle className="h-5 w-5 mr-2 shrink-0" />
+                      Uočio sam kvar / oštećenje — prijavi odmah
+                    </Button>
+                  </CardContent>
+                </Card>
+              )}
 
-                  {inspectionResult !== 'OK' && (
-                    <div className="space-y-3 mt-3 p-3 bg-destructive/5 border border-destructive/20 rounded-lg">
+              {effectiveMode === 'fault' && (
+                <Card>
+                  <CardHeader>
+                    <CardTitle className="text-base">Prijava kvara</CardTitle>
+                  </CardHeader>
+                  <CardContent className="space-y-3">
+                    <RadioGroup
+                      value={inspectionResult === 'OK' ? 'MINOR_DAMAGE' : inspectionResult}
+                      onValueChange={(v) => chooseResult(v as InspectionResult)}
+                      className="grid grid-cols-1 gap-2"
+                    >
+                      {[
+                        { v: 'MINOR_DAMAGE', l: faultOnly ? 'Manji kvar / oštećenje' : 'Manji kvar — mogu koristiti sredstvo', cls: 'border-amber-500 bg-amber-50' },
+                        { v: 'MAJOR_DAMAGE', l: 'Veći kvar — sredstvo nije za upotrebu', cls: 'border-orange-500 bg-orange-50' },
+                        { v: 'OUT_OF_SERVICE', l: 'Kritičan kvar — sredstvo nije za upotrebu', cls: 'border-red-500 bg-red-50' },
+                      ].map((o) => (
+                        <label key={o.v} className={`flex items-center gap-2 p-3 rounded-lg border-2 cursor-pointer transition ${inspectionResult === o.v ? o.cls : 'border-border'}`}>
+                          <RadioGroupItem value={o.v} />
+                          <span className="text-sm font-medium">{o.l}</span>
+                        </label>
+                      ))}
+                    </RadioGroup>
+
+                    <div className="space-y-3 p-3 bg-destructive/5 border border-destructive/20 rounded-lg">
                       <DamageQuickFields
                         category={damageCategory}
                         onCategory={setDamageCategory}
@@ -675,53 +673,34 @@ export function WorkerView({
                         description={damageDescription}
                         onDescription={setDamageDescription}
                       />
-                      <div className="space-y-1.5">
-                        <Label className="text-sm">Težina oštećenja</Label>
-                        <RadioGroup
-                          value={damageSeverity}
-                          onValueChange={(v) => setDamageSeverity(v as 'MINOR' | 'MAJOR' | 'CRITICAL')}
-                          className="grid grid-cols-3 gap-2"
-                        >
-                          {[
-                            { v: 'MINOR', l: 'Manje', cls: 'border-amber-500 bg-amber-50' },
-                            { v: 'MAJOR', l: 'Veće', cls: 'border-orange-500 bg-orange-50' },
-                            { v: 'CRITICAL', l: 'Kritično', cls: 'border-red-500 bg-red-50' },
-                          ].map((s) => (
-                            <label
-                              key={s.v}
-                              className={`flex items-center justify-center gap-1 p-2 rounded-lg border-2 cursor-pointer text-xs font-medium ${damageSeverity === s.v ? s.cls : 'border-border'}`}
-                            >
-                              <RadioGroupItem value={s.v} className="sr-only" />
-                              {s.l}
-                            </label>
-                          ))}
-                        </RadioGroup>
-                      </div>
                       <p className="text-xs text-destructive flex items-start gap-1.5">
                         <AlertTriangle className="h-3.5 w-3.5 flex-shrink-0 mt-0.5" />
-                        {inspectionResult === 'OUT_OF_SERVICE' || damageSeverity === 'CRITICAL'
-                          ? 'Sredstvo se NEĆE moći zadužiti. Biće prebačeno u OUT_OF_SERVICE i prijava proslijeđena održavanju.'
-                          : 'Sredstvo će biti zabilježeno sa oštećenjem, ali ćete ga moći zadužiti (ako je manje oštećenje).'}
+                        {checkoutSeverity !== 'MINOR'
+                          ? 'Sredstvo se NEĆE moći zadužiti. Biće prebačeno u status "Neispravno" i prijava proslijeđena održavanju.'
+                          : faultOnly
+                            ? 'Prijava se šalje održavanju. Sredstvo se ne može zadužiti dok se ne uradi dnevni pregled.'
+                            : 'Kvar se bilježi i javlja održavanju, a sredstvo možete zadužiti.'}
                       </p>
                     </div>
-                  )}
+                  </CardContent>
+                </Card>
+              )}
 
-                  <div className="space-y-1.5">
-                    <Label htmlFor="notes-insp">Dodatne napomene (opciono)</Label>
-                    <Textarea
-                      id="notes-insp"
-                      value={notes}
-                      onChange={(e) => setNotes(e.target.value)}
-                      placeholder="Opciono: bilješke o stanju..."
-                      rows={2}
-                    />
-                  </div>
-                </CardContent>
-              </Card>
+              {effectiveMode !== 'none' && (
+                <div className="space-y-1.5">
+                  <Label htmlFor="notes-insp">Dodatne napomene (opciono)</Label>
+                  <Textarea id="notes-insp" value={notes} onChange={(e) => setNotes(e.target.value)} placeholder="Opciono: bilješke o stanju..." rows={2} />
+                </div>
+              )}
 
-              <Button type="submit" size="lg" className="w-full" disabled={isPending}>
+              <Button
+                type="submit"
+                size="lg"
+                className={`w-full ${effectiveMode === 'fault' && checkoutSeverity !== 'MINOR' || faultOnly ? 'bg-red-600 hover:bg-red-700' : ''}`}
+                disabled={isPending || effectiveMode === 'none'}
+              >
                 {isPending ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : <Send className="h-4 w-4 mr-2" />}
-                Zaduži sredstvo
+                {faultOnly || (effectiveMode === 'fault' && checkoutSeverity !== 'MINOR') ? 'Prijavi kvar' : effectiveMode === 'fault' ? 'Prijavi kvar i zaduži' : 'Zaduži sredstvo'}
               </Button>
             </>
           ) : (
@@ -876,12 +855,12 @@ export function WorkerView({
               <XCircle className="h-9 w-9 text-red-600" />
             </div>
             <h2 className="text-xl font-bold text-red-900">
-              Zaduživanje blokirano
+              Sredstvo nije za upotrebu
             </h2>
             <p className="text-sm text-red-700 max-w-md mx-auto">
-              {damageDescription.trim()
+              {blockedMsg ?? (damageDescription.trim()
                 ? 'Prijavili ste oštećenje na sredstvu. Sredstvo je prebačeno u status "Neispravno" i ne može se zadužiti. Održavanje je automatski obaviješteno o vašoj prijavi.'
-                : 'Sredstvo je trenutno neispravno ili je na održavanju. Zaduživanje nije moguće. Kontaktirajte održavanje ako smatrate da je greška.'}
+                : 'Sredstvo je trenutno neispravno ili je na održavanju. Zaduživanje nije moguće. Kontaktirajte održavanje ako smatrate da je greška.')}
             </p>
             <div className="bg-white/60 rounded-lg p-3 text-left text-sm space-y-1 max-w-md mx-auto border border-red-200">
               <div className="flex items-center gap-2">

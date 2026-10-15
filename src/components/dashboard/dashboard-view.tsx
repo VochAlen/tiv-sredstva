@@ -5,6 +5,7 @@ import { QRCodeSVG } from 'qrcode.react'
 import { printQrLabels, svgOf } from '@/lib/qr-print'
 import { RestrictionBadges } from '@/components/restriction-badges'
 import { DamageRowCard } from '@/components/dashboard/damage-row-card'
+import { PendingHandoverList } from '@/components/dashboard/workshop-actions'
 import { ServicePlanView } from '@/components/dashboard/service-plan-view'
 import { UsersAdminView } from '@/components/dashboard/users-admin-view'
 import { DailyListView, DailyStatsView, EquipmentReportView, InspectionLogView } from '@/components/dashboard/daily-reports-view'
@@ -157,10 +158,17 @@ import { roleAtLeast, type TaskRole } from '@/lib/my-tasks'
 // mijenja se samo kako se do njega dolazi.
 // =====================================================
 
-type NavItem = { value: string; label: string; icon: React.ComponentType<{ className?: string }>; minRole?: TaskRole }
+type NavItem = { value: string; label: string; icon: React.ComponentType<{ className?: string }>; minRole?: TaskRole; highlight?: boolean }
 type NavGroup = { label: string; items: NavItem[] }
 
 const NAV_GROUPS: NavGroup[] = [
+  {
+    label: 'Radionica',
+    items: [
+      { value: 'maintenance', label: 'RADIONICA — kvarovi i održavanje', icon: Wrench, minRole: 'engineer', highlight: true },
+      { value: 'service-plan', label: 'RADIONICA — servisni plan i radni nalozi', icon: CalendarClock, minRole: 'engineer', highlight: true },
+    ],
+  },
   {
     label: 'Pregled',
     items: [
@@ -179,7 +187,6 @@ const NAV_GROUPS: NavGroup[] = [
     items: [
       { value: 'equipment', label: 'Sredstva', icon: Package },
       { value: 'damages', label: 'Oštećenja', icon: AlertOctagon },
-      { value: 'maintenance', label: 'Održavanje', icon: Wrench, minRole: 'engineer' },
       { value: 'qr', label: 'QR kodovi', icon: Printer, minRole: 'engineer' },
     ],
   },
@@ -198,7 +205,6 @@ const NAV_GROUPS: NavGroup[] = [
   {
     label: 'Operacije',
     items: [
-      { value: 'service-plan', label: 'Servisni plan', icon: CalendarClock, minRole: 'engineer' },
       { value: 'scheduling', label: 'Servis & Dijelovi', icon: Calendar, minRole: 'engineer' },
       { value: 'driverauth', label: 'Driver Auth', icon: Car, minRole: 'engineer' },
       { value: 'fuelparking', label: 'Gorivo & Parking', icon: Fuel, minRole: 'engineer' },
@@ -237,7 +243,7 @@ const ROLE_LABELS: Record<string, string> = {
 // kao i sada. Nema regresije u odnosu na prethodno ponašanje.
 const NAV_T_KEYS: Partial<Record<string, TranslationKey>> = {
   overview: 'dash.overview', equipment: 'dash.equipment', damages: 'dash.damages',
-  statistics: 'dash.statistics', maintenance: 'dash.maintenance', reports: 'dash.reports',
+  statistics: 'dash.statistics', reports: 'dash.reports',
   activity: 'dash.activity', qr: 'dash.qr',
 }
 
@@ -355,6 +361,7 @@ export function DashboardView({ currentUser }: { currentUser: AppUser }) {
                     <SidebarMenuItem key={item.value}>
                       <SidebarMenuButton
                         isActive={tab === item.value}
+                        className={item.highlight ? 'font-bold bg-blue-600 text-white hover:bg-blue-700 hover:text-white data-[active=true]:bg-blue-800 data-[active=true]:text-white' : undefined}
                         onClick={() => setTab(item.value)}
                         tooltip={NAV_T_KEYS[item.value] ? t(NAV_T_KEYS[item.value]!) : item.label}
                       >
@@ -669,6 +676,7 @@ export function DashboardView({ currentUser }: { currentUser: AppUser }) {
         </TabsContent>
 
         <TabsContent value="damages" className="space-y-4">
+          {roleAtLeast(currentUser.role, 'engineer') && <PendingHandoverList onChanged={load} />}
           <Card>
             <CardHeader>
               <CardTitle className="text-base flex items-center gap-2">

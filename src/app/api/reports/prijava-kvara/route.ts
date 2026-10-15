@@ -41,12 +41,30 @@ export async function GET(request: NextRequest) {
       repairedByName: data.repaired_by_name, repairedAt: data.repaired_at,
       approvedByName: data.approved_by_name, approvedAt: data.approved_at,
       createdAt: data.created_at,
+      reportedByCardId: data.reported_by_card_id,
+      acknowledgedAt: data.acknowledged_at, acknowledgedBy: data.acknowledged_by,
+      workshopArrivedAt: data.workshop_arrived_at, workshopArrivedBy: data.workshop_arrived_by,
+      chiefName: data.chief_name, chiefInspectedAt: data.chief_inspected_at, chiefResult: data.chief_result,
+      handoverTo: data.handover_to, handoverAt: data.handover_at,
+      workerNames: data.worker_names, partsJson: data.parts_json, workHours: data.work_hours, workCost: data.work_cost,
     }
     const { data: eq } = await supabase.from('equipment').select('*').eq('id', data.equipment_id).maybeSingle()
     equipment = eq
       ? { serialNumber: eq.serial_number, totalKm: eq.total_km, totalOperatingHours: eq.total_operating_hours }
       : null
   }
+
+  let log: Array<{ at: string; text: string; by: string }> = []
+  try {
+    if (isDemoMode()) {
+      const rows = await db.repairStatusLog.findMany({ where: { damageId }, orderBy: { at: 'asc' }, take: 40 })
+      log = rows.map((r) => ({ at: r.at.toISOString(), text: r.text ?? r.kind, by: r.byName }))
+    } else {
+      const supabase = await createSupabaseClient()
+      const { data: rows } = await supabase.from('repair_status_log').select('at, text, kind, by_name').eq('damage_id', damageId).order('at', { ascending: true }).limit(40)
+      log = (rows ?? []).map((r: any) => ({ at: r.at, text: r.text ?? r.kind, by: r.by_name }))
+    }
+  } catch { /* migracija 035 još nije pokrenuta - evidencija bez istorije */ }
 
   const pdfDoc = await PDFDocument.create()
   const font = await pdfDoc.embedFont(StandardFonts.Helvetica)
@@ -163,6 +181,69 @@ export async function GET(request: NextRequest) {
   })
 
   page.drawText('GSE Control - Aerodrom Tivat (LYTV)', { x: margin, y: 20, size: 7, font, color: rgb(0.55, 0.55, 0.55) })
+
+  // ---- Strana 2: evidencija radionice (AMC1 ADR.OPS.C.007(b)(3): tip, šta je pregledano/popravljeno, ulaz/izlaz, ko je radio) ----
+  const p2 = pdfDoc.addPage([pageWidth, pageHeight])
+  let y2 = pageHeight - margin
+  const t2 = (text: string, x: number, yy: number, o: { size?: number; font?: typeof font; color?: ReturnType<typeof rgb> } = {}) => {
+    try { p2.drawText(transliterate(text), { x, y: yy, size: o.size ?? 9, font: o.font ?? font, color: o.color ?? rgb(0, 0, 0) }) } catch {}
+  }
+  const dt = (v: unknown) => (v ? new Date(v as string).toLocaleString('hr-HR', { timeZone: 'Europe/Podgorica' }) : '-')
+  p2.drawRectangle({ x: 0, y: pageHeight - 6, width: pageWidth, height: 6, color: rgb(0.05, 0.25, 0.45) })
+  t2('EVIDENCIJA RADIONICE', margin, y2, { size: 14, font: fontBold })
+  y2 -= 14
+  t2('Zapis o održavanju vozila - ADR.OPS.C.007(b)(3), Reg. (EU) 139/2014', margin, y2, { size: 9, font: italic })
+  y2 -= 22
+  t2(`${dr.equipmentName}   (${dr.equipmentCode})      Prijava br. ${dr.id.slice(0, 8).toUpperCase()}`, margin, y2, { size: 10, font: fontBold })
+  y2 -= 14
+  t2('Vrsta održavanja: KOREKTIVNO (kvar prijavljen tokom upotrebe)', margin, y2, { size: 9 })
+  y2 -= 22
+
+  const colX = [margin, margin + 215, margin + 380]
+  p2.drawRectangle({ x: margin, y: y2 - 4, width: pageWidth - 2 * margin, height: 15, color: rgb(0.06, 0.16, 0.3) })
+  ;['DOGAĐAJ', 'DATUM I VRIJEME', 'OSOBA'].forEach((h, i) => t2(h, colX[i] + 4, y2, { size: 8, font: fontBold, color: rgb(1, 1, 1) }))
+  y2 -= 18
+  const events: Array<[string, unknown, string | null | undefined]> = [
+    ['1. Kvar prijavljen', dr.createdAt, dr.reportedByName],
+    ['2. Prijava preuzeta u radionicu', dr.acknowledgedAt, dr.acknowledgedBy],
+    ['3. Sredstvo doveženo u radionicu (ULAZ)', dr.workshopArrivedAt, dr.workshopArrivedBy ? `dovezao/la: ${dr.workshopArrivedBy}` : null],
+    ['4. Popravka završena', dr.repairedAt, dr.repairedByName],
+    [`5. Pregled šefa službe${dr.chiefResult ? (dr.chiefResult === 'OK' ? ' - PROŠAO' : ' - NIJE PROŠAO') : ''}`, dr.chiefInspectedAt, dr.chiefName],
+    ['6. Sredstvo preuzeto iz radionice (IZLAZ)', dr.handoverAt, dr.handoverTo ? `preuzeo/la: ${dr.handoverTo}` : null],
+  ]
+  events.forEach(([label, when, who], i) => {
+    if (i % 2 === 0) p2.drawRectangle({ x: margin, y: y2 - 5, width: pageWidth - 2 * margin, height: 16, color: rgb(0.955, 0.965, 0.975) })
+    t2(label, colX[0] + 4, y2, { size: 8.5 })
+    t2(dt(when), colX[1] + 4, y2, { size: 8.5, font: fontBold })
+    t2(who ?? '-', colX[2] + 4, y2, { size: 8.5 })
+    y2 -= 16
+  })
+  y2 -= 10
+
+  const parts = (() => { try { const v = typeof dr.partsJson === 'string' ? JSON.parse(dr.partsJson) : dr.partsJson; return Array.isArray(v) ? v.map((x: any) => `${x.name} x${x.qty}`).join(', ') : '' } catch { return '' } })()
+  const kv = (k: string, v: string) => {
+    const lines = wrapText(v || '-', 85)
+    t2(k, margin, y2, { size: 8.5, font: fontBold })
+    lines.slice(0, 4).forEach((ln, i) => t2(ln, margin + 130, y2 - i * 11, { size: 8.5 }))
+    y2 -= Math.max(1, Math.min(lines.length, 4)) * 11 + 4
+  }
+  kv('Pregledano / popravljeno:', dr.resolution ?? '')
+  kv('Zamijenjeni dijelovi:', parts)
+  kv('Radili:', dr.workerNames ?? dr.repairedByName ?? '')
+  kv('Utrošeno sati / trošak:', `${dr.workHours ?? '-'} h  /  ${dr.workCost != null ? `${dr.workCost} EUR` : '-'}`)
+  y2 -= 8
+
+  t2('ISTORIJA STATUSA I KORAKA', margin, y2, { size: 9, font: fontBold })
+  y2 -= 14
+  if (log.length === 0) t2('Nema upisa.', margin, y2, { size: 8.5, color: rgb(0.45, 0.48, 0.53) })
+  for (const l of log) {
+    if (y2 < 70) break
+    const line = `${dt(l.at)}  -  ${l.text}  (${l.by})`
+    wrapText(line, 110).slice(0, 2).forEach((ln, i) => t2(ln, margin, y2 - i * 10.5, { size: 8 }))
+    y2 -= wrapText(line, 110).slice(0, 2).length * 10.5 + 2
+  }
+  p2.drawLine({ start: { x: margin, y: 52 }, end: { x: pageWidth - margin, y: 52 }, thickness: 0.4, color: rgb(0.8, 0.82, 0.85) })
+  t2(`Generisao: ${user.full_name}, ${new Date().toLocaleString('hr-HR')}  |  Zapis se čuva uz evidenciju održavanja vozila.`, margin, 40, { size: 7, color: rgb(0.5, 0.5, 0.5) })
 
   const pdf = await pdfDoc.save()
   return new NextResponse(Buffer.from(pdf) as unknown as BodyInit, {

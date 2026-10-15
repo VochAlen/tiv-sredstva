@@ -81,12 +81,13 @@ export interface ChecklistItem {
 export const DEFAULT_CHECKLIST: ChecklistItem[] = [
   { id: 'tires', label: 'Gume i pneumatski u good stanju (bez oštećenja, odgovarajući pritisak)', passed: null, group: 3 },
   { id: 'body', label: 'Karoserija bez novih oštećenja', passed: null, group: 2 },
-  { id: 'lights', label: 'Svjetla (farovi, žmigavci, kočiona) rade', passed: null, group: 3 },
+  { id: 'lights', label: 'Svjetla', passed: null, group: 3 },
   { id: 'brakes', label: 'Kočioni sistem funkcionalan', passed: null, group: 3, blocking: true },
   { id: 'steering', label: 'Volan/upravljanje bez nenormalnih zvukova', passed: null, group: 3 },
   { id: 'hydraulics', label: 'Hidraulični sistem bez curenja', passed: null, group: 2 },
   { id: 'fluids', label: 'Nivo ulja i rashladne tečnosti OK', passed: null, group: 2 },
   { id: 'safety', label: 'Sigurnosni znakovi i reflektori prisutni', passed: null, group: 3 },
+  { id: 'fire-ext', label: 'PP aparat (protivpožarni aparat) prisutan i ispravan', passed: null, group: 3 },
   { id: 'clean', label: 'Vozilo čisto, bez stranih predmeta', passed: null, group: 2 },
 ]
 
@@ -114,6 +115,7 @@ const STAIRS_CHECKLIST: ChecklistItem[] = [
   { id: 'hand-brake', label: 'Provjeriti efikasnost ručne kočnice', passed: null, group: 3, period: 'Dnevno', blocking: true },
   { id: 'wipers', label: 'Provjeriti funkciju brisača', passed: null, group: 3, period: 'Dnevno' },
   { id: 'signal-lights', label: 'Provjeriti funkciju signalizacije i rasvjete', passed: null, group: 3, period: 'Dnevno' },
+  { id: 'fire-ext', label: 'Provjeriti PP aparat (protivpožarni aparat)', passed: null, group: 3, period: 'Dnevno' },
 ]
 
 // ELEVATOR / BELT LOADER (Aviogei) - "Dnevna čeklista elevatora Aviogei H103/H104/H105"
@@ -129,6 +131,7 @@ const BELT_LOADER_CHECKLIST: ChecklistItem[] = [
   { id: 'hand-brake', label: 'Provjeriti efikasnost ručne kočnice', passed: null, group: 3, period: 'Dnevno', blocking: true },
   { id: 'wipers', label: 'Provjeriti funkciju brisača', passed: null, group: 3, period: 'Dnevno' },
   { id: 'signal-lights', label: 'Provjeriti funkciju signalizacije i rasvjete', passed: null, group: 3, period: 'Dnevno' },
+  { id: 'fire-ext', label: 'Provjeriti PP aparat (protivpožarni aparat)', passed: null, group: 3, period: 'Dnevno' },
 ]
 
 // TEGLJAČ (Bliss-Fox) - "Dnevna čeklista tegljača Bliss-Fox H7/H8/H9/H10"
@@ -143,6 +146,7 @@ const TOW_TRACTOR_CHECKLIST: ChecklistItem[] = [
   { id: 'brakes', label: 'Provjeriti kočioni sistem', passed: null, group: 3, period: 'Dnevno', blocking: true },
   { id: 'signal-lights-horn', label: 'Provjeriti funkciju signalizacije, rasvjete i sirene', passed: null, group: 3, period: 'Dnevno' },
   { id: 'wipers', label: 'Provjeriti funkciju brisača', passed: null, group: 3, period: 'Dnevno' },
+  { id: 'fire-ext', label: 'Provjeriti PP aparat (protivpožarni aparat)', passed: null, group: 3, period: 'Dnevno' },
 ]
 
 /**

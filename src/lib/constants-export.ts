@@ -43,7 +43,7 @@ export interface EquipmentManualData {
 //
 // Težina neispravne stavke određuje šta se desi sa sredstvom:
 //  BLOCKING    -> sredstvo je NEISPRAVNO (van upotrebe), automatski se otvara prijava kvara
-//  RESTRICTIVE -> sredstvo je ISPRAVNO SA OGRANIČENJEM (npr. samo po danu), otvara se prijava kvara
+//  RESTRICTIVE -> sredstvo je ISPRAVNO SA OGRANIČENJEM (npr. ne u uslovima smanjene vidljivosti), otvara se prijava kvara
 //  MINOR       -> sredstvo ostaje ispravno, otvara se prijava manjeg kvara za radionicu
 // Ovo je jedino mjesto gdje se te odluke mijenjaju; server uvijek uzima težinu odavde (ne od klijenta).
 export type DailyItemSeverity = 'BLOCKING' | 'RESTRICTIVE' | 'MINOR'
@@ -63,15 +63,22 @@ export interface DailyChecklistDef {
 export const DAILY_INSPECTION_CHECKLIST: DailyChecklistDef[] = [
   { id: 'fluids', label: 'Nivo ulja i rashladne tečnosti', passed: false, severity: 'BLOCKING', category: 'MEHANIKA' },
   { id: 'tires', label: 'Vizuelni pregled guma (pritisak, oštećenja)', passed: false, severity: 'BLOCKING', category: 'MEHANIKA' },
-  { id: 'lights', label: 'Svjetla (farovi, žmigavci, kočiona)', passed: false, severity: 'RESTRICTIVE', category: 'ELEKTRIKA',
-    restrictionCode: 'DAYTIME_ONLY', restrictionLabel: 'Koristiti isključivo po danu' },
+  { id: 'lights', label: 'Svjetla', passed: false, severity: 'RESTRICTIVE', category: 'ELEKTRIKA',
+    restrictionCode: 'DAYTIME_ONLY', restrictionLabel: 'Ne koristiti u uslovima smanjene vidljivosti' },
   { id: 'wipers', label: 'Brisači vjetrobranskog stakla', passed: false, severity: 'RESTRICTIVE', category: 'ELEKTRIKA',
     restrictionCode: 'FAIR_WEATHER_ONLY', restrictionLabel: 'Koristiti samo po lijepom vremenu (ne po kiši)' },
   { id: 'brakes', label: 'Test kočionog sistema', passed: false, severity: 'BLOCKING', category: 'MEHANIKA', damageSeverity: 'CRITICAL' },
   { id: 'steering', label: 'Provjera upravljačkog sistema', passed: false, severity: 'BLOCKING', category: 'MEHANIKA', damageSeverity: 'CRITICAL' },
+  // Minimum dnevnih provjera po AMC1 ADR.OPS.C.007(a)(1): upozorenja, komunikacija, pričvršćena oprema, curenje
+  { id: 'warnings', label: 'Kontrolne lampe i upozorenja na instrument tabli (bez kvarova)', passed: false, severity: 'BLOCKING', category: 'ELEKTRIKA' },
+  { id: 'comms', label: 'Radio-veza i komunikacioni uređaji (transponder, ako je ugrađen)', passed: false, severity: 'RESTRICTIVE', category: 'ELEKTRIKA',
+    restrictionCode: 'NO_MOVEMENT_AREA', restrictionLabel: 'Ne koristiti na manevarskoj površini (nema ispravne radio-veze)' },
+  { id: 'secured', label: 'Oprema na vozilu je pričvršćena / osigurana', passed: false, severity: 'MINOR', category: 'BEZBJEDNOST' },
+  { id: 'leaks', label: 'Nema curenja (ulje, gorivo, rashladna tečnost, hidraulika)', passed: false, severity: 'MINOR', category: 'MEHANIKA' },
   { id: 'horn', label: 'Sirena signalizacija', passed: false, severity: 'MINOR', category: 'ELEKTRIKA' },
-  { id: 'mirrors', label: 'Retrovizori i vidljivost', passed: false, severity: 'MINOR', category: 'OPSTE' },
-  { id: 'body', label: 'Karoserija - vizuelni pregled na oštećenja', passed: false, severity: 'MINOR', category: 'OPSTE' },
+  { id: 'mirrors', label: 'Vanjski retrovizori i vidljivost', passed: false, severity: 'MINOR', category: 'OPSTE' },
+  { id: 'body', label: 'Nova vanjska oštećenja vozila (vizuelni pregled)', passed: false, severity: 'MINOR', category: 'OPSTE' },
   { id: 'safety', label: 'Sigurnosna oprema (rogalj, znak, prva pomoć)', passed: false, severity: 'MINOR', category: 'BEZBJEDNOST' },
+  { id: 'fire-ext', label: 'PP aparat (protivpožarni aparat)', passed: false, severity: 'MINOR', category: 'BEZBJEDNOST' },
   { id: 'clean', label: 'Čistoća vozila', passed: false, severity: 'MINOR', category: 'OPSTE' },
 ]

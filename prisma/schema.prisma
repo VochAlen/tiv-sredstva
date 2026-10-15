@@ -203,12 +203,42 @@ model DamageReport {
   workCost    Float?
   workerNames String?
 
+  // Tok radionice: doveženo u radionicu, pregled šefa službe, preuzimanje iz radionice, zadnji status
+  workshopArrivedAt DateTime?
+  workshopArrivedBy String?
+  chiefName         String?
+  chiefInspectedAt  DateTime?
+  chiefResult       String?
+  chiefNote         String?
+  handoverTo        String?
+  handoverAt        DateTime?
+  lastStatusText    String?
+  lastStatusAt      DateTime?
+  lastStatusBy      String?
+  staleNotifiedAt   DateTime?
+
   equipment Equipment        @relation(fields: [equipmentId], references: [id])
   employee  Employee?        @relation(fields: [employeeId], references: [id])
   photos    EquipmentPhoto[]
+  statusLog RepairStatusLog[]
 
   @@index([status])
   @@index([equipmentId])
+}
+
+model RepairStatusLog {
+  id       String   @id @default(cuid())
+  damageId String
+  kind     String
+  text     String?
+  byName   String
+  byCardId String?
+  warned   Boolean  @default(false)
+  at       DateTime @default(now())
+
+  damage DamageReport @relation(fields: [damageId], references: [id], onDelete: Cascade)
+
+  @@index([damageId, at])
 }
 
 model MaintenanceLog {

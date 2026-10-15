@@ -29,6 +29,7 @@ para je fiksan i ne smije se mijenjati:
 | 21 | 032_service_plan_external.sql |
 | 22 | 033_pm_ahm917.sql |
 | 23 | 034_ahm917_service_plan_extras.sql |
+| 24 | 035_workshop_flow.sql |
 
 Fajlovi **nisu** preimenovani namjerno: ako ste ih već pokretali ručno po broju, preimenovanje
 ništa ne popravlja a pravi zabunu. Duplirani brojevi smetaju samo Supabase CLI-ju (`supabase db push`),
