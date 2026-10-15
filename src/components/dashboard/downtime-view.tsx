@@ -81,11 +81,11 @@ export function DowntimeView() {
         <>
           <div className="grid grid-cols-2 gap-2 md:grid-cols-4">
             <Kpi label="Prijavljeno kvarova" value={String(data.reported)} hint={`riješeno ${data.resolved}, još otvoreno ${data.stillOpen}`} />
-            <Kpi label="Prosječno vrijeme popravke" value={hoursText(data.mttrHours)} hint="od preuzimanja prijave do povratka u rad" />
-            <Kpi label="Prosječna reakcija" value={hoursText(data.reactionHours)} hint="od prijave do preuzimanja" />
+            <Kpi label="Prosječno vrijeme popravke" value={hoursText(data.mttrHours)} hint="od preuzimanja kvara do povratka u rad" />
+            <Kpi label="Prosječna reakcija" value={hoursText(data.reactionHours)} hint="od prijavljivanja do preuzimanja" />
             <Kpi label="Raspoloživost flote" value={data.fleetAvailabilityPct == null ? '—' : `${data.fleetAvailabilityPct}%`} hint={`${data.fleetSize} sredstava`} />
           </div>
-          <p className="text-xs text-muted-foreground">Zastoj se računa dok je otvorena prijava težine MAJOR ili CRITICAL (takva sredstva su blokirana). Manji kvarovi i sredstva s ograničenjem ne ulaze u zastoj. Vrijeme u radionici (doveženo → riješeno): {hoursText(data.workshopHours)}.</p>
+          <p className="text-xs text-muted-foreground">Zastoj se računa dok je otvoren kvar težine MAJOR ili CRITICAL (takva sredstva su blokirana). Manji kvarovi i sredstva s ograničenjem ne ulaze u zastoj. Vrijeme u radionici (doveženo → riješeno): {hoursText(data.workshopHours)}.</p>
 
           <Card>
             <CardHeader className="pb-2"><CardTitle className="text-sm">Raspoloživost po sredstvu</CardTitle></CardHeader>

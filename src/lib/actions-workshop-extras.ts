@@ -47,8 +47,8 @@ export async function sendToExternalService(params: { damageId: string; provider
   const expected = params.expectedAt && isValidDate(params.expectedAt) ? params.expectedAt : null
   if (params.expectedAt && !expected) return { ok: false, error: 'Očekivani datum povrata nije ispravan' }
   const d = await loadExternal(params.damageId)
-  if (!d) return { ok: false, error: 'Prijava kvara nije pronađena' }
-  if (d.status === 'RESOLVED') return { ok: false, error: 'Prijava je već riješena' }
+  if (!d) return { ok: false, error: 'Kvar nije pronađen' }
+  if (d.status === 'RESOLVED') return { ok: false, error: 'Kvar je već riješen' }
   if (d.sentAt && !d.returnedAt) return { ok: false, error: 'Sredstvo je već upisano kao poslano vanjskom servisu' }
   const now = new Date()
   const statusText = `Vanjski servis: ${provider}${ref ? ` (nalog ${ref})` : ''}${expected ? `, očekivani povrat ${fmtDay(expected)}` : ''}`
@@ -75,7 +75,7 @@ export async function markExternalReturned(params: { damageId: string; note?: st
   const user = await requireEngineer()
   const note = clean(params.note, 200)
   const d = await loadExternal(params.damageId)
-  if (!d) return { ok: false, error: 'Prijava kvara nije pronađena' }
+  if (!d) return { ok: false, error: 'Kvar nije pronađen' }
   if (!d.sentAt || d.returnedAt) return { ok: false, error: 'Sredstvo nije upisano kao poslano vanjskom servisu' }
   const now = new Date()
   const text = `Vraćeno iz vanjskog servisa${note ? ` — ${note}` : ''}`

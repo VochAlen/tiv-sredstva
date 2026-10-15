@@ -6,6 +6,7 @@
 // popravljeno → odobri) uvijek radi identično bez obzira odakle se otvori -
 // razdvojene kopije bi vremenom počele da se razilaze.
 
+import { PersonPicker } from './person-picker'
 import { useState, useTransition } from 'react'
 import { History, Repeat, RefreshCw, Send, Truck, ClipboardEdit, UserCheck, Wrench, ShieldCheck, User, Calendar, CheckCircle2, Loader2, FileDown, Image as ImageIcon, ClipboardList, Plus, Trash2 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
@@ -112,7 +113,7 @@ export function DamageRowCard({
         resolution: resolution.trim(),
         setEquipmentAvailable: setAvailable,
       })
-      toast.success('Prijava riješena')
+      toast.success('Kvar riješen')
       setOpen(false)
       setResolution('')
       onResolved()
@@ -122,7 +123,7 @@ export function DamageRowCard({
   const handleAcknowledge = () => {
     startTransition(async () => {
       await acknowledgeDamage(damage.id)
-      toast.success('Prijava preuzeta — upisano ko i kada')
+      toast.success('Kvar preuzet — upisano ko i kada')
       onResolved()
     })
   }
@@ -331,7 +332,7 @@ export function DamageRowCard({
           {isNew && (
             <Button size="lg" className="w-full h-16 text-lg font-bold bg-red-600 hover:bg-red-700 text-white animate-pulse" disabled={isPending} onClick={handleAcknowledge}>
               <Wrench className="h-5 w-5 mr-2" />
-              PREUZMI PRIJAVU
+              PREUZMI KVAR
             </Button>
           )}
           {/* Korak 2: sredstvo doveženo u radionicu (ko + kada) */}
@@ -392,7 +393,7 @@ export function DamageRowCard({
                         </SelectContent>
                       </Select>
                       <p className="text-xs text-muted-foreground">
-                        Ova prijava nije nastala iz pre-use checkliste, pa kategoriju treba ručno odrediti - od nje zavisi koji radnik smije preuzeti popravku.
+                        Ovaj kvar nije nastao iz pre-use checkliste, pa kategoriju treba ručno odrediti - od nje zavisi koji radnik smije preuzeti popravku.
                       </p>
                     </div>
                   )}
@@ -498,7 +499,7 @@ export function DamageRowCard({
                   </div>
                   <div className="space-y-1.5">
                     <Label>Ko je radio popravku</Label>
-                    <Input value={workWorkers} onChange={(e) => setWorkWorkers(e.target.value)} placeholder="ime i prezime (više osoba odvojite zarezom)" />
+                    <PersonPicker multi storageKey="workers" value={workWorkers} onChange={setWorkWorkers} placeholder="Dodajte osobu (ime ili broj kartice)" />
                   </div>
                   <div className="grid grid-cols-2 gap-2">
                     <div className="space-y-1.5"><Label>Utrošeno sati</Label><Input inputMode="decimal" value={workHours} onChange={(e) => setWorkHours(e.target.value)} /></div>
@@ -523,7 +524,7 @@ export function DamageRowCard({
             onClick={() => window.open(`/api/reports/prijava-kvara?id=${damage.id}`, '_blank')}
           >
             <FileDown className="h-3.5 w-3.5 mr-1" />
-            Prijava PDF
+            Kvar PDF
           </Button>
           {currentUser.role !== 'operator' && (
             <Button size="sm" variant="outline" className="h-10 text-sm" onClick={() => window.open(`/api/reports/karton-sredstva?code=${encodeURIComponent(damage.equipmentCode)}`, '_blank')}>
@@ -547,7 +548,7 @@ export function DamageRowCard({
               </DialogTrigger>
               <DialogContent>
                 <DialogHeader>
-                  <DialogTitle>Ručno riješi prijavu (zaobilazi odobrenje šefa)</DialogTitle>
+                  <DialogTitle>Ručno riješi kvar (zaobilazi odobrenje šefa)</DialogTitle>
                   <DialogDescription>
                     Koristiti samo u izuzetnim slučajevima - standardni put je "Označi kao popravljeno" pa odobrenje šefa.
                   </DialogDescription>

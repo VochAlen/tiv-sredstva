@@ -58,8 +58,8 @@ export async function saveRepairWork(params: {
 
   if (isDemoMode()) {
     const dr = await db.damageReport.findUnique({ where: { id: params.damageId } })
-    if (!dr) return { ok: false, error: 'Prijava kvara nije pronađena' }
-    if (dr.status === 'RESOLVED') return { ok: false, error: 'Prijava je već riješena' }
+    if (!dr) return { ok: false, error: 'Kvar nije pronađen' }
+    if (dr.status === 'RESOLVED') return { ok: false, error: 'Kvar je već riješen' }
     const prevById = sumById(parseParts(dr.partsJson))
     const ids = [...new Set([...prevById.keys(), ...nextById.keys()])]
     const stock = new Map<string, StockPart>()
@@ -96,8 +96,8 @@ export async function saveRepairWork(params: {
   } else {
     const supabase = await createSupabaseClient()
     const { data: dr } = await supabase.from('damage_reports').select('status, equipment_id, equipment_code, parts_json').eq('id', params.damageId).maybeSingle()
-    if (!dr) return { ok: false, error: 'Prijava kvara nije pronađena' }
-    if (dr.status === 'RESOLVED') return { ok: false, error: 'Prijava je već riješena' }
+    if (!dr) return { ok: false, error: 'Kvar nije pronađen' }
+    if (dr.status === 'RESOLVED') return { ok: false, error: 'Kvar je već riješen' }
     const prevById = sumById(parseParts(dr.parts_json))
     const ids = [...new Set([...prevById.keys(), ...nextById.keys()])]
     const stock = new Map<string, StockPart>()

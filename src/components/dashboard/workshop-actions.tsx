@@ -1,9 +1,10 @@
 'use client'
 
 // Koraci radionice na kartici prijave kvara - namjerno veliki, jasni i sa što manje unosa (tablet).
-//  1 Preuzmi prijavu  ->  2 Sredstvo doveženo  ->  3 Popravka završena  ->  4 Pregled šefa službe  ->  5 Preuzimanje iz radionice
+//  1 Preuzmi kvar  ->  2 Sredstvo doveženo  ->  3 Popravka završena  ->  4 Pregled šefa službe  ->  5 Preuzimanje iz radionice
 // Status popravke se upisuje u bilo kom trenutku; svaka 3 dana bez promjene prikazuje se upozorenje i unos je obavezan.
 
+import { PersonPicker } from './person-picker'
 import { useCallback, useEffect, useState, useTransition } from 'react'
 import { AlertTriangle, CheckCircle2, Loader2, PackageCheck, ShieldAlert } from 'lucide-react'
 import { Button } from '@/components/ui/button'
@@ -59,7 +60,7 @@ export function ArrivedDialog({ damageId, code, open, onOpenChange, onDone }: { 
         <form onSubmit={submit} className="space-y-3">
           <div className="space-y-1.5">
             <Label>Ko je dovezao sredstvo *</Label>
-            <Input autoFocus value={who} onChange={(e) => setWho(e.target.value)} placeholder="Ime i prezime" />
+            <PersonPicker autoFocus storageKey="arrived" value={who} onChange={setWho} />
           </div>
           <DialogFooter>
             <Button type="button" variant="outline" onClick={() => onOpenChange(false)}>Odustani</Button>
@@ -157,7 +158,7 @@ export function ChiefDialog({ damage, open, onOpenChange, onDone }: {
         if (r.ok) { toast.success('Pregled šefa upisan — sredstvo vraćeno u upotrebu'); onOpenChange(false); onDone() } else toast.error(r.error ?? 'Greška')
       } else {
         const r = await recordChiefFailed({ damageId: damage.id, chiefName: chief, inspectedAt: iso, note })
-        if (r.ok) { toast.warning('Pregled nije prošao — prijava vraćena u popravku'); onOpenChange(false); onDone() } else toast.error(r.error ?? 'Greška')
+        if (r.ok) { toast.warning('Pregled nije prošao — kvar vraćen u popravku'); onOpenChange(false); onDone() } else toast.error(r.error ?? 'Greška')
       }
     })
   }
@@ -174,7 +175,7 @@ export function ChiefDialog({ damage, open, onOpenChange, onDone }: {
         <form onSubmit={submit} className="space-y-3">
           <div className="space-y-1.5">
             <Label>Šef službe koji je pregledao vozilo *</Label>
-            <Input value={chief} onChange={(e) => setChief(e.target.value)} placeholder="Ime i prezime" />
+            <PersonPicker storageKey="chief" value={chief} onChange={setChief} />
           </div>
           <div className="space-y-1.5">
             <Label>Datum i vrijeme pregleda *</Label>
@@ -271,7 +272,7 @@ export function PendingHandoverList({ onChanged }: { onChanged?: () => void }) {
             <div className="font-medium">{r.equipmentCode} — {r.equipmentName}</div>
             <div className="text-xs text-muted-foreground">Pregled šefa: {r.chiefName ?? '-'} {fmtDT(r.chiefInspectedAt)}</div>
           </div>
-          <Input className="w-48" placeholder="Ko preuzima sredstvo" value={who[r.id] ?? ''} onChange={(e) => setWho({ ...who, [r.id]: e.target.value })} />
+          <div className="w-full sm:w-64"><PersonPicker storageKey="handover" placeholder="Ko preuzima sredstvo" value={who[r.id] ?? ''} onChange={(v) => setWho({ ...who, [r.id]: v })} /></div>
           <Button size="sm" className="h-10 bg-green-600 hover:bg-green-700" disabled={busy === r.id} onClick={() => save(r.id)}>
             {busy === r.id ? <Loader2 className="h-4 w-4 animate-spin" /> : 'Upiši preuzimanje'}
           </Button>
@@ -286,7 +287,7 @@ export function PendingHandoverList({ onChanged }: { onChanged?: () => void }) {
 export function WorkshopStepper({ d }: { d: { createdAt?: unknown; acknowledgedAt?: unknown; workshopArrivedAt?: unknown; repairedAt?: unknown; chiefResult?: string | null; chiefInspectedAt?: unknown; handoverAt?: unknown; status?: string } }) {
   const chiefOk = d.chiefResult === 'OK' && !!d.chiefInspectedAt
   const steps: Array<[string, boolean]> = [
-    ['Prijavljeno', !!d.createdAt],
+    ['Kvar prijavljen', !!d.createdAt],
     ['Preuzeto', !!d.acknowledgedAt],
     ['U radionici', !!d.workshopArrivedAt],
     ['Popravljeno', !!d.repairedAt && d.status !== 'IN_REPAIR'],

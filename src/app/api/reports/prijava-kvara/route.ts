@@ -28,12 +28,12 @@ export async function GET(request: NextRequest) {
 
   if (isDemoMode()) {
     dr = await db.damageReport.findUnique({ where: { id: damageId } })
-    if (!dr) return new NextResponse('Prijava nije pronadjena', { status: 404 })
+    if (!dr) return new NextResponse('Kvar nije pronadjen', { status: 404 })
     equipment = await db.equipment.findUnique({ where: { id: dr.equipmentId } })
   } else {
     const supabase = await createSupabaseClient()
     const { data } = await supabase.from('damage_reports').select('*').eq('id', damageId).maybeSingle()
-    if (!data) return new NextResponse('Prijava nije pronadjena', { status: 404 })
+    if (!data) return new NextResponse('Kvar nije pronadjen', { status: 404 })
     dr = {
       id: data.id, equipmentId: data.equipment_id, equipmentCode: data.equipment_code, equipmentName: data.equipment_name,
       reportedByName: data.reported_by_name, severity: data.severity, description: data.description, status: data.status,
@@ -173,7 +173,7 @@ export async function GET(request: NextRequest) {
     y -= 14
   }
 
-  addText(`Status prijave: ${statusLabel(dr.status)}`, margin, y, { size: 9, font: fontBold })
+  addText(`Status kvara: ${statusLabel(dr.status)}`, margin, y, { size: 9, font: fontBold })
   y -= 20
   addText(`Izvjestaj generisao iz aplikacije: ${user.full_name}, ${new Date().toLocaleString('hr-HR')}`, margin, y, {
     size: 7,
@@ -194,7 +194,7 @@ export async function GET(request: NextRequest) {
   y2 -= 14
   t2('Zapis o održavanju vozila - ADR.OPS.C.007(b)(3), Reg. (EU) 139/2014', margin, y2, { size: 9, font: italic })
   y2 -= 22
-  t2(`${dr.equipmentName}   (${dr.equipmentCode})      Prijava br. ${dr.id.slice(0, 8).toUpperCase()}`, margin, y2, { size: 10, font: fontBold })
+  t2(`${dr.equipmentName}   (${dr.equipmentCode})      Kvar br. ${dr.id.slice(0, 8).toUpperCase()}`, margin, y2, { size: 10, font: fontBold })
   y2 -= 14
   t2('Vrsta održavanja: KOREKTIVNO (kvar prijavljen tokom upotrebe)', margin, y2, { size: 9 })
   y2 -= 22
@@ -205,7 +205,7 @@ export async function GET(request: NextRequest) {
   y2 -= 18
   const events: Array<[string, unknown, string | null | undefined]> = [
     ['1. Kvar prijavljen', dr.createdAt, dr.reportedByName],
-    ['2. Prijava preuzeta u radionicu', dr.acknowledgedAt, dr.acknowledgedBy],
+    ['2. Kvar preuzet u radionicu', dr.acknowledgedAt, dr.acknowledgedBy],
     ['3. Sredstvo doveženo u radionicu (ULAZ)', dr.workshopArrivedAt, dr.workshopArrivedBy ? `dovezao/la: ${dr.workshopArrivedBy}` : null],
     ['4. Popravka završena', dr.repairedAt, dr.repairedByName],
     [`5. Pregled šefa službe${dr.chiefResult ? (dr.chiefResult === 'OK' ? ' - PROŠAO' : ' - NIJE PROŠAO') : ''}`, dr.chiefInspectedAt, dr.chiefName],

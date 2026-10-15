@@ -1,5 +1,6 @@
 'use client'
 
+import { normalizeScan } from '@/lib/scan'
 import { useState, useTransition, useEffect } from 'react'
 import { identifyWorkerByCardId } from '@/lib/worker-auth'
 import { DamageQuickFields, fallbackDamageDescription } from './damage-quick-fields'
@@ -71,18 +72,6 @@ interface EquipmentInfo {
   inspectedToday?: boolean
   /** brojila za servisni plan: trenutno stanje i šta se prati */
   meter?: { km: number; hours: number; trackKm: boolean; trackHours: boolean }
-}
-
-// Normalizuje ono što je skenirano u kod opreme
-function normalizeScan(raw: string): string {
-  let v = raw.trim().toUpperCase()
-  // Ako je skeniran URL sa ?scan=XXX, izvuci parametar
-  const urlMatch = v.match(/[?&]SCAN=([^&\s]+)/i)
-  if (urlMatch) return decodeURIComponent(urlMatch[1]).toUpperCase()
-  // Ako je cijeli URL sa path-om /eq/CODE, izvuci
-  const pathMatch = v.match(/\/EQ\/([A-Z0-9-]+)/)
-  if (pathMatch) return pathMatch[1]
-  return v
 }
 
 const SHIFT_KEY = 'gse.worker.shift'
@@ -295,7 +284,7 @@ export function WorkerView({
   const buildChecklist = (): ChecklistItem[] =>
     effectiveMode === 'fault'
       ? [{
-          id: 'visual-fault', label: 'Kvar/oštećenje uočeno pri zaduživanju', passed: false,
+          id: 'visual-fault', label: 'Kvar uočen pri zaduživanju', passed: false,
           ...(checkoutSeverity !== 'MINOR' ? { severity: 'BLOCKING' as const } : {}),
           category: (damageCategory || 'OPSTE') as ChecklistItem['category'],
         }]
@@ -382,7 +371,7 @@ export function WorkerView({
             // Zaduženo; ako je uz to prijavljeno oštećenje koje ne blokira, radionica je obaviještena
             setStep('success')
             if (res.damageReportId && effectiveMode === 'fault') {
-              toast.warning('Zaduženo. Prijava oštećenja je zabilježena i proslijeđena radionici.')
+              toast.warning('Zaduženo. Kvar je zabilježen i proslijeđen radionici.')
             } else {
               toast.success('Uspješno zaduženo!')
             }
@@ -619,7 +608,7 @@ export function WorkerView({
               {faultOnly && (
                 <div role="alert" className="rounded-lg border-2 border-red-500 bg-red-50 p-3 text-sm text-red-900">
                   <strong>Sredstvo danas nije pregledano</strong> (nema dnevnog pregleda), pa se ne može zadužiti.
-                  Ako ste uočili kvar ili oštećenje, prijavite ga ispod.
+                  Ako ste uočili kvar, prijavite ga ispod.
                 </div>
               )}
 
@@ -650,7 +639,7 @@ export function WorkerView({
                       onClick={() => chooseMode('fault')}
                     >
                       <AlertTriangle className="h-5 w-5 mr-2 shrink-0" />
-                      Uočio sam kvar / oštećenje — prijavi odmah
+                      Uočio sam kvar — prijavi odmah
                     </Button>
                   </CardContent>
                 </Card>
@@ -659,7 +648,7 @@ export function WorkerView({
               {effectiveMode === 'fault' && (
                 <Card>
                   <CardHeader>
-                    <CardTitle className="text-base">Prijava kvara</CardTitle>
+                    <CardTitle className="text-base">Novi kvar</CardTitle>
                   </CardHeader>
                   <CardContent className="space-y-3">
                     <RadioGroup
@@ -668,7 +657,7 @@ export function WorkerView({
                       className="grid grid-cols-1 gap-2"
                     >
                       {[
-                        { v: 'MINOR_DAMAGE', l: faultOnly ? 'Manji kvar / oštećenje' : 'Manji kvar — mogu koristiti sredstvo', cls: 'border-amber-500 bg-amber-50' },
+                        { v: 'MINOR_DAMAGE', l: faultOnly ? 'Manji kvar' : 'Manji kvar — mogu koristiti sredstvo', cls: 'border-amber-500 bg-amber-50' },
                         { v: 'MAJOR_DAMAGE', l: 'Veći kvar — sredstvo nije za upotrebu', cls: 'border-orange-500 bg-orange-50' },
                         { v: 'OUT_OF_SERVICE', l: 'Kritičan kvar — sredstvo nije za upotrebu', cls: 'border-red-500 bg-red-50' },
                       ].map((o) => (
@@ -691,9 +680,9 @@ export function WorkerView({
                       <p className="text-xs text-destructive flex items-start gap-1.5">
                         <AlertTriangle className="h-3.5 w-3.5 flex-shrink-0 mt-0.5" />
                         {checkoutSeverity !== 'MINOR'
-                          ? 'Sredstvo se NEĆE moći zadužiti. Biće prebačeno u status "Neispravno" i prijava proslijeđena održavanju.'
+                          ? 'Sredstvo se NEĆE moći zadužiti. Biće prebačeno u status "Neispravno" i kvar proslijeđen održavanju.'
                           : faultOnly
-                            ? 'Prijava se šalje održavanju. Sredstvo se ne može zadužiti dok se ne uradi dnevni pregled.'
+                            ? 'Kvar se šalje održavanju. Sredstvo se ne može zadužiti dok se ne uradi dnevni pregled.'
                             : 'Kvar se bilježi i javlja održavanju, a sredstvo možete zadužiti.'}
                       </p>
                     </div>
@@ -730,7 +719,7 @@ export function WorkerView({
                 </CardHeader>
                 <CardContent className="space-y-3">
                   <div className="bg-muted/30 p-3 rounded-lg text-sm">
-                    <p>Potvrđujete da razdužujete ovo sredstvo i da ste ga vratili u istom stanju (ili prijavljujete novo oštećenje).</p>
+                    <p>Potvrđujete da razdužujete ovo sredstvo i da ste ga vratili u istom stanju (ili prijavljujete novi kvar).</p>
                   </div>
 
                   {equipment.meter && (equipment.meter.trackKm || equipment.meter.trackHours) && (
@@ -767,7 +756,7 @@ export function WorkerView({
                   <Separator />
 
                   <div className="space-y-1.5">
-                    <Label>Dali ste primijetili novo oštećenje?</Label>
+                    <Label>Jeste li primijetili novi kvar?</Label>
                     <RadioGroup
                       value={reportDamageIn ? 'yes' : 'no'}
                       onValueChange={(v) => {
@@ -895,7 +884,7 @@ export function WorkerView({
             </h2>
             <p className="text-sm text-red-700 max-w-md mx-auto">
               {blockedMsg ?? (damageDescription.trim()
-                ? 'Prijavili ste oštećenje na sredstvu. Sredstvo je prebačeno u status "Neispravno" i ne može se zadužiti. Održavanje je automatski obaviješteno o vašoj prijavi.'
+                ? 'Prijavili ste kvar na sredstvu. Sredstvo je prebačeno u status "Neispravno" i ne može se zadužiti. Održavanje je automatski obaviješteno o vašoj prijavi.'
                 : 'Sredstvo je trenutno neispravno ili je na održavanju. Zaduživanje nije moguće. Kontaktirajte održavanje ako smatrate da je greška.')}
             </p>
             <div className="bg-white/60 rounded-lg p-3 text-left text-sm space-y-1 max-w-md mx-auto border border-red-200">
@@ -905,7 +894,7 @@ export function WorkerView({
               </div>
               {damageDescription.trim() ? (
                 <div className="mt-2 pt-2 border-t border-red-200 space-y-1">
-                  <div className="text-xs font-medium text-red-900 uppercase">Prijavljeno oštećenje:</div>
+                  <div className="text-xs font-medium text-red-900 uppercase">Prijavljeni kvar:</div>
                   <div className="text-sm text-red-800">{damageDescription.trim()}</div>
                   <div className="text-xs text-muted-foreground mt-1">
                     Težina: <strong className="text-red-900">{damageSeverity === 'MINOR' ? 'Manje' : damageSeverity === 'MAJOR' ? 'Veće' : 'Kritično'}</strong>

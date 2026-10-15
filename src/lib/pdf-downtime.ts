@@ -42,7 +42,7 @@ export async function buildDowntimePdf(st: DowntimeStats, generatedBy: string): 
     ['PROSJECNA POPRAVKA', hoursText(st.mttrHours), ACCENT], ['PROSJECNA REAKCIJA', hoursText(st.reactionHours), ACCENT],
     ['RASPOLOZIVOST FLOTE', st.fleetAvailabilityPct == null ? '-' : `${st.fleetAvailabilityPct}%`, st.fleetAvailabilityPct != null && st.fleetAvailabilityPct < 95 ? RED : GREEN],
   ]) - 8
-  T('Zastoj = vrijeme dok je otvorena prijava tezine MAJOR/CRITICAL (sredstvo blokirano). Popravka = od preuzimanja prijave do povratka u rad. Reakcija = od prijave do preuzimanja.', M, y, 6.3, font, MUTED)
+  T('Zastoj = vrijeme dok je otvoren kvar tezine MAJOR/CRITICAL (sredstvo blokirano). Popravka = od preuzimanja kvara do povratka u rad. Reakcija = od prijavljivanja do preuzimanja.', M, y, 6.3, font, MUTED)
   T(`Prosjecno vrijeme u radionici (dovezeno -> rijeseno): ${hoursText(st.workshopHours)}.`, M, y - 8, 6.3, font, MUTED)
   y -= 28
 

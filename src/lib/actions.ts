@@ -700,7 +700,7 @@ export async function reportEquipmentFault(p: {
   const { data: eq } = await sb.from('equipment').select('id, code, status').eq('code', p.equipmentCode).maybeSingle()
   if (!eq) return { ok: false, error: 'Sredstvo nije pronađeno' }
   const id = await createFreeFormDamage({ equipmentCode: eq.code, employeeCardId: card, employeeName: name, severity, description, category: p.category, photos: p.photos })
-  if (!id) return { ok: false, error: 'Prijava kvara nije upisana. Pokušajte ponovo ili obavijestite održavanje.' }
+  if (!id) return { ok: false, error: 'Kvar nije upisan. Pokušajte ponovo ili obavijestite održavanje.' }
   if (blocking && eq.status !== 'ASSIGNED') {
     await sb.from('equipment').update({ status: 'OUT_OF_SERVICE', notes: `Kvar prijavljen ${new Date().toISOString().slice(0, 10)} od ${name}: ${description.slice(0, 100)}` }).eq('id', eq.id)
   }
@@ -1259,13 +1259,13 @@ export async function markRepaired(params: {
   let equipmentCode = ''
   if (isDemoMode()) {
     const dr = await db.damageReport.findUnique({ where: { id: params.damageId } })
-    if (!dr) return { ok: false, error: 'Prijava kvara nije pronađena' }
+    if (!dr) return { ok: false, error: 'Kvar nije pronađen' }
     equipmentCode = dr.equipmentCode
     category = dr.category ?? params.category ?? null
   } else {
     const supabase = await createSupabaseClient()
     const { data: dr } = await supabase.from('damage_reports').select('category,equipment_code').eq('id', params.damageId).maybeSingle()
-    if (!dr) return { ok: false, error: 'Prijava kvara nije pronađena' }
+    if (!dr) return { ok: false, error: 'Kvar nije pronađen' }
     equipmentCode = dr.equipment_code ?? ''
     category = dr.category ?? params.category ?? null
   }
@@ -1351,7 +1351,7 @@ export async function approveRepair(params: {
 
   if (isDemoMode()) {
     const dr = await db.damageReport.findUnique({ where: { id: params.damageId } })
-    if (!dr) return { ok: false, error: 'Prijava kvara nije pronađena' }
+    if (!dr) return { ok: false, error: 'Kvar nije pronađen' }
     if (dr.status !== 'AWAITING_APPROVAL') return { ok: false, error: 'Popravka nije označena kao završena' }
     equipmentId = dr.equipmentId
     resolution = dr.resolution ?? ''
@@ -1391,7 +1391,7 @@ export async function approveRepair(params: {
       .select('equipment_id, status, resolution, repaired_by_name, repaired_by_card_id, worker_names, parts_json, work_hours, work_cost')
       .eq('id', params.damageId)
       .maybeSingle()
-    if (!dr) return { ok: false, error: 'Prijava kvara nije pronađena' }
+    if (!dr) return { ok: false, error: 'Kvar nije pronađen' }
     if (dr.status !== 'AWAITING_APPROVAL') return { ok: false, error: 'Popravka nije označena kao završena' }
     equipmentId = dr.equipment_id
     resolution = dr.resolution ?? ''

@@ -47,8 +47,8 @@ export async function markArrivedInWorkshop(params: { damageId: string; broughtB
   const who = clean(params.broughtBy, 120)
   if (who.length < 3) return { ok: false, error: 'Upišite ime i prezime osobe koja je dovezla sredstvo' }
   const d = await loadDamage(params.damageId)
-  if (!d) return { ok: false, error: 'Prijava kvara nije pronađena' }
-  if (d.status === 'RESOLVED') return { ok: false, error: 'Prijava je već riješena' }
+  if (!d) return { ok: false, error: 'Kvar nije pronađen' }
+  if (d.status === 'RESOLVED') return { ok: false, error: 'Kvar je već riješen' }
   if (d.arrivedAt) return { ok: false, error: 'Dolazak u radionicu je već upisan' }
   const now = new Date()
   const r = await patch(params.damageId, {
@@ -67,8 +67,8 @@ export async function addWorkshopStatus(params: { damageId: string; text: string
   const text = clean(params.text, 200)
   if (text.length < 3) return { ok: false, error: 'Upišite status popravke' }
   const d = await loadDamage(params.damageId)
-  if (!d) return { ok: false, error: 'Prijava kvara nije pronađena' }
-  if (d.status === 'RESOLVED') return { ok: false, error: 'Prijava je već riješena' }
+  if (!d) return { ok: false, error: 'Kvar nije pronađen' }
+  if (d.status === 'RESOLVED') return { ok: false, error: 'Kvar je već riješen' }
   const now = new Date()
   const r = await patch(params.damageId, {
     demo: { lastStatusText: text, lastStatusAt: now, lastStatusBy: user.full_name },
@@ -91,7 +91,7 @@ export async function recordChiefFailed(params: { damageId: string; chiefName: s
   const at = params.inspectedAt ? new Date(params.inspectedAt) : now
   if (!Number.isFinite(at.getTime()) || at.getTime() > now.getTime() + 10 * 60_000) return { ok: false, error: 'Datum i vrijeme pregleda nisu ispravni' }
   const d = await loadDamage(params.damageId)
-  if (!d) return { ok: false, error: 'Prijava kvara nije pronađena' }
+  if (!d) return { ok: false, error: 'Kvar nije pronađen' }
   if (d.status !== 'AWAITING_APPROVAL') return { ok: false, error: 'Popravka nije poslana na pregled šefu' }
   const statusText = `Pregled šefa (${chief}) nije prošao: ${note}`
   const r = await patch(params.damageId, {
@@ -110,7 +110,7 @@ export async function recordHandover(params: { damageId: string; takenBy: string
   const who = clean(params.takenBy, 120)
   if (who.length < 3) return { ok: false, error: 'Upišite ime i prezime osobe koja je preuzela sredstvo' }
   const d = await loadDamage(params.damageId)
-  if (!d) return { ok: false, error: 'Prijava kvara nije pronađena' }
+  if (!d) return { ok: false, error: 'Kvar nije pronađen' }
   if (d.status !== 'RESOLVED') return { ok: false, error: 'Sredstvo se može predati tek nakon odobrenog pregleda šefa' }
   if (d.handoverAt) return { ok: false, error: 'Preuzimanje je već upisano' }
   const now = new Date()

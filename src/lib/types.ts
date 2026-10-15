@@ -193,7 +193,7 @@ export const STATUS_COLORS: Record<EquipmentStatus, string> = {
 
 export const INSPECTION_RESULT_LABELS: Record<InspectionResult, string> = {
   OK: 'Ispravno',
-  MINOR_DAMAGE: 'Manje oštećenje',
-  MAJOR_DAMAGE: 'Veće oštećenje',
+  MINOR_DAMAGE: 'Manji kvar',
+  MAJOR_DAMAGE: 'Veći kvar',
   OUT_OF_SERVICE: 'Neispravno',
 }
