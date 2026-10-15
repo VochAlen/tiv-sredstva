@@ -204,29 +204,54 @@ export async function toggleRestrictedAccess(equipmentId: string, restricted: bo
 // GET all employees (for dropdown in authorize dialog)
 // =====================================================
 
-export async function getAllEmployees() {
+export interface EmployeeOption { id: string; cardId: string; name: string }
+
+// Samo polja potrebna za izbor radnika (bez PIN-a - PIN se nikad ne šalje u browser)
+export async function getAllEmployees(): Promise<EmployeeOption[]> {
   await requireRole(['engineer', 'admin'])
+  return loadEmployeeOptions()
+}
+
+async function loadEmployeeOptions(): Promise<EmployeeOption[]> {
+  if (isDemoMode()) {
+    const rows = await db.employee.findMany({ where: { active: true }, orderBy: { name: 'asc' }, select: { id: true, cardId: true, name: true } })
+    return rows
+  }
+  const supabase = await createSupabaseClient()
+  const { data } = await supabase.from('employees').select('id, card_id, name').eq('active', true).order('name', { ascending: true })
+  return (data ?? []).map((e: any) => ({ id: e.id, cardId: e.card_id, name: e.name }))
+}
+
+// =====================================================
+// Sve što treba modalu "Access Control" u JEDNOM pozivu (jedna provjera prijave, upiti paralelno).
+// Lista radnika se traži samo kad je klijent nema u kešu.
+// =====================================================
+
+export async function getAccessPanel(equipmentId: string, withEmployees: boolean): Promise<{ restricted: boolean; workers: AccessEntry[]; employees: EmployeeOption[] | null }> {
+  await requireRole(['engineer', 'admin'])
+  const emp = withEmployees ? loadEmployeeOptions() : Promise.resolve(null)
 
   if (isDemoMode()) {
-    return db.employee.findMany({
-      where: { active: true },
-      orderBy: { name: 'asc' },
-    })
+    const [eq, workers, employees] = await Promise.all([
+      db.equipment.findUnique({ where: { id: equipmentId }, select: { restrictedAccess: true } }),
+      db.equipmentAccess.findMany({ where: { equipmentId }, orderBy: { createdAt: 'desc' } }),
+      emp,
+    ])
+    return { restricted: !!eq?.restrictedAccess, workers, employees }
   }
 
   const supabase = await createSupabaseClient()
-  const { data } = await supabase
-    .from('employees')
-    .select('*')
-    .eq('active', true)
-    .order('name', { ascending: true })
-
-  return (data ?? []).map((e: any) => ({
-    id: e.id,
-    cardId: e.card_id,
-    name: e.name,
-    department: e.department,
-    role: e.role,
-    pin: e.pin,
-  }))
+  const [eq, access, employees] = await Promise.all([
+    supabase.from('equipment').select('restricted_access').eq('id', equipmentId).maybeSingle(),
+    supabase.from('equipment_access').select('*').eq('equipment_id', equipmentId).order('created_at', { ascending: false }),
+    emp,
+  ])
+  return {
+    restricted: !!eq.data?.restricted_access,
+    workers: (access.data ?? []).map((a: any) => ({
+      id: a.id, equipmentId: a.equipment_id, equipmentCode: a.equipment_code, employeeCardId: a.employee_card_id,
+      employeeName: a.employee_name, grantedBy: a.granted_by, createdAt: new Date(a.created_at),
+    })),
+    employees,
+  }
 }

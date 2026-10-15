@@ -1,7 +1,7 @@
 'use client'
 
 import { useEffect, useState, useTransition } from 'react'
-import { Wrench, Repeat, BarChart3, Plus, Loader2, Calendar, Award, FileText, Search, Download, AlertOctagon, User, Pencil, Trash2 } from 'lucide-react'
+import { ScanLine, Wrench, Repeat, BarChart3, Plus, Loader2, Calendar, Award, FileText, Search, Download, AlertOctagon, User, Pencil, Trash2 } from 'lucide-react'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
@@ -28,11 +28,14 @@ import {
 } from '@/lib/types-advanced'
 import { EQUIPMENT_TYPE_LABELS } from '@/lib/types'
 import { DamageRowCard } from '@/components/dashboard/damage-row-card'
+import { QrScanner } from '@/components/worker/qr-scanner'
+import { EquipmentRecordDialog } from '@/components/dashboard/equipment-record-dialog'
+import { normalizeScan } from '@/lib/scan'
 import { DowntimeView } from '@/components/dashboard/downtime-view'
+import { WorkshopBoard } from '@/components/dashboard/workshop-board'
 import { getRepeatDefects } from '@/lib/actions-workshop-extras'
 import { REPEAT_ADVICE, REPEAT_WINDOW_DAYS, type RepeatGroup } from '@/lib/repeat-defects'
 import { staleInfo } from '@/lib/workshop'
-import { PendingHandoverList } from '@/components/dashboard/workshop-actions'
 import { updateMaintenanceLog, updateQualification, deleteQualification, updateDamageReport } from '@/lib/actions-admin-edit'
 import type { AppUser } from '@/lib/auth-server'
 import { CHECKLIST_CATEGORY_ORDER, CHECKLIST_CATEGORY_LABELS } from '@/lib/types'
@@ -44,7 +47,8 @@ type OpenDamage = Awaited<ReturnType<typeof getOpenDamages>>[number]
 
 export function MaintenanceView({ currentUser }: { currentUser: AppUser }) {
   const isAdmin = currentUser.role === 'admin'
-  const [tab, setTab] = useState<'faults' | 'logs' | 'qualifications' | 'downtime'>('faults')
+  const [tab, setTab] = useState<'faults' | 'workshop' | 'logs' | 'qualifications' | 'downtime'>('faults')
+  const [tabChosen, setTabChosen] = useState(false)
   const [damages, setDamages] = useState<OpenDamage[]>([])
   const [logs, setLogs] = useState<MaintenanceLog[]>([])
   const [qualifications, setQualifications] = useState<Qualification[]>([])
@@ -52,6 +56,9 @@ export function MaintenanceView({ currentUser }: { currentUser: AppUser }) {
   const [repeats, setRepeats] = useState<RepeatGroup[]>([])
   const [loading, setLoading] = useState(true)
   const [isPending, startTransition] = useTransition()
+  const [scanOpen, setScanOpen] = useState(false)
+  const [scanCode, setScanCode] = useState<string | null>(null)
+  const [recordCode, setRecordCode] = useState<string | null>(null)
 
   const load = async () => {
     setLoading(true)
@@ -64,6 +71,8 @@ export function MaintenanceView({ currentUser }: { currentUser: AppUser }) {
         getRepeatDefects().catch(() => [] as RepeatGroup[]),
       ])
       setRepeats(rp)
+      // Prvi put: ako nema novih prijava, a ima sredstava u radionici, odmah prikaži radionicu
+      if (!tabChosen && !d.some((x) => x.status === 'OPEN') && d.some((x) => x.status === 'IN_REPAIR' || x.status === 'AWAITING_APPROVAL')) setTab('workshop')
       setDamages(d)
       setLogs(l)
       setQualifications(q)
@@ -79,8 +88,49 @@ export function MaintenanceView({ currentUser }: { currentUser: AppUser }) {
 
   useEffect(() => { load() }, [])
 
+  // QR na vozilu -> odmah kartica kvara sa velikim dugmetom sljedećeg koraka;
+  // ako sredstvo nema otvoren kvar, otvara se njegov karton.
+  const scanMatches = scanCode ? damages.filter((d) => d.equipmentCode.toUpperCase() === scanCode) : []
+  // Vodič se crta u pregledniku (lazy import) - bez servera i bez troška na Vercelu
+  const openGuide = async () => {
+    try {
+      const { buildWorkshopGuidePdf } = await import('@/lib/pdf-workshop-guide')
+      const bytes = await buildWorkshopGuidePdf(`${window.location.origin}/dashboard`)
+      window.open(URL.createObjectURL(new Blob([bytes as BlobPart], { type: 'application/pdf' })), '_blank')
+    } catch (e) { console.error(e); toast.error('Vodič nije generisan') }
+  }
+  const onScanned = (raw: string) => {
+    const code = normalizeScan(raw)
+    if (!code) return
+    setScanOpen(false)
+    if (damages.some((d) => d.equipmentCode.toUpperCase() === code)) setScanCode(code)
+    else setRecordCode(code)
+  }
+
   return (
     <div className="space-y-4">
+      <Dialog open={scanOpen} onOpenChange={setScanOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Skeniraj QR na vozilu</DialogTitle>
+            <DialogDescription>Otvorit će se kartica kvara tog sredstva.</DialogDescription>
+          </DialogHeader>
+          {scanOpen && <QrScanner onScan={onScanned} />}
+        </DialogContent>
+      </Dialog>
+      <Dialog open={!!scanCode} onOpenChange={(o) => { if (!o) setScanCode(null) }}>
+        <DialogContent className="max-w-3xl max-h-[90vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle>{scanCode}</DialogTitle>
+            <DialogDescription>Kartica kvara — sljedeći korak je veliko dugme ispod.</DialogDescription>
+          </DialogHeader>
+          {scanMatches.map((d) => (
+            <DamageRowCard key={d.id} damage={d as any} onResolved={() => { load() }} currentUser={currentUser} repeats={repeats} />
+          ))}
+          <Button variant="outline" onClick={() => { const c = scanCode; setScanCode(null); setRecordCode(c) }}>Otvori karton sredstva</Button>
+        </DialogContent>
+      </Dialog>
+      <EquipmentRecordDialog code={recordCode} onClose={() => setRecordCode(null)} />
       <div className="flex items-center justify-between flex-wrap gap-2">
         <div>
           <h2 className="text-lg font-semibold flex items-center gap-2">
@@ -88,10 +138,12 @@ export function MaintenanceView({ currentUser }: { currentUser: AppUser }) {
             Radionica
           </h2>
           <p className="text-sm text-muted-foreground">
-            Kvarovi, popravke i povratak sredstava u rad
+            Novi kvarovi, sredstva u radionici i povratak u rad
           </p>
         </div>
         <div className="flex gap-2">
+          <Button className="h-11" onClick={() => setScanOpen(true)}><ScanLine className="h-4 w-4 mr-2" />Skeniraj QR</Button>
+          <Button variant="outline" className="h-11" onClick={openGuide}><FileText className="h-4 w-4 mr-2" />Vodič (PDF)</Button>
           {tab === 'logs' ? <AddMaintenanceDialog onCreated={load} /> : tab === 'qualifications' ? <AddQualificationDialog onCreated={load} /> : null}
         </div>
       </div>
@@ -122,11 +174,18 @@ export function MaintenanceView({ currentUser }: { currentUser: AppUser }) {
 
       <div className="flex gap-2 border-b">
         <button
-          onClick={() => setTab('faults')}
+          onClick={() => { setTab('faults'); setTabChosen(true) }}
           className={`px-4 py-2 text-sm font-medium border-b-2 transition ${tab === 'faults' ? 'border-primary text-primary' : 'border-transparent text-muted-foreground hover:text-foreground'}`}
         >
           <AlertOctagon className="h-4 w-4 inline mr-1.5" />
-          Kvarovi ({damages.length})
+          Novi kvarovi ({damages.filter((x) => x.status === 'OPEN').length})
+        </button>
+        <button
+          onClick={() => { setTab('workshop'); setTabChosen(true) }}
+          className={`px-4 py-2 text-sm font-medium border-b-2 transition ${tab === 'workshop' ? 'border-primary text-primary' : 'border-transparent text-muted-foreground hover:text-foreground'}`}
+        >
+          <Wrench className="h-4 w-4 inline mr-1.5" />
+          U radionici ({damages.filter((x) => x.status === 'IN_REPAIR' || x.status === 'AWAITING_APPROVAL').length})
         </button>
         <button
           onClick={() => setTab('downtime')}
@@ -158,8 +217,10 @@ export function MaintenanceView({ currentUser }: { currentUser: AppUser }) {
       ) : tab === 'faults' ? (
         <>
           <RepeatSummary groups={repeats} />
-          <OpenFaultsList damages={damages} onChanged={load} currentUser={currentUser} repeats={repeats} />
+          <OpenFaultsList damages={damages.filter((x) => x.status === 'OPEN')} onChanged={load} currentUser={currentUser} repeats={repeats} />
         </>
+      ) : tab === 'workshop' ? (
+        <WorkshopBoard damages={damages as any} onChanged={load} currentUser={currentUser} repeats={repeats} />
       ) : tab === 'downtime' ? (
         <DowntimeView />
       ) : tab === 'logs' ? (
@@ -215,10 +276,9 @@ function OpenFaultsList({ damages, onChanged, currentUser, repeats }: { damages:
   if (sorted.length === 0) {
     return (
       <div className="space-y-2">
-        <PendingHandoverList onChanged={onChanged} />
         <Card>
           <CardContent className="py-10 text-center text-sm text-muted-foreground">
-            Sva sredstva su ispravna — nema otvorenih prijava kvarova.
+            Nema novih kvarova koji čekaju preuzimanje.
           </CardContent>
         </Card>
       </div>
@@ -244,7 +304,6 @@ function OpenFaultsList({ damages, onChanged, currentUser, repeats }: { damages:
   // Ista kartica kao u "Neispravna sredstva": preuzmi → označi popravljeno → odobri (admin može i direktno riješiti)
   return (
     <div className="space-y-2">
-      <PendingHandoverList onChanged={onChanged} />
       {groups.map((g) => (
         <section key={g.key} className="space-y-2">
           <h3 className={`flex items-center gap-2 rounded-md px-3 py-2 text-sm font-bold ${g.cls}`}>
@@ -258,7 +317,7 @@ function OpenFaultsList({ damages, onChanged, currentUser, repeats }: { damages:
                   <Badge className={`text-xs font-semibold ${URGENCY_COLORS[urgency]}`}>Hitnost: {URGENCY_LABELS[urgency]}</Badge>
                   {isAdmin && (
                     <Button size="sm" variant="outline" className="h-7 ml-auto" onClick={() => setEditing(d)}>
-                      <Pencil className="h-3.5 w-3.5 mr-1" />Uredi prijavu
+                      <Pencil className="h-3.5 w-3.5 mr-1" />Uredi kvar
                     </Button>
                   )}
                 </div>
@@ -283,14 +342,14 @@ function EditDamageDialog({ damage, onClose, onSaved }: { damage: OpenDamage; on
       description, severity: severity as any, category: category === 'NONE' ? null : category,
     })
     if (!r.ok) { toast.error(r.error ?? 'Greška'); return }
-    toast.success('Prijava izmijenjena')
+    toast.success('Kvar izmijenjen')
     onSaved()
   })
   return (
     <Dialog open onOpenChange={(o) => !o && onClose()}>
       <DialogContent>
         <DialogHeader>
-          <DialogTitle>Uredi prijavu kvara — {damage.equipmentCode}</DialogTitle>
+          <DialogTitle>Uredi kvar — {damage.equipmentCode}</DialogTitle>
           <DialogDescription>Izmjena se bilježi u audit trag.</DialogDescription>
         </DialogHeader>
         <div className="space-y-3">

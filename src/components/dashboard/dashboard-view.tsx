@@ -23,7 +23,7 @@ import {
   Calendar,
   Car,
   Fuel,
-  Wrench,
+  Wrench, MoreHorizontal,
   CheckCircle2,
   Activity,
   TrendingUp,
@@ -135,6 +135,7 @@ import { ReportsView } from './reports-view'
 import { MaintenanceView } from './maintenance-view'
 import { AdrView } from './adr-view'
 import { AccessControlDialog } from './access-control'
+import { EquipmentRecordDialog } from './equipment-record-dialog'
 import { CrsView } from './crs-view'
 import { SchedulingView } from './scheduling-view'
 import { IncidentsView } from './incidents-view'
@@ -157,21 +158,21 @@ import { roleAtLeast, type TaskRole } from '@/lib/my-tasks'
 // mijenja se samo kako se do njega dolazi.
 // =====================================================
 
-type NavItem = { value: string; label: string; icon: React.ComponentType<{ className?: string }>; minRole?: TaskRole; highlight?: boolean }
+type NavItem = { value: string; label: string; icon: React.ComponentType<{ className?: string }>; minRole?: TaskRole; highlight?: boolean; core?: boolean }
 type NavGroup = { label: string; items: NavItem[] }
 
 const NAV_GROUPS: NavGroup[] = [
   {
     label: 'Radionica',
     items: [
-      { value: 'maintenance', label: 'RADIONICA — kvarovi i održavanje', icon: Wrench, minRole: 'engineer', highlight: true },
-      { value: 'service-plan', label: 'RADIONICA — servisni plan i radni nalozi', icon: CalendarClock, minRole: 'engineer', highlight: true },
+      { value: 'maintenance', label: 'Radionica — kvarovi', icon: Wrench, minRole: 'engineer', highlight: true, core: true },
+      { value: 'service-plan', label: 'Servisni plan i nalozi', icon: CalendarClock, minRole: 'engineer', highlight: true, core: true },
     ],
   },
   {
     label: 'Pregled',
     items: [
-      { value: 'mytasks', label: 'Moj zadatak', icon: ListChecks },
+      { value: 'mytasks', label: 'Moj zadatak', icon: ListChecks, core: true },
       { value: 'overview', label: 'Pregled', icon: Activity },
       { value: 'daily-list', label: 'Dnevna lista pregleda', icon: ClipboardList },
       { value: 'inspection-log', label: 'Evidencija pregleda', icon: ClipboardCheck },
@@ -184,8 +185,8 @@ const NAV_GROUPS: NavGroup[] = [
   {
     label: 'Oprema',
     items: [
-      { value: 'equipment', label: 'Sredstva', icon: Package },
-      { value: 'damages', label: 'Arhiva kvarova (sve prijave)', icon: AlertOctagon },
+      { value: 'equipment', label: 'Sredstva', icon: Package, core: true },
+      { value: 'damages', label: 'Arhiva kvarova', icon: AlertOctagon },
       { value: 'qr', label: 'QR kodovi', icon: Printer, minRole: 'engineer' },
     ],
   },
@@ -222,7 +223,7 @@ const NAV_GROUPS: NavGroup[] = [
   {
     label: 'Izvještaji',
     items: [
-      { value: 'reports', label: 'Izvještaji', icon: Printer, minRole: 'engineer' },
+      { value: 'reports', label: 'Izvještaji', icon: Printer, minRole: 'engineer', core: true },
     ],
   },
 ]
@@ -269,6 +270,8 @@ export function DashboardView({ currentUser }: { currentUser: AppUser }) {
   const [search, setSearch] = useState('')
   const [statusFilter, setStatusFilter] = useState<string>('ALL')
   const [typeFilter, setTypeFilter] = useState<string>('ALL')
+  const [recordCode, setRecordCode] = useState<string | null>(null)
+  const [showMore, setShowMore] = useState(false)
 
   const load = async () => {
     setLoading(true)
@@ -351,31 +354,79 @@ export function DashboardView({ currentUser }: { currentUser: AppUser }) {
         </SidebarHeader>
 
         <SidebarContent>
-          {visibleGroups(currentUser.role).map((group) => (
-            <SidebarGroup key={group.label}>
-              <SidebarGroupLabel>{group.label}</SidebarGroupLabel>
-              <SidebarGroupContent>
-                <SidebarMenu>
-                  {group.items.map((item) => (
-                    <SidebarMenuItem key={item.value}>
-                      <SidebarMenuButton
-                        isActive={tab === item.value}
-                        className={item.highlight ? 'font-bold bg-blue-600 text-white hover:bg-blue-700 hover:text-white data-[active=true]:bg-blue-800 data-[active=true]:text-white' : undefined}
-                        onClick={() => setTab(item.value)}
-                        tooltip={NAV_T_KEYS[item.value] ? t(NAV_T_KEYS[item.value]!) : item.label}
-                      >
-                        <item.icon />
-                        <span>{NAV_T_KEYS[item.value] ? t(NAV_T_KEYS[item.value]!) : item.label}</span>
-                      </SidebarMenuButton>
-                      {item.value === 'maintenance' && stats.openDamages > 0 && (
-                        <SidebarMenuBadge className="bg-red-500 text-white">{stats.openDamages}</SidebarMenuBadge>
+          {(() => {
+            const all = visibleGroups(currentUser.role)
+            const isAdmin = currentUser.role === 'admin'
+            const renderGroup = (group: NavGroup) => (
+              <SidebarGroup key={group.label}>
+                <SidebarGroupLabel>{group.label}</SidebarGroupLabel>
+                <SidebarGroupContent>
+                  <SidebarMenu>
+                    {group.items.map((item) => (
+                      <SidebarMenuItem key={item.value}>
+                        <SidebarMenuButton
+                          isActive={tab === item.value}
+                          className={item.highlight ? 'font-bold bg-blue-600 text-white hover:bg-blue-700 hover:text-white data-[active=true]:bg-blue-800 data-[active=true]:text-white' : undefined}
+                          onClick={() => setTab(item.value)}
+                          tooltip={NAV_T_KEYS[item.value] ? t(NAV_T_KEYS[item.value]!) : item.label}
+                        >
+                          <item.icon />
+                          <span>{NAV_T_KEYS[item.value] ? t(NAV_T_KEYS[item.value]!) : item.label}</span>
+                        </SidebarMenuButton>
+                        {item.value === 'maintenance' && stats.openDamages > 0 && (
+                          <SidebarMenuBadge className="bg-red-500 text-white">{stats.openDamages}</SidebarMenuBadge>
+                        )}
+                      </SidebarMenuItem>
+                    ))}
+                  </SidebarMenu>
+                </SidebarGroupContent>
+              </SidebarGroup>
+            )
+            if (isAdmin) return all.map(renderGroup)
+            const coreGroups = all
+              .map((g) => ({ ...g, items: g.items.filter((i) => i.core) }))
+              .filter((g) => g.items.length > 0)
+            const moreGroups = all
+              .map((g) => ({ ...g, items: g.items.filter((i) => !i.core) }))
+              .filter((g) => g.items.length > 0)
+            const activeInMore = moreGroups.some((g) => g.items.some((i) => i.value === tab))
+            const open = showMore || activeInMore
+            return (
+              <>
+                <SidebarGroup>
+                  <SidebarGroupContent>
+                    <SidebarMenu>
+                      {coreGroups.flatMap((g) => g.items).map((item) => (
+                        <SidebarMenuItem key={item.value}>
+                          <SidebarMenuButton
+                            isActive={tab === item.value}
+                            className={item.highlight ? 'font-bold bg-blue-600 text-white hover:bg-blue-700 hover:text-white data-[active=true]:bg-blue-800 data-[active=true]:text-white' : undefined}
+                            onClick={() => setTab(item.value)}
+                            tooltip={NAV_T_KEYS[item.value] ? t(NAV_T_KEYS[item.value]!) : item.label}
+                          >
+                            <item.icon />
+                            <span>{NAV_T_KEYS[item.value] ? t(NAV_T_KEYS[item.value]!) : item.label}</span>
+                          </SidebarMenuButton>
+                          {item.value === 'maintenance' && stats.openDamages > 0 && (
+                            <SidebarMenuBadge className="bg-red-500 text-white">{stats.openDamages}</SidebarMenuBadge>
+                          )}
+                        </SidebarMenuItem>
+                      ))}
+                      {moreGroups.length > 0 && (
+                        <SidebarMenuItem>
+                          <SidebarMenuButton onClick={() => setShowMore((v) => !v)} tooltip="Više">
+                            <MoreHorizontal />
+                            <span>{open ? 'Manje' : 'Više'}</span>
+                          </SidebarMenuButton>
+                        </SidebarMenuItem>
                       )}
-                    </SidebarMenuItem>
-                  ))}
-                </SidebarMenu>
-              </SidebarGroupContent>
-            </SidebarGroup>
-          ))}
+                    </SidebarMenu>
+                  </SidebarGroupContent>
+                </SidebarGroup>
+                {open && moreGroups.map(renderGroup)}
+              </>
+            )
+          })()}
         </SidebarContent>
 
         <SidebarFooter>
@@ -508,13 +559,13 @@ export function DashboardView({ currentUser }: { currentUser: AppUser }) {
               <CardHeader>
                 <CardTitle className="text-base flex items-center gap-2">
                   <AlertOctagon className="h-4 w-4" />
-                  Otvorena oštećenja ({damages.length})
+                  Otvoreni kvarovi ({damages.length})
                 </CardTitle>
               </CardHeader>
               <CardContent>
                 {damages.length === 0 ? (
                   <p className="text-sm text-muted-foreground text-center py-6">
-                    Nema otvorenih oštećenja
+                    Nema otvorenih kvarova
                   </p>
                 ) : (
                   <div className="space-y-2 max-h-80 overflow-y-auto">
@@ -616,8 +667,15 @@ export function DashboardView({ currentUser }: { currentUser: AppUser }) {
                     </TableRow>
                   ) : (
                     filtered.map((e) => (
-                      <TableRow key={e.id}>
-                        <TableCell className="font-mono text-xs">{e.code}</TableCell>
+                      <TableRow
+                        key={e.id}
+                        className="cursor-pointer hover:bg-muted/50"
+                        tabIndex={0}
+                        title="Otvori karton sredstva"
+                        onClick={() => setRecordCode(e.code)}
+                        onKeyDown={(ev) => { if (ev.key === 'Enter' && ev.target === ev.currentTarget) setRecordCode(e.code) }}
+                      >
+                        <TableCell className="font-mono text-xs font-semibold text-primary">{e.code}</TableCell>
                         <TableCell>
                           <div className="font-medium">{e.name}</div>
                           {e.serialNumber && (
@@ -644,12 +702,12 @@ export function DashboardView({ currentUser }: { currentUser: AppUser }) {
                           </Badge>
                           {e._count?.damages > 0 && (
                             <Badge variant="destructive" className="ml-1 text-xs">
-                              {e._count.damages} prijava
+                              {e._count.damages} kvarova
                             </Badge>
                           )}
                           <RestrictionBadges restrictions={(e as any).activeRestrictions} />
                         </TableCell>
-                        <TableCell className="text-right">
+                        <TableCell className="text-right" onClick={(ev) => ev.stopPropagation()}>
                           <div className="flex justify-end gap-1">
                             <Button variant="ghost" size="sm" title="Karton ispravnosti (PDF, zadnjih 30 dana)" aria-label={`Karton ${e.code}`} onClick={() => window.open(`/api/reports/gse-equipment-card?code=${encodeURIComponent(e.code)}`, '_blank')}>
                               <FileText className="h-4 w-4" />
@@ -677,6 +735,7 @@ export function DashboardView({ currentUser }: { currentUser: AppUser }) {
               </Table>
             </CardContent>
           </Card>
+          <EquipmentRecordDialog code={recordCode} onClose={() => setRecordCode(null)} />
         </TabsContent>
 
         <TabsContent value="damages" className="space-y-4">
@@ -685,13 +744,13 @@ export function DashboardView({ currentUser }: { currentUser: AppUser }) {
             <CardHeader>
               <CardTitle className="text-base flex items-center gap-2">
                 <AlertOctagon className="h-4 w-4" />
-                Arhiva kvarova — sve prijave, i riješene ({allDamages.length})
+                Arhiva kvarova — svi, i riješeni ({allDamages.length})
               </CardTitle>
             </CardHeader>
             <CardContent>
               {allDamages.length === 0 ? (
                 <p className="text-sm text-muted-foreground text-center py-8">
-                  Nema prijavljenih oštećenja
+                  Nema kvarova
                 </p>
               ) : (
                 <div className="space-y-2 max-h-[600px] overflow-y-auto">

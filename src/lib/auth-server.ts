@@ -21,8 +21,16 @@ export async function getCurrentUser(): Promise<AppUser | null> {
   }
 
   const supabase = await createClientAsync()
-  const { data: { user } } = await supabase.auth.getUser()
-  if (!user) return null
+  // getClaims() provjerava potpis JWT-a lokalno (bez poziva ka Supabase Auth serveru) kad projekat koristi asimetrične ključeve,
+  // a inače sam pada na getUser(). Ovo štedi jedan mrežni poziv u SVAKOJ server akciji. Profil (rola, active) se i dalje čita iz baze.
+  const { data: claimsData } = await supabase.auth.getClaims()
+  const claims = claimsData?.claims
+  if (!claims?.sub) return null
+  const user = {
+    id: claims.sub,
+    email: typeof claims.email === 'string' ? claims.email : '',
+    user_metadata: (claims.user_metadata ?? {}) as Record<string, any>,
+  }
 
   // Dohvati profile iz baze
   const { data: profile } = await supabase

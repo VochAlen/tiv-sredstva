@@ -16,9 +16,12 @@ import { Input } from '@/components/ui/input'
 import { Switch } from '@/components/ui/switch'
 import { toast } from 'sonner'
 import {
-  getAuthorizedWorkers, authorizeWorker, removeAuthorization, toggleRestrictedAccess, getAllEmployees,
+  getAccessPanel, getAuthorizedWorkers, authorizeWorker, removeAuthorization, toggleRestrictedAccess,
 } from '@/lib/actions-access'
 import type { AccessEntry } from '@/lib/actions-access'
+import { peekEmployees, setEmployeeCache } from '@/lib/employee-cache'
+
+// Lista radnika se učitava jednom po sesiji (5 min) - sljedeće otvaranje modala je jedan lagan poziv
 
 export function AccessControlDialog({ equipmentId, equipmentCode, equipmentName }: {
   equipmentId: string
@@ -36,14 +39,19 @@ export function AccessControlDialog({ equipmentId, equipmentCode, equipmentName 
   const load = async () => {
     setLoading(true)
     try {
-      const [access, emps] = await Promise.all([
-        getAuthorizedWorkers(equipmentId),
-        getAllEmployees(),
-      ])
-      setWorkers(access)
-      setEmployees(emps)
-    } catch (e) { console.error(e) }
+      const cached = peekEmployees()
+      const panel = await getAccessPanel(equipmentId, !cached)
+      if (panel.employees) setEmployeeCache(panel.employees)
+      setRestricted(panel.restricted)
+      setWorkers(panel.workers)
+      setEmployees(panel.employees ?? cached ?? [])
+    } catch (e) { console.error(e); toast.error('Podaci o pristupu nisu učitani') }
     finally { setLoading(false) }
+  }
+
+  // Osvježi samo listu autorizovanih (bez ponovnog učitavanja cijelog modala)
+  const refreshWorkers = async () => {
+    try { setWorkers(await getAuthorizedWorkers(equipmentId)) } catch (e) { console.error(e) }
   }
 
   useEffect(() => {
@@ -76,7 +84,7 @@ export function AccessControlDialog({ equipmentId, equipmentCode, equipmentName 
       if (res.ok) {
         toast.success(`${emp.name} autorizovan`)
         setSelectedCardId('')
-        load()
+        refreshWorkers()
       } else {
         toast.error(res.error ?? 'Greška')
       }
@@ -87,7 +95,7 @@ export function AccessControlDialog({ equipmentId, equipmentCode, equipmentName 
     startTransition(async () => {
       await removeAuthorization(accessId)
       toast.success(`Dozvola uklonjena za ${name}`)
-      load()
+      refreshWorkers()
     })
   }
 
