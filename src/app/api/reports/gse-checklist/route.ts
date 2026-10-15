@@ -3,6 +3,7 @@ import { PDFDocument, StandardFonts, rgb } from 'pdf-lib'
 import { isDemoMode } from '@/lib/auth-mode'
 import { db } from '@/lib/db'
 import { createClientAsync as createSupabaseClient } from '@/lib/supabase/server'
+import { createServiceClient, hasServiceClient } from '@/lib/supabase/service'
 import { transliterate } from '@/lib/pdf-utils'
 import type { ChecklistItem } from '@/lib/types'
 
@@ -56,7 +57,8 @@ async function loadAssignment(id: string): Promise<AssignmentRecord | null> {
     }
   }
 
-  const supabase = await createSupabaseClient()
+  // Radnik nije prijavljen (RLS blokira anon čitanje zaduženja) - ruta je javna samo po cuid-u zaduženja, pa čita service klijentom
+  const supabase = hasServiceClient() ? createServiceClient() : await createSupabaseClient()
   const { data } = await supabase.from('assignments').select('*').eq('id', id).single()
   if (!data) return null
   return {
