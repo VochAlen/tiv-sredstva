@@ -37,6 +37,7 @@ import {
   EQUIPMENT_TYPE_LABELS,
   STATUS_LABELS,
   STATUS_COLORS,
+  getChecklistForType,
   type ChecklistItem,
   type EquipmentStatus,
   type InspectionResult,
@@ -91,6 +92,9 @@ export function WorkerView({
   const [employeeName, setEmployeeName] = useState(defaultEmployeeName)
   // Zaduživanje: radnik samo potvrđuje vizuelni pregled ('ok') ili odmah prijavljuje kvar ('fault')
   const [mode, setMode] = useState<'none' | 'ok' | 'fault'>('none')
+  // Odgovori na pre-use checklistu (id stavke -> ispravno?) i brza prijava kvara bez checkliste
+  const [answers, setAnswers] = useState<Record<string, boolean>>({})
+  const [quickFault, setQuickFault] = useState(false)
   const [blockedMsg, setBlockedMsg] = useState<string | null>(null)
   const [inspectionResult, setInspectionResult] = useState<InspectionResult>('OK')
   const [notes, setNotes] = useState('')
@@ -172,6 +176,8 @@ export function WorkerView({
     setEmployeeName(remembered?.name ?? defaultEmployeeName)
     setEditingWorker(false)
     setMode('none')
+    setAnswers({})
+    setQuickFault(false)
     setMeterKm('')
     setMeterHours('')
     setBlockedMsg(null)
@@ -276,19 +282,56 @@ export function WorkerView({
     setInspectionResult(r)
     setDamageSeverity(r === 'OUT_OF_SERVICE' ? 'CRITICAL' : r === 'MAJOR_DAMAGE' ? 'MAJOR' : 'MINOR')
   }
-  const chooseMode = (m: 'ok' | 'fault') => {
-    setMode(m)
-    if (m === 'ok') { setInspectionResult('OK'); setDamageSeverity('MINOR') } else chooseResult(inspectionResult === 'OK' ? 'MINOR_DAMAGE' : inspectionResult)
+  const checklistItems = equipment ? getChecklistForType(equipment.type) : []
+  const failedItems = checklistItems.filter((i) => answers[i.id] === false)
+  const unanswered = checklistItems.filter((i) => answers[i.id] === undefined)
+
+  // Stanje se izvodi iz odgovora: bilo koja stavka "Kvar" -> prijava kvara; sve OK -> zaduženje
+  const applyAnswers = (next: Record<string, boolean>) => {
+    setAnswers(next)
+    setQuickFault(false)
+    const items = equipment ? getChecklistForType(equipment.type) : []
+    const anyFail = items.some((i) => next[i.id] === false)
+    const allOk = items.length > 0 && items.every((i) => next[i.id] === true)
+    if (anyFail) {
+      setMode('fault')
+      if (inspectionResult === 'OK') chooseResult('MINOR_DAMAGE')
+    } else {
+      setMode(allOk ? 'ok' : 'none')
+      setInspectionResult('OK')
+      setDamageSeverity('MINOR')
+    }
   }
-  // Jedna stavka umjesto duge liste: potvrda vizuelnog pregleda ili uočeni kvar (veći kvar blokira sredstvo)
-  const buildChecklist = (): ChecklistItem[] =>
-    effectiveMode === 'fault'
-      ? [{
-          id: 'visual-fault', label: 'Kvar uočen pri zaduživanju', passed: false,
-          ...(checkoutSeverity !== 'MINOR' ? { severity: 'BLOCKING' as const } : {}),
-          category: (damageCategory || 'OPSTE') as ChecklistItem['category'],
-        }]
-      : [{ id: 'visual-ok', label: 'Sredstvo vizuelno pregledano - ispravno', passed: true }]
+  const answerItem = (id: string, passed: boolean) => applyAnswers({ ...answers, [id]: passed })
+  const markAllOk = () => applyAnswers(Object.fromEntries(checklistItems.map((i) => [i.id, true])))
+  const chooseQuickFault = () => {
+    setQuickFault(true)
+    setAnswers({})
+    setMode('fault')
+    chooseResult(inspectionResult === 'OK' ? 'MINOR_DAMAGE' : inspectionResult)
+  }
+
+  // Checklista se šalje cijela (kao papirni obrazac). Neispravne stavke dobijaju težinu prema izabranom kvaru:
+  // veći/kritičan kvar = BLOCKING (sredstvo se ne zadužuje); manji kvar se bilježi, a sredstvo se može zadužiti.
+  const buildChecklist = (): ChecklistItem[] => {
+    if (effectiveMode === 'fault' && (quickFault || checklistItems.length === 0)) {
+      return [{
+        id: 'visual-fault', label: 'Kvar uočen pri zaduživanju', passed: false,
+        ...(checkoutSeverity !== 'MINOR' ? { severity: 'BLOCKING' as const } : {}),
+        category: (damageCategory || 'OPSTE') as ChecklistItem['category'],
+      }]
+    }
+    return checklistItems.map((i) => {
+      const passed = effectiveMode === 'fault' ? answers[i.id] !== false : true
+      if (passed) return { ...i, passed: true }
+      const { blocking: _b, ...rest } = i
+      return {
+        ...rest, passed: false,
+        ...(checkoutSeverity !== 'MINOR' ? { severity: 'BLOCKING' as const } : {}),
+        category: (damageCategory || i.category || 'OPSTE') as ChecklistItem['category'],
+      }
+    })
+  }
 
   // Submit inspekcijske forme
   const handleInspectSubmit = (e: React.FormEvent) => {
@@ -297,10 +340,14 @@ export function WorkerView({
 
     if (actionType === 'CHECK_OUT') {
       if (effectiveMode === 'none') {
-        toast.error('Potvrdite da ste sredstvo vizuelno pregledali ili prijavite kvar')
+        toast.error('Prođite checklistu (ili "Sve ispravno") ili prijavite kvar')
         return
       }
-      if (effectiveMode === 'fault' && !damageDescription.trim() && !damageCategory && damagePhotos.length === 0) {
+      if (!faultOnly && !quickFault && unanswered.length > 0) {
+        toast.error(`Odgovorite na sve stavke checkliste (preostalo: ${unanswered.length})`)
+        return
+      }
+      if (effectiveMode === 'fault' && !damageDescription.trim() && !damageCategory && damagePhotos.length === 0 && failedItems.length === 0) {
         toast.error('Dodajte sliku, izaberite kategoriju ili upišite kratak opis kvara')
         return
       }
@@ -317,8 +364,9 @@ export function WorkerView({
     const damageActive = actionType === 'CHECK_OUT' ? effectiveMode === 'fault' : reportDamageIn
     const quick = overrides?.damageDescription !== undefined // brza dugmad: bez prijave kvara
     const typedDamage = overrides?.damageDescription ?? damageDescription
+    const failedText = failedItems.length ? `Neispravno: ${failedItems.map((i) => i.label).join('; ')}` : ''
     const effectiveDamageDescription =
-      typedDamage.trim() || (!quick && damageActive && (damageCategory || damagePhotos.length > 0)
+      typedDamage.trim() || (!quick && damageActive && failedText ? failedText : '') || (!quick && damageActive && (damageCategory || damagePhotos.length > 0)
         ? fallbackDamageDescription(damageCategory, damagePhotos.length)
         : '')
     const extras = damageActive && !quick
@@ -463,7 +511,7 @@ export function WorkerView({
               <ol className="list-decimal list-inside space-y-0.5">
                 <li>Skeniraj QR kod na vozilu/opremi</li>
                 <li>Unesi broj ID kartice i ime</li>
-                <li>Vizuelno pregledaj sredstvo i potvrdi (ili prijavi kvar)</li>
+                <li>Prođi checklistu (ili "Sve ispravno") ili prijavi kvar</li>
                 <li>Prijava završena — sredstvo je zaduženo</li>
               </ol>
             </CardContent>
@@ -617,29 +665,61 @@ export function WorkerView({
                   <CardHeader>
                     <CardTitle className="text-base flex items-center gap-2">
                       <ClipboardList className="h-4 w-4" />
-                      Pregled sredstva prije zaduživanja
+                      Checklista prije zaduživanja
                     </CardTitle>
                   </CardHeader>
-                  <CardContent className="space-y-2">
+                  <CardContent className="space-y-3">
                     <Button
                       type="button"
                       size="lg"
-                      variant={mode === 'ok' ? 'default' : 'outline'}
-                      className={`h-auto w-full whitespace-normal py-4 text-left text-base ${mode === 'ok' ? 'bg-emerald-600 hover:bg-emerald-700 text-white' : 'border-emerald-400 text-emerald-800 hover:bg-emerald-50'}`}
-                      onClick={() => chooseMode('ok')}
+                      variant={mode === 'ok' && !quickFault ? 'default' : 'outline'}
+                      className={`h-auto w-full whitespace-normal py-4 text-left text-base ${mode === 'ok' && !quickFault ? 'bg-emerald-600 hover:bg-emerald-700 text-white' : 'border-emerald-400 text-emerald-800 hover:bg-emerald-50'}`}
+                      onClick={markAllOk}
                     >
                       <CheckCircle2 className="h-5 w-5 mr-2 shrink-0" />
-                      Sredstvo sam vizuelno pregledao i utvrdio da je ispravno
+                      Sve stavke su ispravne
                     </Button>
+
+                    <div className="divide-y rounded-lg border">
+                      {checklistItems.map((item) => {
+                        const a = answers[item.id]
+                        return (
+                          <div key={item.id} className={`p-3 space-y-2 ${a === false ? 'bg-red-50' : ''}`}>
+                            <div className="text-sm leading-snug">{item.label}</div>
+                            <div className="grid grid-cols-2 gap-2">
+                              <Button
+                                type="button"
+                                variant={a === true ? 'default' : 'outline'}
+                                className={`h-11 ${a === true ? 'bg-emerald-600 hover:bg-emerald-700 text-white' : 'border-emerald-400 text-emerald-800 hover:bg-emerald-50'}`}
+                                onClick={() => answerItem(item.id, true)}
+                              >
+                                <CheckCircle2 className="h-4 w-4 mr-1.5" />OK
+                              </Button>
+                              <Button
+                                type="button"
+                                variant={a === false ? 'default' : 'outline'}
+                                className={`h-11 ${a === false ? 'bg-red-600 hover:bg-red-700 text-white' : 'border-red-300 text-red-700 hover:bg-red-50'}`}
+                                onClick={() => answerItem(item.id, false)}
+                              >
+                                <XCircle className="h-4 w-4 mr-1.5" />Kvar
+                              </Button>
+                            </div>
+                          </div>
+                        )
+                      })}
+                    </div>
+                    {unanswered.length > 0 && !quickFault && (
+                      <p className="text-xs text-muted-foreground">Preostalo stavki: {unanswered.length}</p>
+                    )}
+
                     <Button
                       type="button"
-                      size="lg"
-                      variant={mode === 'fault' ? 'default' : 'outline'}
-                      className={`h-auto w-full whitespace-normal py-3 text-left ${mode === 'fault' ? 'bg-red-600 hover:bg-red-700 text-white' : 'border-red-300 text-red-700 hover:bg-red-50'}`}
-                      onClick={() => chooseMode('fault')}
+                      variant={quickFault ? 'default' : 'outline'}
+                      className={`h-auto w-full whitespace-normal py-3 text-left ${quickFault ? 'bg-red-600 hover:bg-red-700 text-white' : 'border-red-300 text-red-700 hover:bg-red-50'}`}
+                      onClick={chooseQuickFault}
                     >
                       <AlertTriangle className="h-5 w-5 mr-2 shrink-0" />
-                      Uočio sam kvar — prijavi odmah
+                      Uočio sam kvar koji nije na listi — prijavi odmah
                     </Button>
                   </CardContent>
                 </Card>
