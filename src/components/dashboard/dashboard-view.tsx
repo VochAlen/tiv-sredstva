@@ -186,7 +186,7 @@ const NAV_GROUPS: NavGroup[] = [
     label: 'Oprema',
     items: [
       { value: 'equipment', label: 'Sredstva', icon: Package },
-      { value: 'damages', label: 'Oštećenja', icon: AlertOctagon },
+      { value: 'damages', label: 'Arhiva kvarova (sve prijave)', icon: AlertOctagon },
       { value: 'qr', label: 'QR kodovi', icon: Printer, minRole: 'engineer' },
     ],
   },
@@ -242,7 +242,7 @@ const ROLE_LABELS: Record<string, string> = {
 // toggle) - ostale su uvijek bile hardkodirane na hrvatskom/bosanskom, isto
 // kao i sada. Nema regresije u odnosu na prethodno ponašanje.
 const NAV_T_KEYS: Partial<Record<string, TranslationKey>> = {
-  overview: 'dash.overview', equipment: 'dash.equipment', damages: 'dash.damages',
+  overview: 'dash.overview', equipment: 'dash.equipment', 
   statistics: 'dash.statistics', reports: 'dash.reports',
   activity: 'dash.activity', qr: 'dash.qr',
 }
@@ -368,7 +368,7 @@ export function DashboardView({ currentUser }: { currentUser: AppUser }) {
                         <item.icon />
                         <span>{NAV_T_KEYS[item.value] ? t(NAV_T_KEYS[item.value]!) : item.label}</span>
                       </SidebarMenuButton>
-                      {item.value === 'damages' && stats.openDamages > 0 && (
+                      {item.value === 'maintenance' && stats.openDamages > 0 && (
                         <SidebarMenuBadge className="bg-red-500 text-white">{stats.openDamages}</SidebarMenuBadge>
                       )}
                     </SidebarMenuItem>
@@ -432,7 +432,7 @@ export function DashboardView({ currentUser }: { currentUser: AppUser }) {
               damages={damages as any}
               active={active as any}
               onClose={() => setDetail(null)}
-              onOpenDamages={() => setTab('damages')}
+              onOpenDamages={() => setTab(roleAtLeast(currentUser.role, 'engineer') ? 'maintenance' : 'damages')}
             />
           )}
 
@@ -681,7 +681,7 @@ export function DashboardView({ currentUser }: { currentUser: AppUser }) {
             <CardHeader>
               <CardTitle className="text-base flex items-center gap-2">
                 <AlertOctagon className="h-4 w-4" />
-                Sva oštećenja ({allDamages.length})
+                Arhiva kvarova — sve prijave, i riješene ({allDamages.length})
               </CardTitle>
             </CardHeader>
             <CardContent>

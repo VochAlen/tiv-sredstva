@@ -62,7 +62,7 @@ export function computeMyTasks(
         title: 'Novi kvarovi čekaju preuzimanje',
         detail: list(fresh.map((d) => d.equipmentCode)),
         count: fresh.length,
-        tab: 'damages',
+        tab: 'maintenance',
         tone: fresh.some((d) => d.severity === 'CRITICAL') ? 'red' : 'amber',
       })
     }
@@ -116,7 +116,7 @@ export function computeMyTasks(
         title: 'Popravke čekaju vaše odobrenje',
         detail: list(waiting.map((d) => d.equipmentCode)),
         count: waiting.length,
-        tab: 'damages',
+        tab: 'maintenance',
         tone: 'red',
       })
     }
