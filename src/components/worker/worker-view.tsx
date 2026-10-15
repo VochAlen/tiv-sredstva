@@ -273,6 +273,34 @@ export function WorkerView({
     setStep('inspect')
   }
 
+  // Dnevni pregled se može urađiti dok je radnik već na ekranu: stanje se osvježava
+  // (dugme, povratak na karticu/tab i svakih 15 s dok pregled nedostaje).
+  const [rechecking, setRechecking] = useState(false)
+  const equipmentCode = equipment?.code
+  const awaitingInspection = !!equipment && equipment.inspectedToday === false && (step === 'identify' || step === 'inspect')
+  const recheckInspection = async (manual = false) => {
+    if (!equipmentCode) return
+    if (manual) setRechecking(true)
+    try {
+      const eq = await getEquipmentByCode(equipmentCode)
+      if (eq) {
+        const done = (eq as any).inspectedToday !== false
+        setEquipment((cur) => (cur && cur.code === eq.code ? { ...cur, inspectedToday: done, status: eq.status } : cur))
+        if (done && manual) toast.success('Dnevni pregled je urađen — možete zadužiti')
+        if (!done && manual) toast.info('Dnevni pregled još nije urađen')
+      }
+    } catch { /* mreža - pokušaće ponovo */ }
+    finally { if (manual) setRechecking(false) }
+  }
+  useEffect(() => {
+    if (!awaitingInspection) return
+    const tick = () => { if (document.visibilityState === 'visible') recheckInspection() }
+    const id = window.setInterval(tick, 15_000)
+    document.addEventListener('visibilitychange', tick)
+    window.addEventListener('focus', tick)
+    return () => { window.clearInterval(id); document.removeEventListener('visibilitychange', tick); window.removeEventListener('focus', tick) }
+  }, [awaitingInspection, equipmentCode])
+
   // Sredstvo bez današnjeg dnevnog pregleda: nema zaduživanja, samo prijava kvara
   const faultOnly = actionType === 'CHECK_OUT' && equipment?.inspectedToday === false
   const effectiveMode: 'none' | 'ok' | 'fault' = faultOnly ? 'fault' : mode
@@ -542,6 +570,9 @@ export function WorkerView({
           {actionType === 'CHECK_OUT' && equipment.inspectedToday === false && (
             <div role="alert" className="rounded-lg border-2 border-red-500 bg-red-50 p-3 text-sm text-red-900">
               <strong>Sredstvo danas nije pregledano.</strong> Zaduživanje nije moguće dok se ne uradi dnevni pregled. Možete samo prijaviti kvar.
+              <Button type="button" variant="outline" size="sm" className="mt-2 h-10 w-full border-red-400 bg-white" disabled={rechecking} onClick={() => recheckInspection(true)}>
+                {rechecking ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : null}Pregled je urađen — provjeri ponovo
+              </Button>
             </div>
           )}
 
@@ -657,6 +688,9 @@ export function WorkerView({
                 <div role="alert" className="rounded-lg border-2 border-red-500 bg-red-50 p-3 text-sm text-red-900">
                   <strong>Sredstvo danas nije pregledano</strong> (nema dnevnog pregleda), pa se ne može zadužiti.
                   Ako ste uočili kvar, prijavite ga ispod.
+                  <Button type="button" variant="outline" size="sm" className="mt-2 h-10 w-full border-red-400 bg-white" disabled={rechecking} onClick={() => recheckInspection(true)}>
+                    {rechecking ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : null}Pregled je urađen — provjeri ponovo
+                  </Button>
                 </div>
               )}
 
