@@ -367,6 +367,7 @@ function mapDamageRow(d: any) {
     lastStatusText: d.last_status_text ?? null,
     lastStatusAt: d.last_status_at ? new Date(d.last_status_at) : null,
     lastStatusBy: d.last_status_by ?? null,
+    waitingPartUntil: d.waiting_part_until ? new Date(d.waiting_part_until) : null,
     testDone: d.test_done ?? null,
     testNote: d.test_note ?? null,
     testAt: d.test_at ? new Date(d.test_at) : null,

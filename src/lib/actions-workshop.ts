@@ -62,7 +62,7 @@ export async function markArrivedInWorkshop(params: { damageId: string; broughtB
 }
 
 /** Novi status popravke (npr. "Čekaju se rezervni dijelovi"). `warned` = unos nakon upozorenja svaka 3 dana. */
-export async function addWorkshopStatus(params: { damageId: string; text: string; warned?: boolean }): Promise<Result> {
+export async function addWorkshopStatus(params: { damageId: string; text: string; warned?: boolean; waitingPartUntil?: string | null }): Promise<Result> {
   const user = await requireEngineer()
   const text = clean(params.text, 200)
   if (text.length < 3) return { ok: false, error: 'Upišite status popravke' }
@@ -70,11 +70,25 @@ export async function addWorkshopStatus(params: { damageId: string; text: string
   if (!d) return { ok: false, error: 'Kvar nije pronađen' }
   if (d.status === 'RESOLVED') return { ok: false, error: 'Kvar je već riješen' }
   const now = new Date()
+  // "Čeka dio": očekivani datum dolaska (ne može u prošlost); svaki novi status bez datuma ga briše
+  let until: Date | null = null
+  if (params.waitingPartUntil) {
+    until = new Date(`${String(params.waitingPartUntil).slice(0, 10)}T00:00:00Z`)
+    if (!Number.isFinite(until.getTime())) return { ok: false, error: 'Datum nije ispravan' }
+    if (until.getTime() < now.getTime() - 86_400_000) return { ok: false, error: 'Očekivani datum ne može biti u prošlosti' }
+  }
   const r = await patch(params.damageId, {
-    demo: { lastStatusText: text, lastStatusAt: now, lastStatusBy: user.full_name },
+    demo: { lastStatusText: text, lastStatusAt: now, lastStatusBy: user.full_name, waitingPartUntil: until },
     sb: { last_status_text: text, last_status_at: now.toISOString(), last_status_by: user.full_name },
   })
   if (!r.ok) return r
+  // Posebno i "best-effort": ako migracija 037 još nije pokrenuta, običan status radi i dalje
+  if (!isDemoMode() && (until || params.waitingPartUntil === null || params.waitingPartUntil === undefined)) {
+    try {
+      const sb = await createSupabaseClient()
+      await sb.from('damage_reports').update({ waiting_part_until: until ? until.toISOString().slice(0, 10) : null }).eq('id', params.damageId)
+    } catch { /* kolona ne postoji dok se ne pokrene 037 */ }
+  }
   await logRepairEvent({ damageId: params.damageId, kind: 'STATUS', text, byName: user.full_name, byCardId: user.card_id, warned: !!params.warned })
   revalidatePath('/')
   return { ok: true }

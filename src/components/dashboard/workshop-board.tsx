@@ -4,7 +4,7 @@
 // Svaki red odmah pokazuje: gdje je sredstvo u toku (čeka dolazak / u popravci / vanjski servis / čeka pregled šefa),
 // koliko dana je u radu, ko ga je preuzeo i zadnji status. Klik na red otvara punu karticu sa velikim dugmetom sljedećeg koraka.
 
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { AlertTriangle, ChevronDown, ChevronUp, Truck, UserCheck, Wrench, Send } from 'lucide-react'
 import { Badge } from '@/components/ui/badge'
 import { Card, CardContent } from '@/components/ui/card'
@@ -15,9 +15,10 @@ import type { RepeatGroup } from '@/lib/repeat-defects'
 import type { AppUser } from '@/lib/auth-server'
 
 type Stage = 'WAIT_ARRIVAL' | 'IN_REPAIR' | 'EXTERNAL' | 'WAIT_CHIEF'
-type Filter = 'ALL' | Stage | 'STALE'
+export type WorkshopFilter = 'ALL' | Stage | 'STALE'
+type Filter = WorkshopFilter
 
-const STAGE_LABEL: Record<Stage, string> = {
+export const STAGE_LABEL: Record<Stage, string> = {
   WAIT_ARRIVAL: 'Čeka dolazak u radionicu',
   IN_REPAIR: 'U popravci',
   EXTERNAL: 'Kod vanjskog servisa',
@@ -31,7 +32,7 @@ const STAGE_CLS: Record<Stage, string> = {
 }
 const STAGE_ICON: Record<Stage, typeof Wrench> = { WAIT_ARRIVAL: Truck, IN_REPAIR: Wrench, EXTERNAL: Send, WAIT_CHIEF: UserCheck }
 
-function stageOf(d: any): Stage {
+export function stageOf(d: any): Stage {
   if (d.status === 'AWAITING_APPROVAL') return 'WAIT_CHIEF'
   if (d.externalSentAt && !d.externalReturnedAt) return 'EXTERNAL'
   if (!d.workshopArrivedAt) return 'WAIT_ARRIVAL'
@@ -44,9 +45,10 @@ const daysSince = (v: unknown): number | null => {
   return Number.isFinite(t) ? Math.max(0, Math.floor((Date.now() - t) / 86_400_000)) : null
 }
 
-export function WorkshopBoard({ damages, onChanged, currentUser, repeats }: { damages: DamageRow[]; onChanged: () => void; currentUser: AppUser; repeats: RepeatGroup[] }) {
+export function WorkshopBoard({ damages, onChanged, currentUser, repeats, filterRequest }: { damages: DamageRow[]; onChanged: () => void; currentUser: AppUser; repeats: RepeatGroup[]; filterRequest?: { value: WorkshopFilter; nonce: number } }) {
   const [filter, setFilter] = useState<Filter>('ALL')
-  const [openId, setOpenId] = useState<string | null>(null)
+  // Klik na rečenicu na vrhu stranice (npr. „2 čekaju pregled šefa“) postavlja filter
+  useEffect(() => { if (filterRequest) setFilter(filterRequest.value) }, [filterRequest?.nonce])
 
   const rows = useMemo(() => {
     const list = damages
@@ -90,48 +92,31 @@ export function WorkshopBoard({ damages, onChanged, currentUser, repeats }: { da
 
       {shown.map(({ d, stage, stale }) => {
         const x: any = d
-        const open = openId === d.id
         const Icon = STAGE_ICON[stage]
         const inWorkshopDays = daysSince(x.workshopArrivedAt)
         const sinceTaken = daysSince(x.acknowledgedAt)
         return (
           <div key={d.id} className={`rounded-lg border-2 ${stale.due ? 'border-red-500' : stage === 'WAIT_CHIEF' ? 'border-purple-300' : 'border-border'}`}>
-            <button
-              type="button"
-              onClick={() => setOpenId(open ? null : d.id)}
-              aria-expanded={open}
-              className="flex w-full items-start gap-3 rounded-lg p-3 text-left hover:bg-muted/40"
-            >
-              <div className="min-w-0 flex-1 space-y-1">
-                <div className="flex flex-wrap items-center gap-2">
-                  <span className="font-mono text-base font-bold">{d.equipmentCode}</span>
-                  <span className="truncate text-sm">{d.equipmentName}</span>
-                  <Badge variant="outline" className="text-xs">{d.severity}</Badge>
-                  {repeats.some((g) => g.damageIds.includes(d.id)) && <Badge className="bg-orange-500 text-xs text-white">ponavlja se</Badge>}
-                </div>
-                <div className="flex flex-wrap items-center gap-2">
-                  <span className={`inline-flex items-center gap-1 rounded-full border px-2.5 py-0.5 text-xs font-semibold ${STAGE_CLS[stage]}`}>
-                    <Icon className="h-3.5 w-3.5" />{STAGE_LABEL[stage]}
-                  </span>
-                  {stage === 'EXTERNAL' && x.externalProvider && <span className="text-xs text-muted-foreground">{x.externalProvider}</span>}
-                  {stale.due && (
-                    <span className="inline-flex items-center gap-1 text-xs font-bold text-red-700"><AlertTriangle className="h-3.5 w-3.5" />{stale.days} dana bez statusa</span>
-                  )}
-                </div>
-                <div className="text-xs text-muted-foreground">
-                  Preuzeo/la: <strong className="text-foreground">{x.acknowledgedBy ?? '-'}</strong>
-                  {sinceTaken != null && ` · prije ${sinceTaken === 0 ? 'manje od dan' : `${sinceTaken} d`}`}
-                  {x.workshopArrivedAt && ` · u radionici od ${fmtDT(x.workshopArrivedAt)}${inWorkshopDays ? ` (${inWorkshopDays} d)` : ''}`}
-                </div>
-                <div className="truncate text-sm">{x.lastStatusText ? <>Status: {x.lastStatusText} <span className="text-xs text-muted-foreground">({x.lastStatusBy}, {fmtDT(x.lastStatusAt)})</span></> : <span className="text-muted-foreground">{d.description}</span>}</div>
+            <div className="space-y-1 px-3 pt-3">
+              <div className="flex flex-wrap items-center gap-2">
+                <span className={`inline-flex items-center gap-1.5 rounded-full border px-3 py-1 text-sm font-semibold ${STAGE_CLS[stage]}`}>
+                  <Icon className="h-4 w-4" />{STAGE_LABEL[stage]}
+                </span>
+                {stage === 'EXTERNAL' && x.externalProvider && <span className="text-sm text-muted-foreground">{x.externalProvider}</span>}
+                {stale.due && (
+                  <span className="inline-flex items-center gap-1 text-sm font-bold text-red-700"><AlertTriangle className="h-4 w-4" />{stale.days} dana bez statusa</span>
+                )}
+                {repeats.some((g) => g.damageIds.includes(d.id)) && <Badge className="bg-orange-500 text-sm text-white">ponavlja se</Badge>}
               </div>
-              {open ? <ChevronUp className="mt-1 h-5 w-5 shrink-0 text-muted-foreground" /> : <ChevronDown className="mt-1 h-5 w-5 shrink-0 text-muted-foreground" />}
-            </button>
-            {open && (
-              <div className="border-t p-2">
-                <DamageRowCard damage={d} onResolved={onChanged} currentUser={currentUser} repeats={repeats} />
+              <div className="text-sm text-muted-foreground">
+                Preuzeo/la: <strong className="text-foreground">{x.acknowledgedBy ?? '-'}</strong>
+                {sinceTaken != null && ` · prije ${sinceTaken === 0 ? 'manje od dan' : `${sinceTaken} d`}`}
+                {x.workshopArrivedAt && ` · u radionici od ${fmtDT(x.workshopArrivedAt)}${inWorkshopDays ? ` (${inWorkshopDays} d)` : ''}`}
               </div>
-            )}
+            </div>
+            <div className="p-2">
+              <DamageRowCard simple damage={d} onResolved={onChanged} currentUser={currentUser} repeats={repeats} />
+            </div>
           </div>
         )
       })}

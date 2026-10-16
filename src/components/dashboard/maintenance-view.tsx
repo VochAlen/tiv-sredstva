@@ -1,7 +1,7 @@
 'use client'
 
-import { useEffect, useState, useTransition } from 'react'
-import { ScanLine, Wrench, Repeat, BarChart3, Plus, Loader2, Calendar, Award, FileText, Search, Download, AlertOctagon, User, Pencil, Trash2 } from 'lucide-react'
+import { useEffect, useRef, useState, useTransition } from 'react'
+import { Bell, BellOff, RefreshCw, ChevronDown, ChevronUp, ScanLine, Wrench, Repeat, BarChart3, Plus, Loader2, Calendar, Award, FileText, Search, Download, AlertOctagon, User, Pencil, Trash2 } from 'lucide-react'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
@@ -32,10 +32,10 @@ import { QrScanner } from '@/components/worker/qr-scanner'
 import { EquipmentRecordDialog } from '@/components/dashboard/equipment-record-dialog'
 import { normalizeScan } from '@/lib/scan'
 import { DowntimeView } from '@/components/dashboard/downtime-view'
-import { WorkshopBoard } from '@/components/dashboard/workshop-board'
+import { WorkshopBoard, STAGE_LABEL, stageOf, type WorkshopFilter } from '@/components/dashboard/workshop-board'
 import { getRepeatDefects } from '@/lib/actions-workshop-extras'
 import { REPEAT_ADVICE, REPEAT_WINDOW_DAYS, type RepeatGroup } from '@/lib/repeat-defects'
-import { staleInfo } from '@/lib/workshop'
+import { staleInfo, pluralKvar, fmtDT } from '@/lib/workshop'
 import { updateMaintenanceLog, updateQualification, deleteQualification, updateDamageReport } from '@/lib/actions-admin-edit'
 import type { AppUser } from '@/lib/auth-server'
 import { CHECKLIST_CATEGORY_ORDER, CHECKLIST_CATEGORY_LABELS } from '@/lib/types'
@@ -56,12 +56,19 @@ export function MaintenanceView({ currentUser }: { currentUser: AppUser }) {
   const [repeats, setRepeats] = useState<RepeatGroup[]>([])
   const [loading, setLoading] = useState(true)
   const [isPending, startTransition] = useTransition()
+  const [more, setMore] = useState(false)
+  const [refreshing, setRefreshing] = useState(false)
+  const [filterReq, setFilterReq] = useState<{ value: WorkshopFilter; nonce: number }>({ value: 'ALL', nonce: 0 })
+  const [sound, setSound] = useState(true)
+  const [handoverOpen, setHandoverOpen] = useState(false)
+  const knownOpen = useRef<Set<string> | null>(null)
   const [scanOpen, setScanOpen] = useState(false)
   const [scanCode, setScanCode] = useState<string | null>(null)
   const [recordCode, setRecordCode] = useState<string | null>(null)
 
-  const load = async () => {
-    setLoading(true)
+  const load = async (silent: unknown = false) => {
+    const quiet = silent === true
+    if (quiet) setRefreshing(true); else setLoading(true)
     try {
       const [d, l, q, ia, rp] = await Promise.all([
         getOpenDamages(),
@@ -72,7 +79,14 @@ export function MaintenanceView({ currentUser }: { currentUser: AppUser }) {
       ])
       setRepeats(rp)
       // Prvi put: ako nema novih prijava, a ima sredstava u radionici, odmah prikaži radionicu
-      if (!tabChosen && !d.some((x) => x.status === 'OPEN') && d.some((x) => x.status === 'IN_REPAIR' || x.status === 'AWAITING_APPROVAL')) setTab('workshop')
+      if (!quiet && !tabChosen && !d.some((x) => x.status === 'OPEN') && d.some((x) => x.status === 'IN_REPAIR' || x.status === 'AWAITING_APPROVAL')) setTab('workshop')
+      // Novi KRITIČAN kvar od zadnjeg osvježavanja: zvuk + vibracija + poruka (samo pri automatskom osvježavanju)
+      const openNow = new Set(d.filter((x) => x.status === 'OPEN').map((x) => x.id))
+      if (quiet && knownOpen.current) {
+        const fresh = d.filter((x) => x.status === 'OPEN' && x.severity === 'CRITICAL' && !knownOpen.current!.has(x.id))
+        if (fresh.length) alertCritical(fresh.map((x) => x.equipmentCode), soundRef.current)
+      }
+      knownOpen.current = openNow
       setDamages(d)
       setLogs(l)
       setQualifications(q)
@@ -81,12 +95,44 @@ export function MaintenanceView({ currentUser }: { currentUser: AppUser }) {
       console.error(e)
     } finally {
       setLoading(false)
+      setRefreshing(false)
     }
   }
 
   const dueThisMonth = filterDueThisMonth(inspectionAlerts)
 
-  useEffect(() => { load() }, [])
+  const loadRef = useRef(load)
+  const soundRef = useRef(sound)
+  useEffect(() => { loadRef.current = load; soundRef.current = sound })
+  useEffect(() => {
+    loadRef.current()
+    try { setSound(localStorage.getItem('gse.alertSound') !== 'off') } catch { /* nema pohrane */ }
+    // Automatsko osvježavanje svakih 60 s (samo dok je stranica vidljiva) i pri povratku na stranicu
+    const tick = () => { if (document.visibilityState === 'visible') loadRef.current(true) }
+    const id = window.setInterval(tick, 60_000)
+    document.addEventListener('visibilitychange', tick)
+    return () => { window.clearInterval(id); document.removeEventListener('visibilitychange', tick) }
+  }, [])
+  const toggleSound = () => {
+    const next = !sound
+    setSound(next)
+    try { localStorage.setItem('gse.alertSound', next ? 'on' : 'off') } catch { /* ignorisi */ }
+    if (next) beep()
+  }
+
+  // Rečenica na vrhu: šta čeka, svaki dio je dugme
+  const newCount = damages.filter((x) => x.status === 'OPEN').length
+  const chiefCount = damages.filter((x) => x.status === 'AWAITING_APPROVAL').length
+  const staleList = damages.filter((x) => staleInfo(x as any).due)
+  const staleMax = staleList.reduce((m, x) => Math.max(m, staleInfo(x as any).days), 0)
+  const goWorkshop = (f: WorkshopFilter) => { setTab('workshop'); setTabChosen(true); setFilterReq((r) => ({ value: f, nonce: r.nonce + 1 })) }
+  const sentence: Array<{ key: string; text: string; tone: string; onClick: () => void }> = []
+  if (newCount > 0) { const pl = pluralKvar(newCount); sentence.push({ key: 'new', text: `${pl.text} ${pl.verb}.`, tone: 'text-red-800', onClick: () => { setTab('faults'); setTabChosen(true) } }) }
+  if (chiefCount > 0) sentence.push({ key: 'chief', text: `${chiefCount} ${chiefCount === 1 ? 'sredstvo čeka' : 'sredstva čekaju'} pregled šefa.`, tone: 'text-purple-800', onClick: () => goWorkshop('WAIT_CHIEF') })
+  if (staleList.length > 0) sentence.push({ key: 'stale', text: `${staleList.length} ${staleList.length === 1 ? 'upozorenje' : 'upozorenja'}: ${staleMax} dana bez statusa.`, tone: 'text-red-700 font-bold', onClick: () => goWorkshop('STALE') })
+
+  const openHandover = () => setHandoverOpen(true)
+  const moreTabs = ['downtime', 'logs', 'qualifications']
 
   // QR na vozilu -> odmah kartica kvara sa velikim dugmetom sljedećeg koraka;
   // ako sredstvo nema otvoren kvar, otvara se njegov karton.
@@ -131,83 +177,71 @@ export function MaintenanceView({ currentUser }: { currentUser: AppUser }) {
         </DialogContent>
       </Dialog>
       <EquipmentRecordDialog code={recordCode} onClose={() => setRecordCode(null)} />
-      <div className="flex items-center justify-between flex-wrap gap-2">
+      <div className="flex items-start justify-between flex-wrap gap-3">
         <div>
-          <h2 className="text-lg font-semibold flex items-center gap-2">
-            <Wrench className="h-5 w-5" />
+          <h2 className="text-xl font-semibold flex items-center gap-2">
+            <Wrench className="h-6 w-6" />
             Radionica
           </h2>
-          <p className="text-sm text-muted-foreground">
-            Novi kvarovi, sredstva u radionici i povratak u rad
-          </p>
+          <p className="text-sm text-muted-foreground">Novi kvarovi, sredstva u radionici i povratak u rad</p>
         </div>
-        <div className="flex gap-2">
-          <Button className="h-11" onClick={() => setScanOpen(true)}><ScanLine className="h-4 w-4 mr-2" />Skeniraj QR</Button>
-          <Button variant="outline" className="h-11" onClick={openGuide}><FileText className="h-4 w-4 mr-2" />Vodič (PDF)</Button>
+        <div className="flex flex-wrap gap-2">
+          <Button className="h-12 text-base" onClick={() => setScanOpen(true)}><ScanLine className="h-5 w-5 mr-2" />Skeniraj QR</Button>
+          <Button variant="outline" className="h-12 text-base" disabled={refreshing} onClick={() => load(true)}>
+            {refreshing ? <Loader2 className="h-5 w-5 mr-2 animate-spin" /> : <RefreshCw className="h-5 w-5 mr-2" />}Osvježi
+          </Button>
+          <Button variant="outline" className="h-12 w-12 p-0" aria-label={sound ? 'Zvuk za kritičan kvar: uključen' : 'Zvuk za kritičan kvar: isključen'} title={sound ? 'Zvuk za kritičan kvar: uključen' : 'Zvuk za kritičan kvar: isključen'} onClick={toggleSound}>
+            {sound ? <Bell className="h-5 w-5" /> : <BellOff className="h-5 w-5 text-muted-foreground" />}
+          </Button>
           {tab === 'logs' ? <AddMaintenanceDialog onCreated={load} /> : tab === 'qualifications' ? <AddQualificationDialog onCreated={load} /> : null}
         </div>
       </div>
 
-      {dueThisMonth.length > 0 && (
-        <Card className="border-amber-300 bg-amber-50/50">
-          <CardHeader className="pb-2">
-            <CardTitle className="text-sm flex items-center gap-2">
-              <Calendar className="h-4 w-4 text-amber-700" />
-              Dospijeva ovog mjeseca ({dueThisMonth.length})
-            </CardTitle>
-          </CardHeader>
-          <CardContent className="pt-0">
-            <div className="flex flex-wrap gap-2">
-              {dueThisMonth.slice(0, 12).map((a) => (
-                <div
-                  key={a.id}
-                  className={`flex items-center gap-2 px-2.5 py-1.5 rounded-lg text-xs border ${a.status === 'OVERDUE' ? 'bg-red-100 border-red-300 text-red-800' : 'bg-amber-100 border-amber-300 text-amber-800'}`}
-                >
-                  <span className="font-mono font-semibold">{a.code}</span>
-                  <span>{a.status === 'OVERDUE' ? `isteklo ${Math.abs(a.daysUntilDue ?? 0)}d` : `za ${a.daysUntilDue}d`}</span>
-                </div>
-              ))}
-            </div>
-          </CardContent>
-        </Card>
+      {/* Šta čeka - jedna rečenica, svaki dio je dugme */}
+      {!loading && (
+        <div className={`flex flex-wrap items-center gap-x-3 gap-y-1 rounded-lg border-2 p-3 text-base ${sentence.length ? 'border-amber-300 bg-amber-50' : 'border-emerald-300 bg-emerald-50'}`}>
+          {sentence.length === 0
+            ? <span className="font-semibold text-emerald-800">Sve je u redu — nema kvarova koji čekaju.</span>
+            : sentence.map((p) => (
+              <button key={p.key} type="button" onClick={p.onClick} className={`min-h-11 text-left underline decoration-dotted underline-offset-4 ${p.tone}`}>{p.text}</button>
+            ))}
+        </div>
       )}
 
-      <div className="flex gap-2 border-b">
+      {/* Dva velika taba */}
+      <div className="grid grid-cols-2 gap-3">
         <button
+          type="button"
           onClick={() => { setTab('faults'); setTabChosen(true) }}
-          className={`px-4 py-2 text-sm font-medium border-b-2 transition ${tab === 'faults' ? 'border-primary text-primary' : 'border-transparent text-muted-foreground hover:text-foreground'}`}
+          className={`rounded-xl border-2 p-4 text-left transition min-h-24 ${tab === 'faults' ? 'border-red-600 bg-red-600 text-white shadow' : 'border-red-300 bg-red-50 text-red-900 hover:bg-red-100'}`}
         >
-          <AlertOctagon className="h-4 w-4 inline mr-1.5" />
-          Novi kvarovi ({damages.filter((x) => x.status === 'OPEN').length})
+          <div className="flex items-center gap-2 text-base font-semibold"><AlertOctagon className="h-5 w-5" />Novi kvarovi</div>
+          <div className="text-4xl font-bold tabular-nums leading-tight">{newCount}</div>
         </button>
         <button
+          type="button"
           onClick={() => { setTab('workshop'); setTabChosen(true) }}
-          className={`px-4 py-2 text-sm font-medium border-b-2 transition ${tab === 'workshop' ? 'border-primary text-primary' : 'border-transparent text-muted-foreground hover:text-foreground'}`}
+          className={`rounded-xl border-2 p-4 text-left transition min-h-24 ${tab === 'workshop' ? 'border-amber-600 bg-amber-600 text-white shadow' : 'border-amber-300 bg-amber-50 text-amber-900 hover:bg-amber-100'}`}
         >
-          <Wrench className="h-4 w-4 inline mr-1.5" />
-          U radionici ({damages.filter((x) => x.status === 'IN_REPAIR' || x.status === 'AWAITING_APPROVAL').length})
+          <div className="flex items-center gap-2 text-base font-semibold"><Wrench className="h-5 w-5" />U radionici</div>
+          <div className="text-4xl font-bold tabular-nums leading-tight">{damages.filter((x) => x.status === 'IN_REPAIR' || x.status === 'AWAITING_APPROVAL').length}</div>
         </button>
-        <button
-          onClick={() => setTab('downtime')}
-          className={`px-4 py-2 text-sm font-medium border-b-2 transition ${tab === 'downtime' ? 'border-primary text-primary' : 'border-transparent text-muted-foreground hover:text-foreground'}`}
-        >
-          <BarChart3 className="h-4 w-4 inline mr-1.5" />
-          Zastoji
-        </button>
-        <button
-          onClick={() => setTab('logs')}
-          className={`px-4 py-2 text-sm font-medium border-b-2 transition ${tab === 'logs' ? 'border-primary text-primary' : 'border-transparent text-muted-foreground hover:text-foreground'}`}
-        >
-          <Wrench className="h-4 w-4 inline mr-1.5" />
-          Evidencija održavanja ({logs.length})
-        </button>
-        <button
-          onClick={() => setTab('qualifications')}
-          className={`px-4 py-2 text-sm font-medium border-b-2 transition ${tab === 'qualifications' ? 'border-primary text-primary' : 'border-transparent text-muted-foreground hover:text-foreground'}`}
-        >
-          <Award className="h-4 w-4 inline mr-1.5" />
-          Kvalifikacije ({qualifications.length})
-        </button>
+      </div>
+
+      {/* Više: rjeđe potrebne stvari */}
+      <div className="space-y-2">
+        <Button type="button" variant="ghost" className="h-11 text-sm text-muted-foreground" aria-expanded={more || moreTabs.includes(tab)} onClick={() => setMore((v) => !v)}>
+          {(more || moreTabs.includes(tab)) ? <ChevronUp className="h-4 w-4 mr-1.5" /> : <ChevronDown className="h-4 w-4 mr-1.5" />}Više
+        </Button>
+        {(more || moreTabs.includes(tab)) && (
+          <div className="flex flex-wrap gap-2">
+            <Button variant={tab === 'downtime' ? 'default' : 'outline'} className="h-11 text-sm" onClick={() => setTab('downtime')}><BarChart3 className="h-4 w-4 mr-1.5" />Zastoji</Button>
+            <Button variant={tab === 'logs' ? 'default' : 'outline'} className="h-11 text-sm" onClick={() => setTab('logs')}><Wrench className="h-4 w-4 mr-1.5" />Evidencija održavanja ({logs.length})</Button>
+            <Button variant={tab === 'qualifications' ? 'default' : 'outline'} className="h-11 text-sm" onClick={() => setTab('qualifications')}><Award className="h-4 w-4 mr-1.5" />Kvalifikacije ({qualifications.length})</Button>
+            <Button variant="outline" className="h-11 text-sm" onClick={openHandover}><FileText className="h-4 w-4 mr-1.5" />Primopredaja smjene (PDF)</Button>
+            <Button variant="outline" className="h-11 text-sm" onClick={openGuide}><FileText className="h-4 w-4 mr-1.5" />Vodič za radionicu (PDF)</Button>
+          </div>
+        )}
       </div>
 
       {loading ? (
@@ -220,7 +254,7 @@ export function MaintenanceView({ currentUser }: { currentUser: AppUser }) {
           <OpenFaultsList damages={damages.filter((x) => x.status === 'OPEN')} onChanged={load} currentUser={currentUser} repeats={repeats} />
         </>
       ) : tab === 'workshop' ? (
-        <WorkshopBoard damages={damages as any} onChanged={load} currentUser={currentUser} repeats={repeats} />
+        <WorkshopBoard damages={damages as any} onChanged={load} currentUser={currentUser} repeats={repeats} filterRequest={filterReq} />
       ) : tab === 'downtime' ? (
         <DowntimeView />
       ) : tab === 'logs' ? (
@@ -228,7 +262,106 @@ export function MaintenanceView({ currentUser }: { currentUser: AppUser }) {
       ) : (
         <QualificationsList qualifications={qualifications} isAdmin={isAdmin} onChanged={load} />
       )}
+
+      {/* Rokovi: ispod glavnog posla, klik otvara karton sredstva */}
+      {!loading && (tab === 'faults' || tab === 'workshop') && dueThisMonth.length > 0 && (
+        <Card className="border-amber-300 bg-amber-50/50">
+          <CardHeader className="pb-2">
+            <CardTitle className="text-base flex items-center gap-2">
+              <Calendar className="h-5 w-5 text-amber-700" />
+              Redovni pregledi koji dospijevaju ovog mjeseca ({dueThisMonth.length})
+            </CardTitle>
+          </CardHeader>
+          <CardContent className="pt-0">
+            <div className="flex flex-wrap gap-2">
+              {dueThisMonth.slice(0, 12).map((a) => (
+                <button
+                  key={a.id}
+                  type="button"
+                  onClick={() => setRecordCode(a.code)}
+                  className={`min-h-11 flex items-center gap-2 px-3 py-2 rounded-lg text-sm border text-left ${a.status === 'OVERDUE' ? 'bg-red-100 border-red-300 text-red-800' : 'bg-amber-100 border-amber-300 text-amber-800'}`}
+                >
+                  <span className="font-mono font-semibold">{a.code}</span>
+                  <span className="truncate max-w-48">{a.name}</span>
+                  <span className="font-semibold">{a.status === 'OVERDUE' ? `isteklo prije ${Math.abs(a.daysUntilDue ?? 0)} d` : `za ${a.daysUntilDue} d`}</span>
+                </button>
+              ))}
+            </div>
+          </CardContent>
+        </Card>
+      )}
+
+      <HandoverDialog
+        open={handoverOpen}
+        onOpenChange={setHandoverOpen}
+        currentUserName={currentUser.full_name}
+        damages={damages}
+      />
     </div>
+  )
+}
+
+// ---- Zvuk i vibracija za novi kritičan kvar (radi dok je stranica otvorena) ----
+function beep() {
+  try {
+    const Ctx = window.AudioContext || (window as any).webkitAudioContext
+    const ctx = new Ctx()
+    ;[0, 0.35, 0.7].forEach((t) => {
+      const o = ctx.createOscillator(); const g = ctx.createGain()
+      o.frequency.value = 880; g.gain.value = 0.25
+      o.connect(g); g.connect(ctx.destination)
+      o.start(ctx.currentTime + t); o.stop(ctx.currentTime + t + 0.25)
+    })
+    setTimeout(() => ctx.close().catch(() => {}), 1500)
+  } catch { /* preglednik blokira zvuk dok se ne dodirne ekran */ }
+}
+function alertCritical(codes: string[], sound: boolean) {
+  toast.error(`NOVI KRITIČAN KVAR: ${codes.join(', ')}`, { duration: 20000 })
+  if (sound) beep()
+  try { navigator.vibrate?.([300, 150, 300, 150, 300]) } catch { /* nije podržano */ }
+}
+
+// ---- Primopredaja smjene: A4 sa stanjem radionice + napomene (PDF se crta u pregledniku) ----
+function HandoverDialog({ open, onOpenChange, currentUserName, damages }: { open: boolean; onOpenChange: (o: boolean) => void; currentUserName: string; damages: OpenDamage[] }) {
+  const [notes, setNotes] = useState('')
+  const [busy, setBusy] = useState(false)
+  const make = async () => {
+    setBusy(true)
+    try {
+      const { buildHandoverPdf } = await import('@/lib/pdf-handover')
+      const days = (v: unknown) => (v ? Math.max(0, Math.floor((Date.now() - new Date(v as string).getTime()) / 86_400_000)) : null)
+      const row = (d: OpenDamage) => {
+        const x: any = d
+        return {
+          code: d.equipmentCode, name: d.equipmentName, stage: STAGE_LABEL[stageOf(d)], days: days(x.workshopArrivedAt ?? x.acknowledgedAt),
+          status: x.lastStatusText ?? d.description ?? '', who: x.acknowledgedBy ?? '', stale: staleInfo(x).due,
+        }
+      }
+      const bytes = await buildHandoverPdf({
+        by: currentUserName, at: new Date(), notes,
+        newFaults: damages.filter((d) => d.status === 'OPEN').map((d) => ({ ...row(d), stage: 'Čeka preuzimanje', days: days(d.createdAt) })),
+        inWorkshop: damages.filter((d) => d.status === 'IN_REPAIR' || d.status === 'AWAITING_APPROVAL').map(row),
+      })
+      window.open(URL.createObjectURL(new Blob([bytes as BlobPart], { type: 'application/pdf' })), '_blank')
+      onOpenChange(false)
+    } catch (e) { console.error(e); toast.error('PDF nije napravljen') }
+    finally { setBusy(false) }
+  }
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent>
+        <DialogHeader>
+          <DialogTitle>Primopredaja smjene</DialogTitle>
+          <DialogDescription>Pravi A4 sa stanjem radionice. Napomene upišite ovdje — ne čuvaju se u aplikaciji, samo se štampaju.</DialogDescription>
+        </DialogHeader>
+        <Label htmlFor="ho-notes">Napomene za sljedeću smjenu</Label>
+        <Textarea id="ho-notes" rows={5} className="text-base" value={notes} onChange={(e) => setNotes(e.target.value)} placeholder="npr. Čeka se pumpa za TOW-03, stiže u četvrtak. H21 treba probu prije izlaska." />
+        <DialogFooter>
+          <Button type="button" variant="outline" className="h-11" onClick={() => onOpenChange(false)}>Odustani</Button>
+          <Button type="button" className="h-11" disabled={busy} onClick={make}>{busy && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}Napravi PDF</Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
   )
 }
 
@@ -289,7 +422,7 @@ function OpenFaultsList({ damages, onChanged, currentUser, repeats }: { damages:
   const groups = (() => {
     const def = [
       { key: 'stale', title: 'UPOZORENJE — bez statusa 3+ dana, upišite status', cls: 'bg-red-600 text-white', pick: (d: OpenDamage) => staleInfo(d as any).due },
-      { key: 'new', title: 'Čeka preuzimanje — pritisnite PREUZMI PRIJAVU', cls: 'bg-red-100 text-red-900', pick: (d: OpenDamage) => d.status === 'OPEN' },
+      { key: 'new', title: 'Čeka preuzimanje — pritisnite PREUZMI KVAR', cls: 'bg-red-100 text-red-900', pick: (d: OpenDamage) => d.status === 'OPEN' },
       { key: 'repair', title: 'U popravci', cls: 'bg-amber-100 text-amber-900', pick: (d: OpenDamage) => d.status === 'IN_REPAIR' },
       { key: 'chief', title: 'Popravljeno — čeka pregled šefa službe', cls: 'bg-purple-100 text-purple-900', pick: (d: OpenDamage) => d.status === 'AWAITING_APPROVAL' },
     ]
@@ -316,12 +449,12 @@ function OpenFaultsList({ damages, onChanged, currentUser, repeats }: { damages:
                 <div className="flex items-center gap-2 flex-wrap">
                   <Badge className={`text-xs font-semibold ${URGENCY_COLORS[urgency]}`}>Hitnost: {URGENCY_LABELS[urgency]}</Badge>
                   {isAdmin && (
-                    <Button size="sm" variant="outline" className="h-7 ml-auto" onClick={() => setEditing(d)}>
+                    <Button size="sm" variant="outline" className="h-11 ml-auto text-sm" onClick={() => setEditing(d)}>
                       <Pencil className="h-3.5 w-3.5 mr-1" />Uredi kvar
                     </Button>
                   )}
                 </div>
-                <DamageRowCard damage={d as any} onResolved={onChanged} currentUser={currentUser} repeats={repeats} />
+                <DamageRowCard simple damage={d as any} onResolved={onChanged} currentUser={currentUser} repeats={repeats} />
               </div>
             )
           })}

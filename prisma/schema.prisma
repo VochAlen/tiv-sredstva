@@ -215,6 +215,7 @@ model DamageReport {
   lastStatusText    String?
   lastStatusAt      DateTime?
   lastStatusBy      String?
+  waitingPartUntil  DateTime?
   staleNotifiedAt   DateTime?
 
   // Probni rad / funkcionalni test prije puštanja u rad + eksterni servis

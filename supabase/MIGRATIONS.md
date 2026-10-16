@@ -31,6 +31,7 @@ para je fiksan i ne smije se mijenjati:
 | 23 | 034_ahm917_service_plan_extras.sql |
 | 24 | 035_workshop_flow.sql |
 | 25 | 036_workshop_extras.sql |
+| 26 | 037_waiting_part.sql |
 
 Fajlovi **nisu** preimenovani namjerno: ako ste ih već pokretali ručno po broju, preimenovanje
 ništa ne popravlja a pravi zabunu. Duplirani brojevi smetaju samo Supabase CLI-ju (`supabase db push`),

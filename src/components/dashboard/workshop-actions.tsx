@@ -6,7 +6,7 @@
 
 import { PersonPicker } from './person-picker'
 import { useCallback, useEffect, useState, useTransition } from 'react'
-import { AlertTriangle, CheckCircle2, Loader2, PackageCheck, ShieldAlert } from 'lucide-react'
+import { AlertTriangle, CheckCircle2, Loader2, PackageCheck, ShieldAlert, Clock } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
@@ -47,7 +47,7 @@ export function ArrivedDialog({ damageId, code, open, onOpenChange, onDone }: { 
     e.preventDefault()
     start(async () => {
       const r = await markArrivedInWorkshop({ damageId, broughtBy: who })
-      if (r.ok) { toast.success('Upisano: sredstvo je u radionici'); onOpenChange(false); setWho(''); onDone() } else toast.error(r.error ?? 'Greška')
+      if (r.ok) { toast.success('Upisano: sredstvo je u radionici. Sljedeće: popravka, pa dugme „POPRAVKA ZAVRŠENA“.'); onOpenChange(false); setWho(''); onDone() } else toast.error(r.error ?? 'Greška')
     })
   }
   return (
@@ -75,14 +75,20 @@ export function ArrivedDialog({ damageId, code, open, onOpenChange, onDone }: { 
 export function StatusDialog({ damageId, code, staleDays, open, onOpenChange, onDone }: { damageId: string; code: string; staleDays: number | null; open: boolean; onOpenChange: (o: boolean) => void; onDone: () => void }) {
   const [text, setText] = useState('')
   const [seen, setSeen] = useState(false)
+  const [waiting, setWaiting] = useState(false)
+  const [until, setUntil] = useState('')
   const [pending, start] = useTransition()
   const warned = staleDays != null
   const submit = (e: React.FormEvent) => {
     e.preventDefault()
     if (warned && !seen) return toast.error('Potvrdite da ste vidjeli upozorenje')
+    if (waiting && !until) return toast.error('Upišite očekivani datum dolaska dijela')
     start(async () => {
-      const r = await addWorkshopStatus({ damageId, text, warned })
-      if (r.ok) { toast.success('Status upisan'); onOpenChange(false); setText(''); setSeen(false); onDone() } else toast.error(r.error ?? 'Greška')
+      const r = await addWorkshopStatus({ damageId, text, warned, waitingPartUntil: waiting ? until : null })
+      if (r.ok) {
+        toast.success(waiting ? `Čeka se dio. Upozorenje se ne pali do ${until.split('-').reverse().join('.')}.` : 'Status upisan. Sljedeće: nastavite popravku.')
+        onOpenChange(false); setText(''); setSeen(false); setWaiting(false); setUntil(''); onDone()
+      } else toast.error(r.error ?? 'Greška')
     })
   }
   return (
@@ -103,10 +109,21 @@ export function StatusDialog({ damageId, code, staleDays, open, onOpenChange, on
         )}
         <form onSubmit={submit} className="space-y-3">
           <div className="flex flex-wrap gap-1.5">
+            <Button type="button" variant={waiting ? 'default' : 'outline'} className={`h-11 text-sm font-semibold ${waiting ? 'bg-sky-600 hover:bg-sky-700 text-white' : 'border-sky-400 text-sky-800'}`}
+              onClick={() => { const on = !waiting; setWaiting(on); if (on && !text.trim()) setText('Čeka se rezervni dio') }}>
+              <Clock className="h-4 w-4 mr-1.5" />Čeka dio
+            </Button>
             {STATUS_PRESETS.map((p) => (
-              <Button key={p} type="button" size="sm" variant={text === p ? 'default' : 'outline'} className="h-9 text-xs" onClick={() => setText(p)}>{p}</Button>
+              <Button key={p} type="button" variant={text === p ? 'default' : 'outline'} className="h-11 text-sm" onClick={() => setText(p)}>{p}</Button>
             ))}
           </div>
+          {waiting && (
+            <div className="space-y-1.5 rounded-md border border-sky-300 bg-sky-50 p-3">
+              <Label>Očekivani dolazak dijela *</Label>
+              <Input type="date" className="h-11" value={until} min={new Date().toISOString().slice(0, 10)} onChange={(e) => setUntil(e.target.value)} />
+              <p className="text-sm text-sky-900">Do tog datuma se ne pali crveno upozorenje „3 dana bez statusa“.</p>
+            </div>
+          )}
           <div className="space-y-1.5">
             <Label>Status *</Label>
             <Input value={text} maxLength={200} onChange={(e) => setText(e.target.value)} placeholder="Izaberite gore ili upišite svoj status" />
@@ -155,10 +172,10 @@ export function ChiefDialog({ damage, open, onOpenChange, onDone }: {
           durationHours: hours.trim() ? Number(hours.replace(',', '.')) : undefined,
           partsReplaced: parts.trim() || undefined,
         })
-        if (r.ok) { toast.success('Pregled šefa upisan — sredstvo vraćeno u upotrebu'); onOpenChange(false); onDone() } else toast.error(r.error ?? 'Greška')
+        if (r.ok) { toast.success('Pregled upisan. Sljedeće: upišite ko preuzima sredstvo iz radionice.'); onOpenChange(false); onDone() } else toast.error(r.error ?? 'Greška')
       } else {
         const r = await recordChiefFailed({ damageId: damage.id, chiefName: chief, inspectedAt: iso, note })
-        if (r.ok) { toast.warning('Pregled nije prošao — kvar vraćen u popravku'); onOpenChange(false); onDone() } else toast.error(r.error ?? 'Greška')
+        if (r.ok) { toast.warning('Pregled nije prošao. Kvar je vraćen u popravku — nastavite sa popravkom.'); onOpenChange(false); onDone() } else toast.error(r.error ?? 'Greška')
       }
     })
   }
@@ -240,7 +257,7 @@ export function WorkshopHistory({ damageId }: { damageId: string }) {
             <span className="font-semibold tabular-nums text-muted-foreground">{fmtDT(r.at)}</span>
             <span>
               {r.text ?? r.kind}
-              <span className="block text-xs text-muted-foreground">{r.byName}{r.warned ? ' · nakon upozorenja' : ''}</span>
+              <span className="block text-sm text-muted-foreground">{r.byName}{r.warned ? ' · nakon upozorenja' : ''}</span>
             </span>
           </li>
         ))}
@@ -261,7 +278,7 @@ export function PendingHandoverList({ onChanged }: { onChanged?: () => void }) {
     setBusy(id)
     const r = await recordHandover({ damageId: id, takenBy: who[id] ?? '' })
     setBusy(null)
-    if (r.ok) { toast.success('Preuzimanje upisano'); await load(); onChanged?.() } else toast.error(r.error ?? 'Greška')
+    if (r.ok) { toast.success('Preuzimanje upisano. Sredstvo je spremno za rad.'); await load(); onChanged?.() } else toast.error(r.error ?? 'Greška')
   }
   return (
     <div className="space-y-2 rounded-lg border-2 border-green-500 bg-green-50 p-3">
@@ -270,7 +287,7 @@ export function PendingHandoverList({ onChanged }: { onChanged?: () => void }) {
         <div key={r.id} className="flex flex-wrap items-center gap-2 rounded-md bg-white p-2 text-sm">
           <div className="min-w-[10rem] flex-1">
             <div className="font-medium">{r.equipmentCode} — {r.equipmentName}</div>
-            <div className="text-xs text-muted-foreground">Pregled šefa: {r.chiefName ?? '-'} {fmtDT(r.chiefInspectedAt)}</div>
+            <div className="text-sm text-muted-foreground">Pregled šefa: {r.chiefName ?? '-'} {fmtDT(r.chiefInspectedAt)}</div>
           </div>
           <div className="w-full sm:w-64"><PersonPicker storageKey="handover" placeholder="Ko preuzima sredstvo" value={who[r.id] ?? ''} onChange={(v) => setWho({ ...who, [r.id]: v })} /></div>
           <Button size="sm" className="h-10 bg-green-600 hover:bg-green-700" disabled={busy === r.id} onClick={() => save(r.id)}>
@@ -419,15 +436,33 @@ export function ReplacementPanel({ equipmentId, equipmentCode }: { equipmentId: 
           <li key={o.id} className="flex flex-wrap items-center gap-x-2 gap-y-0.5 rounded-md px-2 py-1.5 text-sm odd:bg-muted/40">
             <span className="font-mono font-semibold">{o.code}</span>
             <span className="min-w-0 flex-1 truncate">{o.name}</span>
-            <span className="text-xs text-muted-foreground">{o.location}</span>
+            <span className="text-sm text-muted-foreground">{o.location}</span>
             {o.inspectedToday
-              ? <span className="inline-flex items-center gap-1 text-xs font-medium text-emerald-700"><CheckCircle2 className="h-3.5 w-3.5" />pregledano danas</span>
-              : <span className="text-xs font-medium text-amber-700">nije pregledano danas</span>}
-            {o.restrictions > 0 && <span className="text-xs text-orange-700">ima ograničenja ({o.restrictions})</span>}
-            {o.restrictedAccess && <span className="text-xs text-muted-foreground">ograničen pristup</span>}
+              ? <span className="inline-flex items-center gap-1 text-sm font-medium text-emerald-700"><CheckCircle2 className="h-3.5 w-3.5" />pregledano danas</span>
+              : <span className="text-sm font-medium text-amber-700">nije pregledano danas</span>}
+            {o.restrictions > 0 && <span className="text-sm text-orange-700">ima ograničenja ({o.restrictions})</span>}
+            {o.restrictedAccess && <span className="text-sm text-muted-foreground">ograničen pristup</span>}
           </li>
         ))}
       </ul>
+    </div>
+  )
+}
+
+
+/** Brzi izbori za "Šta je urađeno": dodir na dugme dopisuje rečenicu u polje (radnik ne mora kucati). */
+export const QUICK_WORK = ['Zamijenjen dio', 'Podešeno', 'Očišćeno', 'Dopunjena tečnost', 'Zategnuto', 'Zamijenjena sijalica/osigurač', 'Testirano — radi ispravno'] as const
+
+export function QuickWorkChips({ value, onChange }: { value: string; onChange: (v: string) => void }) {
+  const add = (t: string) => {
+    if (value.includes(t)) return
+    onChange(value.trim() ? `${value.trim().replace(/[.,;]$/, '')}. ${t}` : t)
+  }
+  return (
+    <div className="flex flex-wrap gap-2" role="group" aria-label="Brzi izbori">
+      {QUICK_WORK.map((t) => (
+        <Button key={t} type="button" variant={value.includes(t) ? 'default' : 'outline'} className="h-11 text-sm" onClick={() => add(t)}>{t}</Button>
+      ))}
     </div>
   )
 }

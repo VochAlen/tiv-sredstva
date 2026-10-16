@@ -8,7 +8,7 @@
 
 import { PersonPicker } from './person-picker'
 import { useState, useTransition } from 'react'
-import { History, Repeat, RefreshCw, Send, Truck, ClipboardEdit, UserCheck, Wrench, ShieldCheck, User, Calendar, CheckCircle2, Loader2, FileDown, Image as ImageIcon, ClipboardList, Plus, Trash2 } from 'lucide-react'
+import { ChevronDown, ChevronUp, Clock, History, Repeat, RefreshCw, Send, Truck, ClipboardEdit, UserCheck, Wrench, ShieldCheck, User, Calendar, CheckCircle2, Loader2, FileDown, Image as ImageIcon, ClipboardList, Plus, Trash2 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import {
@@ -21,14 +21,15 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { toast } from 'sonner'
 import { CHECKLIST_CATEGORY_LABELS, CHECKLIST_CATEGORY_ORDER } from '@/lib/types'
 import { resolveDamageReport, acknowledgeDamage, markRepaired, getOpenDamages } from '@/lib/actions'
-import { staleInfo, fmtDT } from '@/lib/workshop'
+import { staleInfo, fmtDT, fmtD } from '@/lib/workshop'
 import {
   WorkshopStepper, StaleBanner, ArrivedDialog, StatusDialog, ChiefDialog, WorkshopHistory,
-  ExternalSendDialog, ExternalReturnDialog, WarrantyBanner, ReplacementPanel,
+  ExternalSendDialog, ExternalReturnDialog, WarrantyBanner, ReplacementPanel, QuickWorkChips,
 } from '@/components/dashboard/workshop-actions'
 import { getSpareParts } from '@/lib/actions-scheduling'
 import { REPEAT_ADVICE, type RepeatGroup } from '@/lib/repeat-defects'
-import { getPhotosForDamage } from '@/lib/actions-advanced'
+import { getPhotosForDamage, addPhotoToDamage } from '@/lib/actions-advanced'
+import { PhotoUpload, type PendingPhoto } from '@/components/worker/photo-upload'
 import { saveRepairWork } from '@/lib/actions-repair'
 import type { AppUser } from '@/lib/auth-server'
 import { RestrictionBadges } from '@/components/restriction-badges'
@@ -50,6 +51,7 @@ export function DamageRowCard({
   currentUser,
   compact = false,
   repeats = [],
+  simple = false,
 }: {
   damage: DamageRow
   onResolved: () => void
@@ -57,16 +59,20 @@ export function DamageRowCard({
   compact?: boolean
   /** Ponavljajući kvarovi (3+ u 90 dana) - kartica prikazuje upozorenje ako joj prijava pripada nekoj grupi */
   repeats?: RepeatGroup[]
+  /** Radionica: samo glavno veliko dugme na kartici, sve ostalo iza „Više opcija“ */
+  simple?: boolean
 }) {
   const [open, setOpen] = useState(false)
+  const [more, setMore] = useState(false)
+  const showMore = !simple || more
   // Slike se učitavaju tek na klik (base64 je težak, ne vučemo ga za cijelu listu)
-  const [photos, setPhotos] = useState<string[] | null>(null)
+  const [photos, setPhotos] = useState<Array<{ src: string; after: boolean }> | null>(null)
   const [photosLoading, setPhotosLoading] = useState(false)
   const loadPhotos = async () => {
     setPhotosLoading(true)
     try {
       const rows = await getPhotosForDamage(damage.id)
-      setPhotos(rows.map((r: any) => r.photoData as string))
+      setPhotos(rows.map((r: any) => ({ src: r.photoData as string, after: r.caption === 'AFTER' })))
     } catch {
       toast.error('Slike nisu učitane')
       setPhotos([])
@@ -78,6 +84,7 @@ export function DamageRowCard({
   const [setAvailable, setSetAvailable] = useState(true)
   const [repairOpen, setRepairOpen] = useState(false)
   const [repairNotes, setRepairNotes] = useState('')
+  const [afterPhotos, setAfterPhotos] = useState<PendingPhoto[]>([])
   const [repairCategory, setRepairCategory] = useState<string>((damage as any).category ?? '')
   const [isPending, startTransition] = useTransition()
 
@@ -86,6 +93,8 @@ export function DamageRowCard({
     MAJOR: 'bg-orange-100 text-orange-800',
     CRITICAL: 'bg-red-100 text-red-800',
   }[damage.severity] ?? 'bg-gray-100'
+
+  const severityLabel = { MINOR: 'Manji kvar', MAJOR: 'Veći kvar', CRITICAL: 'Kritičan kvar' }[damage.severity as string] ?? damage.severity
 
   const statusBadge = {
     OPEN: 'bg-red-100 text-red-800',
@@ -123,7 +132,7 @@ export function DamageRowCard({
   const handleAcknowledge = () => {
     startTransition(async () => {
       await acknowledgeDamage(damage.id)
-      toast.success('Kvar preuzet — upisano ko i kada')
+      toast.success('Preuzeto. Sljedeće: dovezi sredstvo u radionicu.')
       onResolved()
     })
   }
@@ -141,7 +150,14 @@ export function DamageRowCard({
     startTransition(async () => {
       const res = await markRepaired({ damageId: damage.id, repairNotes: repairNotes.trim(), category: repairCategory || undefined })
       if (res.ok) {
-        toast.success('Popravka označena - čeka odobrenje šefa službe')
+        // Slike poslije popravke (audit: prije / poslije) - greška slike ne poništava popravku
+        for (const ph of afterPhotos) {
+          try {
+            await addPhotoToDamage({ damageReportId: damage.id, equipmentId: damage.equipmentId, photoData: ph.dataUrl, photoType: 'image/jpeg', caption: 'AFTER', takenByCardId: currentUser.card_id ?? undefined, takenByName: currentUser.full_name })
+          } catch { toast.error('Jedna slika nije snimljena') }
+        }
+        setAfterPhotos([]); setPhotos(null)
+        toast.success('Popravka upisana. Sljedeće: pregled šefa službe.')
         setRepairOpen(false)
         setRepairNotes('')
         onResolved()
@@ -189,7 +205,7 @@ export function DamageRowCard({
         workCost: workCost.trim() ? Number(workCost.replace(',', '.')) : null,
       })
       if (res.ok) {
-        toast.success('Radni nalog snimljen')
+        toast.success('Popravka upisana (dijelovi, sati). Sljedeće: „POPRAVKA ZAVRŠENA“ kad završite.')
         if (res.lowStock?.length) toast.warning(`Zaliha ispod minimuma: ${res.lowStock.join('; ')}`, { duration: 10000 })
         setWorkOpen(false); onResolved()
       }
@@ -221,21 +237,21 @@ export function DamageRowCard({
         <div className="flex-1 min-w-0">
           <div className="flex items-center gap-2 mb-1 flex-wrap">
             {isNew && (
-              <Badge className="text-xs bg-red-600 text-white animate-pulse">NOVO</Badge>
+              <Badge className="text-sm bg-red-600 text-white animate-pulse">NOVO</Badge>
             )}
-            <Badge variant="outline" className="font-mono text-xs">{damage.equipmentCode}</Badge>
-            <Badge className={`text-xs ${severityBadge}`}>{damage.severity}</Badge>
-            <Badge className={`text-xs ${statusBadge}`}>{statusLabel}</Badge>
+            <Badge variant="outline" className="font-mono text-sm">{damage.equipmentCode}</Badge>
+            <Badge className={`text-sm ${severityBadge}`}>{severityLabel}</Badge>
+            <Badge className={`text-sm ${statusBadge}`}>{statusLabel}</Badge>
             {(damage as any).restrictionCode && (
               <RestrictionBadges restrictions={[{ code: (damage as any).restrictionCode, label: (damage as any).restrictionLabel ?? (damage as any).restrictionCode, source: 'damage', since: '' }]} showLabel />
             )}
             {(damage as any).category ? (
-              <Badge variant="outline" className={`text-xs ${CATEGORY_BADGE_CLASS[(damage as any).category as string] ?? ''}`}>
+              <Badge variant="outline" className={`text-sm ${CATEGORY_BADGE_CLASS[(damage as any).category as string] ?? ''}`}>
                 {CATEGORY_LABEL[(damage as any).category as string] ?? (damage as any).category}
               </Badge>
             ) : (
               damage.status !== 'RESOLVED' && (
-                <Badge variant="outline" className="text-xs border-dashed text-muted-foreground">
+                <Badge variant="outline" className="text-sm border-dashed text-muted-foreground">
                   kategorija nije određena
                 </Badge>
               )
@@ -250,27 +266,31 @@ export function DamageRowCard({
           <div className="text-sm font-medium truncate">{damage.equipmentName}</div>
           {!compact && <WorkshopStepper d={d} />}
           <div className="text-sm text-muted-foreground mt-1">{damage.description}</div>
+          {showMore && (<>
           {photos === null ? (
             <button
               type="button"
               onClick={loadPhotos}
               disabled={photosLoading}
-              className="mt-1.5 inline-flex items-center gap-1 text-xs text-primary underline-offset-2 hover:underline"
+              className="mt-1.5 inline-flex min-h-11 items-center gap-1 text-sm text-primary underline-offset-2 hover:underline"
             >
               {photosLoading ? <Loader2 className="h-3 w-3 animate-spin" /> : <ImageIcon className="h-3 w-3" />}
               Prikaži slike
             </button>
           ) : photos.length > 0 ? (
             <div className="mt-1.5 flex gap-2 flex-wrap">
-              {photos.map((src, i) => (
-                <img key={i} src={src} alt={`Slika kvara ${i + 1}`} className="h-24 w-24 rounded-md object-cover border" />
+              {photos.map((p, i) => (
+                <figure key={i} className="m-0">
+                  <img src={p.src} alt={p.after ? `Slika poslije popravke ${i + 1}` : `Slika kvara ${i + 1}`} className={`h-24 w-24 rounded-md object-cover border-2 ${p.after ? 'border-emerald-500' : 'border-red-300'}`} />
+                  <figcaption className="text-sm text-center text-muted-foreground">{p.after ? 'Poslije' : 'Prije'}</figcaption>
+                </figure>
               ))}
             </div>
           ) : (
-            <div className="mt-1.5 text-xs text-muted-foreground">Nema slika.</div>
+            <div className="mt-1.5 text-sm text-muted-foreground">Nema slika.</div>
           )}
           {!compact && (
-            <div className="text-xs text-muted-foreground mt-1.5 flex items-center gap-2 flex-wrap">
+            <div className="text-sm text-muted-foreground mt-1.5 flex items-center gap-2 flex-wrap">
               <span className="flex items-center gap-1"><User className="h-3 w-3" />{damage.reportedByName}</span>
               <span className="flex items-center gap-1"><Calendar className="h-3 w-3" />{new Date(damage.createdAt).toLocaleString('hr-HR')}</span>
               {(damage as any).acknowledgedAt && (
@@ -293,32 +313,38 @@ export function DamageRowCard({
               )}
             </div>
           )}
+          </>)}
           {d.lastStatusText && inRepairFlow && (
-            <div className="mt-1.5 rounded border border-amber-300 bg-amber-50 p-1.5 text-xs">
+            <div className="mt-1.5 rounded border border-amber-300 bg-amber-50 p-1.5 text-sm">
               <strong>Status:</strong> {d.lastStatusText} <span className="text-muted-foreground">({d.lastStatusBy}, {fmtDT(d.lastStatusAt)})</span>
             </div>
           )}
-          {damage.status !== 'RESOLVED' && <WarrantyBanner expiry={d.equipment?.warrantyExpiry} provider={d.equipment?.serviceProvider} phone={d.equipment?.serviceProviderPhone} />}
-          {d.externalSentAt && (
-            <div className={`mt-1.5 rounded border p-1.5 text-xs ${atExternal ? (extOverdue ? 'border-red-400 bg-red-50 text-red-900' : 'border-sky-300 bg-sky-50') : 'bg-background'}`}>
+          {d.waitingPartUntil && inRepairFlow && (
+            <div className="mt-1.5 flex items-center gap-2 rounded border border-sky-300 bg-sky-50 p-2 text-sm text-sky-900">
+              <Clock className="h-4 w-4 shrink-0" /><span><strong>Čeka dio</strong> — očekivano do {fmtD(d.waitingPartUntil)}</span>
+            </div>
+          )}
+          {showMore && damage.status !== 'RESOLVED' && <WarrantyBanner expiry={d.equipment?.warrantyExpiry} provider={d.equipment?.serviceProvider} phone={d.equipment?.serviceProviderPhone} />}
+          {d.externalSentAt && (atExternal || showMore) && (
+            <div className={`mt-1.5 rounded border p-1.5 text-sm ${atExternal ? (extOverdue ? 'border-red-400 bg-red-50 text-red-900' : 'border-sky-300 bg-sky-50') : 'bg-background'}`}>
               <strong>Vanjski servis:</strong> {d.externalProvider}{d.externalRef ? ` (nalog ${d.externalRef})` : ''} — poslano {fmtDT(d.externalSentAt)}
               {d.externalReturnedAt ? `, vraćeno ${fmtDT(d.externalReturnedAt)}` : d.externalExpectedAt ? `, očekivani povrat ${new Date(d.externalExpectedAt).toLocaleDateString('hr-HR')}${extOverdue ? ' — ROK PROŠAO' : ''}` : ''}
             </div>
           )}
-          {d.testDone && (
-            <div className="mt-1.5 rounded border border-emerald-300 bg-emerald-50 p-1.5 text-xs text-emerald-900">
+          {showMore && d.testDone && (
+            <div className="mt-1.5 rounded border border-emerald-300 bg-emerald-50 p-1.5 text-sm text-emerald-900">
               <strong>Probni rad / funkcionalni test:</strong> zadovoljava{d.testNote ? ` — ${d.testNote}` : ''} <span className="text-muted-foreground">({d.testBy}, {fmtDT(d.testAt)})</span>
             </div>
           )}
           {stale.due && inRepairFlow && <StaleBanner days={stale.days} onAct={() => setStatusOpen(true)} />}
-          {damage.resolution && (
-            <div className="text-xs text-emerald-700 mt-1.5 p-1.5 bg-emerald-50 rounded">
+          {showMore && damage.resolution && (
+            <div className="text-sm text-emerald-700 mt-1.5 p-1.5 bg-emerald-50 rounded">
               <strong>Šta je urađeno:</strong> {damage.resolution}
             </div>
           )}
-          {(partsText || d.workerNames || d.workHours != null || d.workCost != null) && (
-            <div className="text-xs mt-1.5 p-1.5 rounded border bg-background space-y-0.5">
-              <div className="font-semibold flex items-center gap-1"><ClipboardList className="h-3 w-3" />Radni nalog</div>
+          {showMore && (partsText || d.workerNames || d.workHours != null || d.workCost != null) && (
+            <div className="text-sm mt-1.5 p-1.5 rounded border bg-background space-y-0.5">
+              <div className="font-semibold flex items-center gap-1"><ClipboardList className="h-3 w-3" />Popravka (dijelovi, sati)</div>
               {partsText && <div><strong>Dijelovi:</strong> {partsText}</div>}
               {d.workerNames && <div><strong>Radio/la:</strong> {d.workerNames}</div>}
               {d.workHours != null && <div><strong>Sati:</strong> {d.workHours}</div>}
@@ -356,10 +382,10 @@ export function DamageRowCard({
             </Button>
           )}
           {/* Korak 1: mehaničar (engineer/admin) označava da je popravka gotova */}
-          {damage.status === 'IN_REPAIR' && (
+          {damage.status === 'IN_REPAIR' && (d.workshopArrivedAt || showMore) && (
             <Dialog open={repairOpen} onOpenChange={(o) => { setRepairOpen(o); if (o && !repairNotes && damage.resolution) setRepairNotes(damage.resolution) }}>
               <DialogTrigger asChild>
-                <Button size="lg" className={d.workshopArrivedAt ? 'w-full h-16 text-lg font-bold bg-amber-600 hover:bg-amber-700 text-white' : 'h-10 text-sm'} variant={d.workshopArrivedAt ? 'default' : 'outline'}>
+                <Button size="lg" className={d.workshopArrivedAt ? 'w-full h-16 text-lg font-bold bg-amber-600 hover:bg-amber-700 text-white' : 'h-11 text-sm'} variant={d.workshopArrivedAt ? 'default' : 'outline'}>
                   <CheckCircle2 className="h-5 w-5 mr-2" />
                   {d.workshopArrivedAt ? 'POPRAVKA ZAVRŠENA' : 'Popravljeno na licu mjesta'}
                 </Button>
@@ -375,7 +401,7 @@ export function DamageRowCard({
                   {(damage as any).category ? (
                     <div className="text-sm">
                       Kategorija kvara:{' '}
-                      <Badge variant="outline" className={`text-xs ${CATEGORY_BADGE_CLASS[(damage as any).category as string] ?? ''}`}>
+                      <Badge variant="outline" className={`text-sm ${CATEGORY_BADGE_CLASS[(damage as any).category as string] ?? ''}`}>
                         {CATEGORY_LABEL[(damage as any).category as string] ?? (damage as any).category}
                       </Badge>
                     </div>
@@ -392,17 +418,23 @@ export function DamageRowCard({
                           ))}
                         </SelectContent>
                       </Select>
-                      <p className="text-xs text-muted-foreground">
+                      <p className="text-sm text-muted-foreground">
                         Ovaj kvar nije nastao iz pre-use checkliste, pa kategoriju treba ručno odrediti - od nje zavisi koji radnik smije preuzeti popravku.
                       </p>
                     </div>
                   )}
+                  <QuickWorkChips value={repairNotes} onChange={setRepairNotes} />
                   <Textarea
                     value={repairNotes}
                     onChange={(e) => setRepairNotes(e.target.value)}
                     rows={3}
-                    placeholder="npr. Zamijenjen kabl za napajanje, testirano - radi ispravno"
+                    className="text-base"
+                    placeholder="Šta je urađeno? Dodirnite dugme iznad ili upišite"
                   />
+                  <div className="space-y-1.5">
+                    <Label>Slika poslije popravke (nije obavezno)</Label>
+                    <PhotoUpload equipmentId={damage.equipmentId} pendingPhotos={afterPhotos} onPendingPhotosChange={setAfterPhotos} />
+                  </div>
                   <DialogFooter>
                     <Button type="button" variant="outline" onClick={() => setRepairOpen(false)}>Odustani</Button>
                     <Button type="submit" disabled={isPending}>
@@ -415,37 +447,38 @@ export function DamageRowCard({
             </Dialog>
           )}
 
+          {showMore && (<>
           <div className="flex flex-wrap gap-2">
           {/* Status popravke - kad je upozorenje aktivno, dugme je crveno i obavezno */}
           {inRepairFlow && (
-            <Button size="sm" variant={stale.due ? 'default' : 'outline'} className={`h-10 text-sm ${stale.due ? 'bg-red-600 hover:bg-red-700 text-white animate-pulse' : ''}`} onClick={() => setStatusOpen(true)}>
+            <Button size="sm" variant={stale.due ? 'default' : 'outline'} className={`h-11 text-sm ${stale.due ? 'bg-red-600 hover:bg-red-700 text-white animate-pulse' : ''}`} onClick={() => setStatusOpen(true)}>
               <ClipboardEdit className="h-3.5 w-3.5 mr-1" />
               {stale.due ? 'Upiši status (obavezno)' : 'Upiši status'}
             </Button>
           )}
 
           {damage.status === 'IN_REPAIR' && !atExternal && (
-            <Button size="sm" variant="outline" className="h-10 text-sm" onClick={() => setExtSendOpen(true)}>
+            <Button size="sm" variant="outline" className="h-11 text-sm" onClick={() => setExtSendOpen(true)}>
               <Send className="h-3.5 w-3.5 mr-1" />
               Vanjski servis
             </Button>
           )}
           {damage.status !== 'RESOLVED' && currentUser.role !== 'operator' && (d.equipment?.status === 'OUT_OF_SERVICE' || d.equipment?.status === 'MAINTENANCE') && (
-            <Button size="sm" variant={replOpen ? 'default' : 'outline'} className="h-10 text-sm" onClick={() => setReplOpen((v) => !v)}>
+            <Button size="sm" variant={replOpen ? 'default' : 'outline'} className="h-11 text-sm" onClick={() => setReplOpen((v) => !v)}>
               <RefreshCw className="h-3.5 w-3.5 mr-1" />
-              Zamjensko sredstvo
+              Nema sredstva? Zamjena
             </Button>
           )}
-          <Button size="sm" variant={histOpen ? 'default' : 'outline'} className="h-10 text-sm" onClick={() => setHistOpen((v) => !v)}>
+          <Button size="sm" variant={histOpen ? 'default' : 'outline'} className="h-11 text-sm" onClick={() => setHistOpen((v) => !v)}>
             <History className="h-3.5 w-3.5 mr-1" />
             Istorija popravke
           </Button>
           {canWork && (
             <Dialog open={workOpen} onOpenChange={openWork}>
               <DialogTrigger asChild>
-                <Button size="sm" variant="outline" className="h-8 text-xs">
+                <Button size="sm" variant="outline" className="h-11 text-sm">
                   <ClipboardList className="h-3.5 w-3.5 mr-1" />
-                  Radni nalog
+                  Upiši popravku (dijelovi, sati)
                 </Button>
               </DialogTrigger>
               <DialogContent className="max-h-[90vh] overflow-y-auto">
@@ -458,7 +491,8 @@ export function DamageRowCard({
                 <form onSubmit={handleSaveWork} className="space-y-3">
                   <div className="space-y-1.5">
                     <Label>Opis popravke</Label>
-                    <Textarea rows={3} value={workNotes} onChange={(e) => setWorkNotes(e.target.value)} placeholder="npr. Zamijenjena sijalica prednjeg lijevog farova, testirano" />
+                    <QuickWorkChips value={workNotes} onChange={setWorkNotes} />
+                    <Textarea rows={3} className="text-base" value={workNotes} onChange={(e) => setWorkNotes(e.target.value)} placeholder="npr. Zamijenjena sijalica prednjeg lijevog farova, testirano" />
                   </div>
                   <div className="space-y-1.5">
                     <Label>Rezervni dijelovi</Label>
@@ -470,7 +504,7 @@ export function DamageRowCard({
                             {p.partId ? (
                               <div className="flex-1 min-w-0 rounded-md bg-muted/50 px-2 py-2 text-sm">
                                 <span className="font-medium">{p.name}</span>
-                                {inv && <span className="block text-xs text-muted-foreground">u magacinu: {inv.quantity} {inv.unit}</span>}
+                                {inv && <span className="block text-sm text-muted-foreground">u magacinu: {inv.quantity} {inv.unit}</span>}
                               </div>
                             ) : (
                               <Input className="flex-1" placeholder="Naziv dijela" value={p.name} onChange={(e) => setWorkParts((ps) => ps.map((x, j) => j === i ? { ...x, name: e.target.value } : x))} />
@@ -520,20 +554,20 @@ export function DamageRowCard({
           <Button
             size="sm"
             variant="outline"
-            className="h-10 text-sm"
+            className="h-11 text-sm"
             onClick={() => window.open(`/api/reports/prijava-kvara?id=${damage.id}`, '_blank')}
           >
             <FileDown className="h-3.5 w-3.5 mr-1" />
             Kvar PDF
           </Button>
           {currentUser.role !== 'operator' && (
-            <Button size="sm" variant="outline" className="h-10 text-sm" onClick={() => window.open(`/api/reports/karton-sredstva?code=${encodeURIComponent(damage.equipmentCode)}`, '_blank')}>
+            <Button size="sm" variant="outline" className="h-11 text-sm" onClick={() => window.open(`/api/reports/karton-sredstva?code=${encodeURIComponent(damage.equipmentCode)}`, '_blank')}>
               <FileDown className="h-3.5 w-3.5 mr-1" />
               Karton sredstva
             </Button>
           )}
           {currentUser.role !== 'operator' && damage.status !== 'RESOLVED' && (
-            <Button size="sm" variant="outline" className="h-10 text-sm border-red-400 text-red-700" onClick={() => window.open(`/api/reports/placard-neispravno?id=${damage.id}`, '_blank')}>
+            <Button size="sm" variant="outline" className="h-11 text-sm border-red-400 text-red-700" onClick={() => window.open(`/api/reports/placard-neispravno?id=${damage.id}`, '_blank')}>
               <FileDown className="h-3.5 w-3.5 mr-1" />
               Plakat NEISPRAVNO
             </Button>
@@ -542,7 +576,7 @@ export function DamageRowCard({
           {currentUser.role === 'admin' && damage.status !== 'RESOLVED' && damage.status !== 'AWAITING_APPROVAL' && (
             <Dialog open={open} onOpenChange={setOpen}>
               <DialogTrigger asChild>
-                <Button size="sm" variant="outline" className="h-8 text-xs">
+                <Button size="sm" variant="outline" className="h-11 text-sm">
                   Ručno riješi
                 </Button>
               </DialogTrigger>
@@ -579,6 +613,13 @@ export function DamageRowCard({
             </Dialog>
           )}
           </div>
+          </>)}
+          {simple && (
+            <Button type="button" variant="ghost" className="h-11 text-sm text-muted-foreground" onClick={() => setMore((v) => !v)} aria-expanded={more}>
+              {more ? <ChevronUp className="h-4 w-4 mr-1.5" /> : <ChevronDown className="h-4 w-4 mr-1.5" />}
+              {more ? 'Manje opcija' : 'Više opcija'}
+            </Button>
+          )}
           {replOpen && <ReplacementPanel equipmentId={damage.equipmentId} equipmentCode={damage.equipmentCode} />}
           {histOpen && <WorkshopHistory damageId={damage.id} />}
           <ExternalSendDialog damageId={damage.id} code={damage.equipmentCode} defaultProvider={d.equipment?.serviceProvider} open={extSendOpen} onOpenChange={setExtSendOpen} onDone={onResolved} />
