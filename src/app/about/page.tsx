@@ -145,6 +145,7 @@ export default function AboutPage() {
             <Target className="h-7 w-7 mx-auto mb-3" style={{ color: BEACON }} />
             <h3 className="font-display font-semibold mb-2" style={{ color: CHALK }}>{t('about.missionTitle')}</h3>
             <p className="text-sm max-w-2xl mx-auto" style={{ color: STEEL_LIGHT }}>{t('about.missionText')}</p>
+            <p className="text-xs max-w-2xl mx-auto mt-3" style={{ color: STEEL_LIGHT }}>Rok čuvanja: zapisi o kvarovima, popravkama, pregledima, održavanju i zaduženjima čuvaju se najmanje 5 godina. Baza podataka ne dozvoljava brisanje mlađih zapisa.</p>
           </div>
 
           {/* SVE FUNKCIJE SISTEMA — 5 cjelina koje odgovaraju 5 grupa u

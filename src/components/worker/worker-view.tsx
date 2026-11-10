@@ -3,6 +3,7 @@
 import { normalizeScan } from '@/lib/scan'
 import { useState, useTransition, useEffect } from 'react'
 import { identifyWorkerByCardId } from '@/lib/worker-auth'
+import { getMyActiveAssignments, type ActiveAssignment } from '@/lib/worker-active'
 import { DamageQuickFields, fallbackDamageDescription } from './damage-quick-fields'
 import {
   ArrowLeft,
@@ -111,10 +112,11 @@ export function WorkerView({
   const [assignmentId, setAssignmentId] = useState<string | null>(null)
   const [showFodDialog, setShowFodDialog] = useState(false)
   const [showWildlifeDialog, setShowWildlifeDialog] = useState(false)
-  const [fitnessConfirmed, setFitnessConfirmed] = useState(false)
   // Radnik zapamćen za smjenu (samo ovaj tab/uređaj, sessionStorage, ~10h)
   const [remembered, setRemembered] = useState<{ cardId: string; name: string } | null>(null)
   const [editingWorker, setEditingWorker] = useState(false)
+  const [active, setActive] = useState<ActiveAssignment[]>([])
+  const [scanCard, setScanCard] = useState(false)
   // Automatsko učitavanje imena i prezimena čim se unese broj ID kartice
   const [meterKm, setMeterKm] = useState('')
   const [meterHours, setMeterHours] = useState('')
@@ -131,7 +133,7 @@ export function WorkerView({
         const r = await identifyWorkerByCardId(id)
         if (!alive) return
         if (r.ok && r.worker) { setEmployeeName(r.worker.name); setLookup('found') }
-        else setLookup('notfound')
+        else { setLookup('notfound'); if (r.rateLimited) toast.error(r.error ?? 'Previše pokušaja. Pričekajte.') }
       } catch { if (alive) setLookup('notfound') }
     }, 350)
     return () => { alive = false; clearTimeout(timer) }
@@ -139,7 +141,7 @@ export function WorkerView({
 
   useEffect(() => {
     try {
-      const raw = sessionStorage.getItem(SHIFT_KEY)
+      const raw = localStorage.getItem(SHIFT_KEY) ?? sessionStorage.getItem(SHIFT_KEY)
       if (!raw) return
       const v = JSON.parse(raw)
       if (v && typeof v.cardId === 'string' && typeof v.name === 'string' && typeof v.exp === 'number' && v.exp > Date.now()) {
@@ -147,13 +149,21 @@ export function WorkerView({
         setCardId(v.cardId)
         setEmployeeName(v.name)
       } else {
-        sessionStorage.removeItem(SHIFT_KEY)
+        localStorage.removeItem(SHIFT_KEY)
       }
-    } catch { /* sessionStorage nedostupan — radi se bez pamćenja */ }
+    } catch { /* storage nedostupan — radi se bez pamćenja */ }
   }, [])
 
+  // "Vrati": sredstva koja ovaj radnik već ima zadužena
+  useEffect(() => {
+    if (!remembered) { setActive([]); return }
+    let alive = true
+    getMyActiveAssignments(remembered.cardId).then((r) => { if (alive) setActive(r) }).catch(() => {})
+    return () => { alive = false }
+  }, [remembered, step])
+
   const forgetWorker = () => {
-    try { sessionStorage.removeItem(SHIFT_KEY) } catch { /* ignore */ }
+    try { localStorage.removeItem(SHIFT_KEY); sessionStorage.removeItem(SHIFT_KEY) } catch { /* ignore */ }
     setRemembered(null)
     setEditingWorker(false)
     setCardId('')
@@ -190,7 +200,6 @@ export function WorkerView({
     setReportDamageIn(false)
     setActionType('CHECK_OUT')
     setAssignmentId(null)
-    setFitnessConfirmed(false)
   }
 
   // Kad skener vrati vrijednost
@@ -200,7 +209,7 @@ export function WorkerView({
     try {
       const eq = await getEquipmentByCode(code)
       if (!eq) {
-        toast.error(`Sredstvo sa kodom "${code}" nije pronađeno`)
+        toast.error(`Sredstvo "${code}" nije pronađeno. Skenirajte QR kod ponovo ili pozovite šefa.`)
         return
       }
       setEquipment({
@@ -242,7 +251,7 @@ export function WorkerView({
 
       setStep('identify')
     } catch (e) {
-      toast.error('Greška pri pretrazi sredstva')
+      toast.error('Nema veze sa serverom. Provjerite internet i pokušajte ponovo.')
     } finally {
       setLookupLoading(false)
     }
@@ -252,18 +261,14 @@ export function WorkerView({
   const handleIdentifySubmit = (e: React.FormEvent) => {
     e.preventDefault()
     if (!cardId.trim() || !employeeName.trim()) {
-      toast.error('Unesite broj ID kartice i ime')
+      toast.error('Upišite broj kartice. Ime se pojavi samo.')
       return
     }
-    if (!fitnessConfirmed) {
-      toast.error('Potvrdite da ste sposobni za rad prije nastavka')
-      return
-    }
-    // ADR.OR.C.045 — bilježi se samo potvrda i vrijeme, bez zdravstvenih
-    // podataka. Best-effort, ne blokira glavni tok ako loguje neuspješno.
-    recordFitnessDeclaration({ employeeCardId: cardId, employeeName, confirmed: true }).catch(() => {})
+    // ADR.OR.C.045 — pritisak na ZADUŽI znači potvrdu sposobnosti za rad (tekst je ispod dugmeta).
+    // Bilježi se samo potvrda i vrijeme, bez zdravstvenih podataka. Pri vraćanju sredstva se ne traži.
+    if (actionType === 'CHECK_OUT') recordFitnessDeclaration({ employeeCardId: cardId, employeeName, confirmed: true }).catch(() => {})
     try {
-      sessionStorage.setItem(SHIFT_KEY, JSON.stringify({ cardId: cardId.trim(), name: employeeName.trim(), exp: Date.now() + 10 * 3600 * 1000 }))
+      localStorage.setItem(SHIFT_KEY, JSON.stringify({ cardId: cardId.trim(), name: employeeName.trim(), exp: Date.now() + 14 * 24 * 3600 * 1000 }))
       setRemembered({ cardId: cardId.trim(), name: employeeName.trim() })
     } catch { /* ignore */ }
     if (actionType === 'CHECK_IN') {
@@ -415,8 +420,8 @@ export function WorkerView({
           })
           if (r.ok) {
             setBlockedMsg(checkoutSeverity === 'MINOR'
-              ? 'Kvar je prijavljen i proslijeđen održavanju. Sredstvo danas nije pregledano, pa se ne može zadužiti dok se ne uradi dnevni pregled.'
-              : 'Kvar je prijavljen i proslijeđen održavanju. Sredstvo je prebačeno u status "Neispravno" i ne može se zadužiti.')
+              ? 'Kvar je prijavljen. Sredstvo nije pregledano danas, pa ga još ne možete uzeti. Pozovite šefa.'
+              : 'Kvar je prijavljen. Sredstvo je zaustavljeno i ne može se uzeti. Uzmite drugo sredstvo.')
             setStep('blocked')
             toast.success('Kvar prijavljen')
           } else toast.error(r.error ?? 'Greška')
@@ -521,15 +526,36 @@ export function WorkerView({
       {/* STEP 1: SCAN */}
       {step === 'scan' && !lookupLoading && (
         <div className="space-y-4">
-          <Card className="border-2 border-primary/20 bg-gradient-to-br from-primary/5 to-transparent">
-            <CardContent className="pt-6 text-center">
-              <Package className="h-12 w-12 mx-auto text-primary mb-2" />
-              <h2 className="text-lg font-semibold">Zaduži / Razduži sredstvo</h2>
-              <p className="text-sm text-muted-foreground mt-1">
-                Skenirajte QR kod sa vozila ili opreme
-              </p>
-            </CardContent>
-          </Card>
+          {remembered && (
+            <div className="flex items-center justify-between gap-3 px-1">
+              <div className="min-w-0">
+                <div className="text-sm text-muted-foreground">Zdravo,</div>
+                <div className="text-lg font-semibold truncate">{remembered.name}</div>
+              </div>
+              <Button type="button" variant="outline" className="h-11" onClick={forgetWorker}>Nisam ja</Button>
+            </div>
+          )}
+
+          {active.map((a) => (
+            <button
+              key={a.code}
+              type="button"
+              onClick={() => handleScan(a.code)}
+              className="w-full rounded-2xl bg-amber-500 hover:bg-amber-600 active:scale-[0.99] transition text-white p-4 text-left shadow-md"
+            >
+              <div className="text-2xl font-extrabold tracking-wide">VRATI {a.code}</div>
+              <div className="text-sm opacity-95 truncate">{a.name}</div>
+              <div className="text-xs opacity-90 mt-1">
+                Zaduženo {new Date(a.since).toLocaleString('hr-HR', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' })}
+                {(a.km > 0 || a.hours > 0) && ` · zadnje brojilo: ${[a.km > 0 ? `${a.km} km` : '', a.hours > 0 ? `${a.hours} h` : ''].filter(Boolean).join(' / ')}`}
+              </div>
+            </button>
+          ))}
+
+          <div className="text-center pt-1">
+            <h2 className="text-xl font-bold">{active.length ? 'Ili uzmite drugo sredstvo' : 'Skenirajte QR kod na sredstvu'}</h2>
+            <p className="text-sm text-muted-foreground mt-1">Usmjerite kameru na naljepnicu. Ostalo ide samo.</p>
+          </div>
 
           <QrScanner onScan={handleScan} />
 
@@ -537,11 +563,11 @@ export function WorkerView({
             <CardContent className="pt-4 text-xs text-muted-foreground">
               <p className="font-medium mb-1">Kako radi?</p>
               <ol className="list-decimal list-inside space-y-0.5">
-                <li>Skeniraj QR kod na vozilu/opremi</li>
-                <li>Unesi broj ID kartice i ime</li>
-                <li>Prođi checklistu (ili "Sve ispravno") ili prijavi kvar</li>
-                <li>Prijava završena — sredstvo je zaduženo</li>
+                <li>Skenirajte QR kod na sredstvu</li>
+                <li>Pritisnite ZADUŽI (ili VRATI)</li>
+                <li>Odgovorite na pitanja o stanju sredstva</li>
               </ol>
+              <p className="mt-1">Broj kartice upisujete samo prvi put. Aplikacija ga pamti na ovom uređaju.</p>
             </CardContent>
           </Card>
 
@@ -569,7 +595,7 @@ export function WorkerView({
 
           {actionType === 'CHECK_OUT' && equipment.inspectedToday === false && (
             <div role="alert" className="rounded-lg border-2 border-red-500 bg-red-50 p-3 text-sm text-red-900">
-              <strong>Sredstvo danas nije pregledano.</strong> Zaduživanje nije moguće dok se ne uradi dnevni pregled. Možete samo prijaviti kvar.
+              <strong>Sredstvo nije pregledano danas.</strong> Pozovite šefa da uradi pregled, ili prijavite kvar.
               <Button type="button" variant="outline" size="sm" className="mt-2 h-10 w-full border-red-400 bg-white" disabled={rechecking} onClick={() => recheckInspection(true)}>
                 {rechecking ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : null}Pregled je urađen — provjeri ponovo
               </Button>
@@ -627,19 +653,30 @@ export function WorkerView({
               ) : (
                 <>
               <div className="space-y-1.5">
-                <Label htmlFor="cardId">Broj ID kartice *</Label>
+                <Label htmlFor="cardId" className="text-base">Broj vaše kartice</Label>
                 <Input
                   id="cardId"
                   value={cardId}
                   onChange={(e) => setCardId(e.target.value.toUpperCase())}
                   placeholder="npr. EMP-1001"
-                  className="font-mono uppercase"
+                  className="font-mono uppercase h-12 text-lg"
                   autoCapitalize="characters"
                   required
                 />
+                <Button type="button" variant="outline" className="w-full h-11" onClick={() => setScanCard((v) => !v)}>
+                  <Camera className="h-4 w-4 mr-2" />{scanCard ? 'Zatvori kameru' : 'Skeniraj karticu kamerom'}
+                </Button>
+                {scanCard && (
+                  <QrScanner onScan={(raw) => {
+                    const v = raw.trim().toUpperCase()
+                    setCardId(v.match(/EMP-[A-Z0-9]+/)?.[0] ?? v)
+                    setScanCard(false)
+                  }} />
+                )}
+                <p className="text-xs text-muted-foreground">Upisujete samo ovaj put. Aplikacija zapamti karticu na ovom uređaju.</p>
               </div>
               <div className="space-y-1.5">
-                <Label htmlFor="empName">Ime i prezime *</Label>
+                <Label htmlFor="empName" className="text-base">Ime i prezime</Label>
                 <Input
                   id="empName"
                   value={employeeName}
@@ -649,31 +686,38 @@ export function WorkerView({
                   className={lookup === 'found' ? 'bg-green-50 border-green-300 font-medium' : undefined}
                   required
                 />
-                {lookup === 'found' && <p className="text-xs text-green-700">Radnik pronađen u evidenciji.</p>}
-                {lookup === 'notfound' && <p className="text-xs text-amber-700">ID kartica nije pronađena u evidenciji. Unesite ime ručno ili provjerite broj.</p>}
+                {lookup === 'found' && <p className="text-sm text-green-700">Pronađeno. Pritisnite dugme ispod.</p>}
+                {lookup === 'notfound' && <p className="text-sm text-amber-700">Ova kartica nije u evidenciji. Provjerite broj ili upišite ime, pa javite šefu.</p>}
               </div>
                 </>
               )}
             </CardContent>
           </Card>
 
-          {/* ADR.OR.C.045 — potvrda sposobnosti za rad (bez zdravstvenih podataka) */}
-          <label className="flex items-start gap-2.5 text-sm p-3 rounded-lg border bg-muted/30 cursor-pointer">
-            <input
-              type="checkbox"
-              checked={fitnessConfirmed}
-              onChange={(e) => setFitnessConfirmed(e.target.checked)}
-              className="h-4 w-4 mt-0.5 flex-shrink-0"
-            />
-            <span className="flex items-start gap-1.5">
-              <ShieldCheck className="h-4 w-4 text-emerald-600 flex-shrink-0 mt-0.5" />
-              Potvrđujem da sam sposoban/na za rad (nisam pod uticajem alkohola ili psihoaktivnih supstanci)
-            </span>
-          </label>
-
-          <Button type="submit" size="lg" className="w-full" disabled={!fitnessConfirmed}>
-            {actionType === 'CHECK_OUT' ? 'Nastavi na pregled' : 'Nastavi na razduživanje'}
-          </Button>
+          {actionType === 'CHECK_OUT' ? (
+            <>
+              <Button
+                type="submit"
+                size="lg"
+                className="w-full h-16 text-2xl font-extrabold tracking-wide rounded-2xl bg-emerald-600 hover:bg-emerald-700 text-white"
+              >
+                {equipment.inspectedToday === false ? 'PRIJAVI KVAR' : 'ZADUŽI'}
+              </Button>
+              {/* ADR.OR.C.045 — pritisak na dugme je potvrda sposobnosti za rad */}
+              <p className="flex items-start justify-center gap-1.5 text-xs text-muted-foreground text-center px-2">
+                <ShieldCheck className="h-3.5 w-3.5 text-emerald-600 flex-shrink-0 mt-0.5" />
+                <span>Pritiskom na dugme potvrđujem da sam sposoban/na za rad (bez alkohola i psihoaktivnih supstanci).</span>
+              </p>
+            </>
+          ) : (
+            <Button
+              type="submit"
+              size="lg"
+              className="w-full h-16 text-2xl font-extrabold tracking-wide rounded-2xl bg-amber-500 hover:bg-amber-600 text-white"
+            >
+              VRATI
+            </Button>
+          )}
         </form>
       )}
 
@@ -686,8 +730,7 @@ export function WorkerView({
             <>
               {faultOnly && (
                 <div role="alert" className="rounded-lg border-2 border-red-500 bg-red-50 p-3 text-sm text-red-900">
-                  <strong>Sredstvo danas nije pregledano</strong> (nema dnevnog pregleda), pa se ne može zadužiti.
-                  Ako ste uočili kvar, prijavite ga ispod.
+                  <strong>Sredstvo nije pregledano danas.</strong> Pozovite šefa, ili prijavite kvar ispod ako ste ga uočili.
                   <Button type="button" variant="outline" size="sm" className="mt-2 h-10 w-full border-red-400 bg-white" disabled={rechecking} onClick={() => recheckInspection(true)}>
                     {rechecking ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : null}Pregled je urađen — provjeri ponovo
                   </Button>
@@ -994,12 +1037,12 @@ export function WorkerView({
               <XCircle className="h-9 w-9 text-red-600" />
             </div>
             <h2 className="text-xl font-bold text-red-900">
-              Sredstvo nije za upotrebu
+              Ne možete uzeti ovo sredstvo
             </h2>
             <p className="text-sm text-red-700 max-w-md mx-auto">
               {blockedMsg ?? (damageDescription.trim()
-                ? 'Prijavili ste kvar na sredstvu. Sredstvo je prebačeno u status "Neispravno" i ne može se zadužiti. Održavanje je automatski obaviješteno o vašoj prijavi.'
-                : 'Sredstvo je trenutno neispravno ili je na održavanju. Zaduživanje nije moguće. Kontaktirajte održavanje ako smatrate da je greška.')}
+                ? 'Kvar je prijavljen. Sredstvo je zaustavljeno i ne može se uzeti. Radionica je obaviještena. Uzmite drugo sredstvo.'
+                : 'Ovo sredstvo je pokvareno ili je u radionici. Ne možete ga uzeti. Uzmite drugo sredstvo ili pozovite šefa.')}
             </p>
             <div className="bg-white/60 rounded-lg p-3 text-left text-sm space-y-1 max-w-md mx-auto border border-red-200">
               <div className="flex items-center gap-2">

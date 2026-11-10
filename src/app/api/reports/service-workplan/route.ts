@@ -38,14 +38,16 @@ export async function GET(request: NextRequest) {
   const font = await pdf.embedFont(StandardFonts.Helvetica)
   const bold = await pdf.embedFont(StandardFonts.HelveticaBold)
 
+  const annual = h === 'YEAR' || h === 'CAL_THIS' || h === 'CAL_NEXT'
+  const calYear = h === 'CAL_THIS' || h === 'CAL_NEXT' ? ` ${plan.from.slice(0, 4)}` : ''
   const newPage = (first: boolean): { c: Ctx; y: number } => {
     const page = pdf.addPage([W, H])
     const c = makeCtx(page, font, bold)
     if (first) {
       const hb = drawHeader(c, {
-        title: 'PLAN RADA - SERVISI SREDSTAVA',
+        title: annual ? `GODISNJI PLAN PREVENTIVNOG ODRZAVANJA GSE${calYear}` : 'PLAN RADA - SERVISI SREDSTAVA',
         subtitle: `${plan.label}  |  preventivno odrzavanje po IATA AHM 917 (minor / major)`,
-        line3: 'GSE Control  -  Aerodrom Tivat (LYTV)',
+        line3: annual ? 'Aerodrom Tivat (LYTV)  -  za Agenciju za civilno vazduhoplovstvo (program odrzavanja, pravilnik)' : 'GSE Control  -  Aerodrom Tivat (LYTV)',
         bigRight: prettyDate(plan.from),
         smallRight: `DO: ${prettyDate(plan.to)}`,
         smallRight2: `Izradeno: ${prettyDate(plan.today)}`,
@@ -77,8 +79,13 @@ export async function GET(request: NextRequest) {
   const groups: Array<{ title: string; items: typeof plan.items }> = []
   const over = plan.items.filter((i) => i.overdue)
   if (over.length) groups.push({ title: `DOSPJELO - ODMAH (${over.length})`, items: over })
-  for (const m of plan.byMonth) {
-    groups.push({ title: `${MONTHS[Number(m.month.slice(5, 7)) - 1].toUpperCase()} ${m.month.slice(0, 4)} (${m.count})`, items: plan.items.filter((i) => !i.overdue && i.date.startsWith(m.month)) })
+  // kalendarska godina: prikazuju se svih 12 mjeseci (i prazni), da se vidi opterećenje po mjesecima
+  const monthKeys = h === 'CAL_THIS' || h === 'CAL_NEXT'
+    ? Array.from({ length: 12 }, (_, k) => `${plan.from.slice(0, 4)}-${String(k + 1).padStart(2, '0')}`)
+    : plan.byMonth.map((m) => m.month)
+  for (const mk of monthKeys) {
+    const its = plan.items.filter((i) => !i.overdue && i.date.startsWith(mk))
+    groups.push({ title: `${MONTHS[Number(mk.slice(5, 7)) - 1].toUpperCase()} ${mk.slice(0, 4)} (${its.length})`, items: its })
   }
 
   if (plan.items.length === 0) {
@@ -89,6 +96,11 @@ export async function GET(request: NextRequest) {
   for (const g of groups) {
     ensure(10 + 11 + ROW * 2)
     y = drawSectionTitle(c, g.title, y)
+    if (g.items.length === 0) {
+      c.T('Nema planiranih servisa.', M + 6, y - 9, 7.4, font, MUTED)
+      y -= ROW + 8
+      continue
+    }
     y = drawTableHead(c, y, cols)
     g.items.forEach((it, idx) => {
       if (y - ROW < BOTTOM) {
@@ -115,6 +127,10 @@ export async function GET(request: NextRequest) {
   }
   c.T('Datumi su procjena na osnovu dosadasnje potrosnje km / radnih sati; konacan termin dogovara sef tehnicke sluzbe.', M, y - 4, 6.6, font, MUTED)
   y -= 14
+  if (annual) {
+    c.T('Plan obuhvata preventivno odrzavanje svih sredstava sa upisanim zadnjim servisom; evidencija izvrsenih radova se cuva najmanje 5 godina.', M, y - 4, 6.6, font, MUTED)
+    y -= 14
+  }
 
   if (y < 200) ({ c, y } = newPage(false))
   drawRemarksAndFooter(c, {

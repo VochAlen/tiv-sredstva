@@ -1974,3 +1974,47 @@ model PmWorkOrder {
 
   @@index([equipmentId, issuedAt])
 }
+
+
+// =====================================================
+// ADR.OPS.B.026 - Ovlaštenje vozila (zone, pozivni znak, radio/transponder, označavanje i svjetla)
+// =====================================================
+model VehicleAuthorisation {
+  id          String   @id @default(cuid())
+  equipmentId String   @unique
+  equipmentCode String
+
+  status String @default("ACTIVE") // ACTIVE | SUSPENDED | REVOKED
+
+  areaApron       Boolean @default(false) // stajanka i ostale operativne površine
+  areaOther       Boolean @default(false) // servisne i perimetarske ceste, parking opreme
+  areaManoeuvring Boolean @default(false) // manevarska površina (rulnice, PSS)
+  callSign        String?
+  radioEquipped       Boolean @default(false)
+  transponderEquipped Boolean @default(false)
+  markingOk  Boolean @default(false) // označavanje (B.080)
+  lightingOk Boolean @default(false) // svjetla (B.080) ili izuzeće: samo stajanka
+
+  issuedAt  DateTime @default(now())
+  issuedBy  String?
+  notes     String?
+  reason    String? // razlog zadnje suspenzije / opoziva
+  changedBy String?
+  updatedAt DateTime @updatedAt
+
+  logs VehicleAuthorisationLog[]
+}
+
+model VehicleAuthorisationLog {
+  id        String   @id @default(cuid())
+  authId    String
+  equipmentCode String
+  action    String // ISSUED | UPDATED | SUSPENDED | REVOKED | REINSTATED
+  reason    String?
+  byName    String?
+  at        DateTime @default(now())
+
+  auth VehicleAuthorisation @relation(fields: [authId], references: [id])
+
+  @@index([authId, at])
+}

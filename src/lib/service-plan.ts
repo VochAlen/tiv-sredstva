@@ -180,11 +180,12 @@ export const STATUS_LABEL: Record<ServiceStatus, string> = {
 // PLAN RADA: projekcija budućih servisa (mjesec / 3 mjeseca / 12 mjeseci)
 // =====================================================
 
-export type WorkPlanHorizon = 'THIS_MONTH' | 'NEXT_MONTH' | 'QUARTER' | 'YEAR'
+export type WorkPlanHorizon = 'THIS_MONTH' | 'NEXT_MONTH' | 'QUARTER' | 'YEAR' | 'CAL_THIS' | 'CAL_NEXT'
 export const HORIZON_LABEL: Record<WorkPlanHorizon, string> = {
   THIS_MONTH: 'Ovaj mjesec', NEXT_MONTH: 'Sljedeći mjesec', QUARTER: 'Naredna 3 mjeseca', YEAR: 'Naredna 12 mjeseci',
+  CAL_THIS: 'Tekuća godina (1.1.–31.12.)', CAL_NEXT: 'Sljedeća godina (1.1.–31.12.)',
 }
-export const isHorizon = (h: unknown): h is WorkPlanHorizon => h === 'THIS_MONTH' || h === 'NEXT_MONTH' || h === 'QUARTER' || h === 'YEAR'
+export const isHorizon = (h: unknown): h is WorkPlanHorizon => h === 'THIS_MONTH' || h === 'NEXT_MONTH' || h === 'QUARTER' || h === 'YEAR' || h === 'CAL_THIS' || h === 'CAL_NEXT'
 
 export function horizonRange(h: WorkPlanHorizon, today: string): { from: string; to: string } {
   const monthStart = `${today.slice(0, 7)}-01`
@@ -194,6 +195,8 @@ export function horizonRange(h: WorkPlanHorizon, today: string): { from: string;
     case 'NEXT_MONTH': { const ns = addMonthsISO(monthStart, 1); return { from: ns, to: monthEnd(ns) } }
     case 'QUARTER': return { from: today, to: addDaysISO(addMonthsISO(today, 3), -1) }
     case 'YEAR': return { from: today, to: addDaysISO(addMonthsISO(today, 12), -1) }
+    case 'CAL_THIS': return { from: `${today.slice(0, 4)}-01-01`, to: `${today.slice(0, 4)}-12-31` }
+    case 'CAL_NEXT': { const y = Number(today.slice(0, 4)) + 1; return { from: `${y}-01-01`, to: `${y}-12-31` } }
   }
 }
 

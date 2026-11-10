@@ -76,6 +76,7 @@ export async function buildWorkshopGuidePdf(appUrl: string): Promise<Uint8Array>
   T(fit(appUrl, font, 10, qx - M - 20), M, qy + 56, 10, font, MUTED)
   T('Savjet: dodaj aplikaciju na pocetni ekran tableta (Chrome > Dodaj na pocetni ekran).', M, qy + 38, 9.5, font, MUTED)
   T('GSE Control - Aerodrom Tivat (LYTV)  |  EASA ADR.OPS.C.007', M, 24, 8, font, MUTED)
+  T('Zapisi o kvarovima, popravkama, pregledima i zaduzenjima cuvaju se najmanje 5 godina i ne mogu se brisati ranije.', M, 13, 8, font, MUTED)
 
   return await pdf.save()
 }

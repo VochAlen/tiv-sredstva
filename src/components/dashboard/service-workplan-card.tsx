@@ -9,7 +9,7 @@ import { Button } from '@/components/ui/button'
 import { getServiceWorkPlan, type WorkPlan } from '@/lib/actions-service-plan'
 import { fmtDateBHS, HORIZON_LABEL, KIND_LABEL, type WorkPlanHorizon } from '@/lib/service-plan'
 
-const HORIZONS: WorkPlanHorizon[] = ['THIS_MONTH', 'NEXT_MONTH', 'QUARTER', 'YEAR']
+const HORIZONS: WorkPlanHorizon[] = ['THIS_MONTH', 'NEXT_MONTH', 'QUARTER', 'YEAR', 'CAL_THIS', 'CAL_NEXT']
 const REASON: Record<string, string> = { DATE: 'Rok (mjeseci)', KM: 'Kilometri', HOURS: 'Radni sati' }
 const MONTHS = ['Januar', 'Februar', 'Mart', 'April', 'Maj', 'Jun', 'Jul', 'Avgust', 'Septembar', 'Oktobar', 'Novembar', 'Decembar']
 const monthName = (k: string) => `${MONTHS[Number(k.slice(5, 7)) - 1]} ${k.slice(0, 4)}`

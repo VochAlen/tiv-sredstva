@@ -304,6 +304,7 @@ export interface DailyInspectionStatusRow {
   name: string
   type: string
   department: string | null
+  serialNumber?: string | null
   status: string
   inspection: { id: string; result: string; inspectorName: string; inspectionDate: Date; shift: string } | null
 }
@@ -326,7 +327,7 @@ export async function getDailyInspectionStatus(dateStr?: string): Promise<DailyI
     return equipment.map((e) => {
       const insp = byEquipment.get(e.id)
       return {
-        id: e.id, code: e.code, name: e.name, type: e.type, department: e.department, status: e.status,
+        id: e.id, code: e.code, name: e.name, type: e.type, department: e.department, serialNumber: e.serialNumber ?? null, status: e.status,
         inspection: insp ? { id: insp.id, result: insp.result, inspectorName: insp.inspectorName, inspectionDate: insp.inspectionDate, shift: insp.shift } : null,
       }
     })
@@ -344,7 +345,7 @@ export async function getDailyInspectionStatus(dateStr?: string): Promise<DailyI
   return (equipment ?? []).map((e: any) => {
     const insp = byEquipment.get(e.id)
     return {
-      id: e.id, code: e.code, name: e.name, type: e.type, department: e.department, status: e.status,
+      id: e.id, code: e.code, name: e.name, type: e.type, department: e.department, serialNumber: e.serial_number ?? null, status: e.status,
       inspection: insp ? { id: insp.id, result: insp.result, inspectorName: insp.inspector_name, inspectionDate: new Date(insp.inspection_date), shift: insp.shift } : null,
     }
   })

@@ -547,6 +547,13 @@ export async function checkOutEquipment(params: {
     return { ok: false, error: NOT_INSPECTED_MSG, notInspected: true, damageReportId: null as string | null, assignmentId: undefined as string | undefined }
   }
 
+  // ADR.OPS.B.026: suspendovano / opozvano ovlaštenje vozila blokira zaduživanje (važi za Demo i Supabase)
+  if (gateEquipmentId) {
+    const { checkVehicleAuthorisation } = await import('./actions-vehicle-auth')
+    const va = await checkVehicleAuthorisation(gateEquipmentId)
+    if (!va.allowed) return { ok: false, error: va.reason, damageReportId: null as string | null, assignmentId: undefined as string | undefined }
+  }
+
   if (isDemoMode()) {
     return checkOutPrisma(params)
   }
@@ -1128,7 +1135,7 @@ export async function resolveDamageReport(params: {
       },
     })
 
-    if (setEquipmentAvailable) {
+    if (setEquipmentAvailable && (await db.damageReport.count({ where: { equipmentId: dr.equipmentId, status: { not: 'RESOLVED' } } })) === 0) {
       await db.equipment.update({
         where: { id: dr.equipmentId },
         data: {
@@ -1160,7 +1167,12 @@ export async function resolveDamageReport(params: {
     })
     .eq('id', damageId)
 
+  let othersOpen = 0
   if (setEquipmentAvailable && dr?.equipment_id) {
+    const { count } = await supabase.from('damage_reports').select('id', { count: 'exact', head: true }).eq('equipment_id', dr.equipment_id).neq('status', 'RESOLVED')
+    othersOpen = count ?? 0
+  }
+  if (setEquipmentAvailable && dr?.equipment_id && othersOpen === 0) {
     await supabase
       .from('equipment')
       .update({
@@ -1377,14 +1389,18 @@ export async function approveRepair(params: {
         testBy: chiefName,
       },
     })
-    await db.equipment.update({
-      where: { id: dr.equipmentId },
-      data: {
-        status: 'AVAILABLE',
-        needsFirstUseConfirmation: true,
-        notes: 'Popravka odobrena - čeka potvrdu prvog radnika pri zaduživanju',
-      },
-    })
+    // Sredstvo se pušta u rad samo ako na njemu nema drugih otvorenih kvarova
+    const stillOpen = await db.damageReport.count({ where: { equipmentId: dr.equipmentId, status: { not: 'RESOLVED' } } })
+    if (stillOpen === 0) {
+      await db.equipment.update({
+        where: { id: dr.equipmentId },
+        data: {
+          status: 'AVAILABLE',
+          needsFirstUseConfirmation: true,
+          notes: 'Popravka odobrena - čeka potvrdu prvog radnika pri zaduživanju',
+        },
+      })
+    }
   } else {
     const supabase = await createSupabaseClient()
     const { data: dr } = await supabase

@@ -135,6 +135,7 @@ import { ReportsView } from './reports-view'
 import { MaintenanceView } from './maintenance-view'
 import { AdrView } from './adr-view'
 import { AccessControlDialog } from './access-control'
+import { VehicleAuthDialog } from './vehicle-auth-dialog'
 import { EquipmentRecordDialog } from './equipment-record-dialog'
 import { CrsView } from './crs-view'
 import { SchedulingView } from './scheduling-view'
@@ -150,6 +151,7 @@ import { FodWildlifeView } from './fod-wildlife-view'
 import { MyTasksView } from './my-tasks-view'
 import { NotificationsView } from './notifications-view'
 import { SkillsAdminView } from './skills-admin-view'
+import { ComplianceView } from './compliance-view'
 import { roleAtLeast, type TaskRole } from '@/lib/my-tasks'
 
 // =====================================================
@@ -161,6 +163,9 @@ import { roleAtLeast, type TaskRole } from '@/lib/my-tasks'
 type NavItem = { value: string; label: string; icon: React.ComponentType<{ className?: string }>; minRole?: TaskRole; highlight?: boolean; core?: boolean }
 type NavGroup = { label: string; items: NavItem[] }
 
+// Meni je namjerno sveden na održavanje GSE i zaduživanje/razduživanje.
+// Sklonjeno iz menija (kod i podaci ostaju): adr, incidents, sms, audit, doc-control,
+// fuelparking, aero-inspection, activity. Za vraćanje vratiti stavku u NAV_GROUPS.
 const NAV_GROUPS: NavGroup[] = [
   {
     label: 'Radionica',
@@ -176,10 +181,6 @@ const NAV_GROUPS: NavGroup[] = [
       { value: 'overview', label: 'Pregled', icon: Activity },
       { value: 'daily-list', label: 'Dnevna lista pregleda', icon: ClipboardList },
       { value: 'inspection-log', label: 'Evidencija pregleda', icon: ClipboardCheck },
-      { value: 'daily-stats', label: 'Pregledi po datumima', icon: CalendarDays },
-      { value: 'equipment-report', label: 'Izvještaj po sredstvu', icon: FileText },
-      { value: 'statistics', label: 'Statistika', icon: TrendingUp, minRole: 'engineer' },
-      { value: 'activity', label: 'Aktivnost', icon: Clock, minRole: 'engineer' },
     ],
   },
   {
@@ -188,28 +189,16 @@ const NAV_GROUPS: NavGroup[] = [
       { value: 'equipment', label: 'Sredstva', icon: Package, core: true },
       { value: 'damages', label: 'Arhiva kvarova', icon: AlertOctagon },
       { value: 'qr', label: 'QR kodovi', icon: Printer, minRole: 'engineer' },
-    ],
-  },
-  {
-    label: 'Sigurnost & regulativa',
-    items: [
-      { value: 'adr', label: 'ADR.OPS.C.007', icon: ShieldCheck, minRole: 'engineer' },
-      { value: 'crs', label: 'CRS', icon: Award, minRole: 'engineer' },
-      { value: 'incidents', label: 'Incidenti', icon: AlertOctagon, minRole: 'engineer' },
-      { value: 'fod-wildlife', label: 'FOD & Wildlife', icon: AlertTriangle },
-      { value: 'sms', label: 'SMS', icon: Shield, minRole: 'engineer' },
-      { value: 'audit', label: 'Audit & Compliance', icon: ClipboardCheck, minRole: 'engineer' },
-      { value: 'doc-control', label: 'Document Control', icon: FileText, minRole: 'engineer' },
+      { value: 'driverauth', label: 'Ovlaštenja vozača', icon: Car, minRole: 'engineer' },
+      { value: 'crs', label: 'CRS (potvrda o puštanju)', icon: Award, minRole: 'engineer' },
+      { value: 'scheduling', label: 'Servis i dijelovi', icon: Calendar, minRole: 'engineer' },
     ],
   },
   {
     label: 'Operacije',
     items: [
-      { value: 'scheduling', label: 'Servis & Dijelovi', icon: Calendar, minRole: 'engineer' },
-      { value: 'driverauth', label: 'Driver Auth', icon: Car, minRole: 'engineer' },
-      { value: 'fuelparking', label: 'Gorivo & Parking', icon: Fuel, minRole: 'engineer' },
-      { value: 'deicing', label: 'De-icing', icon: Snowflake },
-      { value: 'aero-inspection', label: 'Aerodrom Inspekcija', icon: Plane },
+      { value: 'fod-wildlife', label: 'FOD i divlje životinje', icon: AlertTriangle },
+      { value: 'deicing', label: 'Odleđivanje (De-icing)', icon: Snowflake },
     ],
   },
   {
@@ -224,6 +213,10 @@ const NAV_GROUPS: NavGroup[] = [
     label: 'Izvještaji',
     items: [
       { value: 'reports', label: 'Izvještaji', icon: Printer, minRole: 'engineer', core: true },
+      { value: 'easa-compliance', label: 'Usklađenost (EASA)', icon: ShieldCheck, minRole: 'engineer' },
+      { value: 'equipment-report', label: 'Izvještaj po sredstvu', icon: FileText },
+      { value: 'daily-stats', label: 'Pregledi po datumima', icon: CalendarDays },
+      { value: 'statistics', label: 'Statistika', icon: TrendingUp, minRole: 'engineer' },
     ],
   },
 ]
@@ -717,6 +710,9 @@ export function DashboardView({ currentUser }: { currentUser: AppUser }) {
                                 <FileStack className="h-4 w-4" />
                               </Button>
                             )}
+                            {(currentUser.role === 'admin' || currentUser.role === 'engineer') && (
+                              <VehicleAuthDialog equipmentId={e.id} equipmentCode={e.code} equipmentName={e.name} />
+                            )}
                             {currentUser.role === 'admin' && (
                               <AccessControlDialog equipmentId={e.id} equipmentCode={e.code} equipmentName={e.name} />
                             )}
@@ -825,6 +821,10 @@ export function DashboardView({ currentUser }: { currentUser: AppUser }) {
 
         <TabsContent value="notifications" className="space-y-4">
           {currentUser.role === 'admin' && <NotificationsView />}
+        </TabsContent>
+
+        <TabsContent value="easa-compliance" className="space-y-4">
+          <ComplianceView />
         </TabsContent>
 
         <TabsContent value="reports" className="space-y-4">

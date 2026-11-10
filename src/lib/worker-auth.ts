@@ -7,6 +7,7 @@ import { db } from '@/lib/db'
 import { isDemoMode } from '@/lib/auth-mode'
 import { createServiceClient, hasServiceClient } from '@/lib/supabase/service'
 import { createClientAsync as createSupabaseClient } from "@/lib/supabase/server"
+import { rateAllowed, rateFail, RATE_MSG } from '@/lib/rate-limit'
 
 export interface IdentifiedWorker {
   cardId: string
@@ -16,7 +17,7 @@ export interface IdentifiedWorker {
 }
 
 // Identifikacija radnika preko PIN-a (4-cifreni)
-export async function identifyWorkerByPin(pin: string): Promise<{ ok: boolean; worker?: IdentifiedWorker; error?: string }> {
+async function pinInner(pin: string): Promise<{ ok: boolean; worker?: IdentifiedWorker; error?: string }> {
   if (!pin || pin.length < 3) {
     return { ok: false, error: 'PIN mora imati najmanje 3 cifre' }
   }
@@ -65,7 +66,7 @@ export async function identifyWorkerByPin(pin: string): Promise<{ ok: boolean; w
 }
 
 // Identifikacija radnika preko card_id (skener ID kartice)
-export async function identifyWorkerByCardId(cardId: string): Promise<{ ok: boolean; worker?: IdentifiedWorker; error?: string }> {
+async function cardInner(cardId: string): Promise<{ ok: boolean; worker?: IdentifiedWorker; error?: string }> {
   if (!cardId) {
     return { ok: false, error: 'ID kartica nije skenirana' }
   }
@@ -113,4 +114,20 @@ export async function identifyWorkerByCardId(cardId: string): Promise<{ ok: bool
       role: data.role,
     },
   }
+}
+
+// Javne akcije sa ograničenjem pogrešnih pokušaja po IP adresi (pogađanje PIN-a / broja kartice)
+export async function identifyWorkerByPin(pin: string): Promise<{ ok: boolean; worker?: IdentifiedWorker; error?: string; rateLimited?: boolean }> {
+  if (!(await rateAllowed('pin'))) return { ok: false, error: RATE_MSG, rateLimited: true }
+  const r = await pinInner(pin)
+  if (!r.ok) await rateFail('pin', 15)
+  return r
+}
+
+export async function identifyWorkerByCardId(cardId: string): Promise<{ ok: boolean; worker?: IdentifiedWorker; error?: string; rateLimited?: boolean }> {
+  if (!(await rateAllowed('card'))) return { ok: false, error: RATE_MSG, rateLimited: true }
+  const r = await cardInner(cardId)
+  // pri kucanju broja kartice nepotpuni unosi daju "nije pronađen", zato je granica veća
+  if (!r.ok) await rateFail('card', 60)
+  return r
 }

@@ -8,6 +8,7 @@ import { getInspectableEquipment } from '@/lib/actions-daily-inspection'
 import { DailyInspectionDialog } from './daily-inspection-dialog'
 import { Button } from '@/components/ui/button'
 import { ServiceWorkPlanCard } from './service-workplan-card'
+import { MorningChecklistBanner } from './morning-checklist-banner'
 import { ClipboardCheck } from 'lucide-react'
 import { getExpiringSoon } from '@/lib/actions-expiry'
 import { getFodReports, getWildlifeReports } from '@/lib/actions-safety-reports'
@@ -60,6 +61,8 @@ export function MyTasksView({
   return (
     <div className="space-y-3 max-w-2xl">
       <p className="text-sm text-muted-foreground">Zdravo, {fullName.split(' ')[0]}. Ovo čeka vas:</p>
+
+      <MorningChecklistBanner />
 
       <Button size="lg" className="w-full" onClick={() => setInspectOpen(true)}>
         <ClipboardCheck className="h-5 w-5 mr-2" />Pokreni dnevni pregled vozila

@@ -291,6 +291,9 @@ export async function getServiceWorkPlan(horizon: WorkPlanHorizon): Promise<Work
     const events = projectServices(toServiceInput(r), today, to)
     for (const e of events) {
       // dospjele servise prikazujemo uvijek (kasne), ostale samo ako upadaju u period
+      // za kalendarsku godinu plan sadrži samo servise unutar te godine (dospjeli se rješavaju odmah, u tekućoj godini)
+      const cal = horizon === 'CAL_THIS' || horizon === 'CAL_NEXT'
+      if (cal && (e.date < from || e.date > to)) continue
       if (!e.overdue && e.date < from) continue
       items.push({ date: e.date, code: r.code, name: r.name, kind: e.kind, reason: e.reason, overdue: e.overdue, external: r.external, provider: r.provider, phone: r.phone, department: r.department })
     }
@@ -300,7 +303,7 @@ export async function getServiceWorkPlan(horizon: WorkPlanHorizon): Promise<Work
   const monthMap = new Map<string, number>()
   for (const it of items) if (!it.overdue) monthMap.set(it.date.slice(0, 7), (monthMap.get(it.date.slice(0, 7)) ?? 0) + 1)
   return {
-    horizon, label: HORIZON_LABEL[horizon], from, to, today, items, noBaseline,
+    horizon, label: horizon === 'CAL_THIS' || horizon === 'CAL_NEXT' ? `Kalendarska godina ${from.slice(0, 4)} (1.1.–31.12.)` : HORIZON_LABEL[horizon], from, to, today, items, noBaseline,
     totals: {
       all: items.length, overdue: items.filter((i) => i.overdue).length,
       external: items.filter((i) => i.external).length, internal: items.filter((i) => !i.external).length,

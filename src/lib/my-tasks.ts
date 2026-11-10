@@ -13,6 +13,7 @@ export interface TaskDamage {
   acknowledgedAt?: Date | string | null
   workshopArrivedAt?: Date | string | null
   lastStatusAt?: Date | string | null
+  waitingPartUntil?: Date | string | null
 }
 
 export interface TaskInspectionRow {

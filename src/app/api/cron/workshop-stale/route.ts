@@ -9,7 +9,7 @@ import { sendServiceDigest } from '@/lib/service-notify'
 
 export const dynamic = 'force-dynamic'
 
-interface Row { code: string; name: string; status: string; ack: string | null; arrived: string | null; lastAt: string | null; lastText: string | null; dept: string | null }
+interface Row { code: string; name: string; status: string; ack: string | null; arrived: string | null; lastAt: string | null; lastText: string | null; waitUntil: string | null; dept: string | null }
 
 export async function GET(request: NextRequest) {
   const authHeader = request.headers.get('authorization')
@@ -20,13 +20,13 @@ export async function GET(request: NextRequest) {
   try {
     if (isDemoMode()) {
       const r = await db.damageReport.findMany({ where: { status: { in: ['IN_REPAIR', 'AWAITING_APPROVAL'] } }, include: { equipment: { select: { department: true } } } })
-      rows = r.map((x) => ({ code: x.equipmentCode, name: x.equipmentName, status: x.status, ack: x.acknowledgedAt?.toISOString() ?? null, arrived: x.workshopArrivedAt?.toISOString() ?? null, lastAt: x.lastStatusAt?.toISOString() ?? null, lastText: x.lastStatusText, dept: x.equipment?.department ?? null }))
+      rows = r.map((x) => ({ code: x.equipmentCode, name: x.equipmentName, status: x.status, ack: x.acknowledgedAt?.toISOString() ?? null, arrived: x.workshopArrivedAt?.toISOString() ?? null, lastAt: x.lastStatusAt?.toISOString() ?? null, lastText: x.lastStatusText, waitUntil: x.waitingPartUntil?.toISOString() ?? null, dept: x.equipment?.department ?? null }))
     } else {
       const { data, error } = await createServiceClient().from('damage_reports')
-        .select('equipment_code, equipment_name, status, acknowledged_at, workshop_arrived_at, last_status_at, last_status_text, equipment:equipment(department)')
+        .select('*, equipment:equipment(department)')
         .in('status', ['IN_REPAIR', 'AWAITING_APPROVAL'])
       if (error) throw new Error(`${error.message} (pokrenuti migraciju 035?)`)
-      rows = (data ?? []).map((x: any) => ({ code: x.equipment_code, name: x.equipment_name, status: x.status, ack: x.acknowledged_at, arrived: x.workshop_arrived_at, lastAt: x.last_status_at, lastText: x.last_status_text, dept: x.equipment?.department ?? null }))
+      rows = (data ?? []).map((x: any) => ({ code: x.equipment_code, name: x.equipment_name, status: x.status, ack: x.acknowledged_at, arrived: x.workshop_arrived_at, lastAt: x.last_status_at, lastText: x.last_status_text, waitUntil: x.waiting_part_until ?? null, dept: x.equipment?.department ?? null }))
     }
   } catch (e) {
     return NextResponse.json({ error: e instanceof Error ? e.message : 'Greška' }, { status: 500 })
@@ -34,7 +34,7 @@ export async function GET(request: NextRequest) {
 
   const now = new Date()
   const due = rows
-    .map((r) => ({ r, s: staleInfo({ status: r.status, acknowledgedAt: r.ack, workshopArrivedAt: r.arrived, lastStatusAt: r.lastAt }, now) }))
+    .map((r) => ({ r, s: staleInfo({ status: r.status, acknowledgedAt: r.ack, workshopArrivedAt: r.arrived, lastStatusAt: r.lastAt, waitingPartUntil: r.waitUntil }, now) }))
     .filter((x) => x.s.due && x.s.days % STALE_DAYS === 0) // 3., 6., 9. ... dan
   if (!due.length) return NextResponse.json({ ok: true, sent: false, due: 0 })
 
