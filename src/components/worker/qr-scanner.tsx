@@ -6,6 +6,7 @@ import { Camera, ScanLine, X, Keyboard, AlertCircle } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Card } from '@/components/ui/card'
+import { useTx } from '@/lib/worker-en'
 
 interface QrScannerProps {
   onScan: (decoded: string) => void
@@ -13,6 +14,7 @@ interface QrScannerProps {
 }
 
 export function QrScanner({ onScan, onError }: QrScannerProps) {
+  const tx = useTx()
   const containerId = 'qr-reader-container'
   const scannerRef = useRef<Html5Qrcode | null>(null)
   const [scanning, setScanning] = useState(false)
@@ -35,7 +37,7 @@ export function QrScanner({ onScan, onError }: QrScannerProps) {
         }
       })
       .catch((err) => {
-        setError(`Ne mogu pristupiti kameri: ${err}`)
+        setError(tx('Ne mogu pristupiti kameri: {m}', { m: String(err) }))
         setManualMode(true)
       })
   }, [])
@@ -56,7 +58,7 @@ export function QrScanner({ onScan, onError }: QrScannerProps) {
   const start = useCallback(async () => {
     setError(null)
     if (!activeCamera) {
-      setError('Kamera nije dostupna. Koristite ručni unos.')
+      setError(tx('Kamera nije dostupna. Koristite ručni unos.'))
       setManualMode(true)
       return
     }
@@ -88,7 +90,7 @@ export function QrScanner({ onScan, onError }: QrScannerProps) {
       )
       setScanning(true)
     } catch (err: any) {
-      setError(`Greška pri pokretanju kamere: ${err?.message ?? err}`)
+      setError(tx('Greška pri pokretanju kamere: {m}', { m: err?.message ?? String(err) }))
       setManualMode(true)
     }
   }, [activeCamera, onScan])
@@ -115,7 +117,7 @@ export function QrScanner({ onScan, onError }: QrScannerProps) {
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-2 text-sm font-medium">
               <Camera className="h-4 w-4" />
-              {scanning ? 'Skeniram...' : 'Skeniranje QR koda'}
+              {scanning ? tx('Skeniram...') : tx('Skeniranje QR koda')}
             </div>
             {cameras.length > 1 && (
               <select
@@ -153,17 +155,17 @@ export function QrScanner({ onScan, onError }: QrScannerProps) {
             {!scanning ? (
               <Button onClick={start} className="flex-1">
                 <ScanLine className="h-4 w-4 mr-2" />
-                Pokreni kameru
+                {tx('Pokreni kameru')}
               </Button>
             ) : (
               <Button onClick={stop} variant="destructive" className="flex-1">
                 <X className="h-4 w-4 mr-2" />
-                Zaustavi
+                {tx('Zaustavi')}
               </Button>
             )}
             <Button onClick={() => setManualMode(true)} variant="outline">
               <Keyboard className="h-4 w-4 mr-2" />
-              Ručno
+              {tx('Ručno')}
             </Button>
           </div>
         </Card>
@@ -171,12 +173,12 @@ export function QrScanner({ onScan, onError }: QrScannerProps) {
         <Card className="p-4 space-y-3">
           <div className="flex items-center gap-2 text-sm font-medium">
             <Keyboard className="h-4 w-4" />
-            Ručni unos koda
+            {tx('Ručni unos koda')}
           </div>
           <form onSubmit={handleSubmitManual} className="space-y-2">
             <Input
               autoFocus
-              placeholder="npr. TOW-01"
+              placeholder={tx('npr. TOW-01')}
               value={manualValue}
               onChange={(e) => setManualValue(e.target.value)}
               className="text-lg font-mono uppercase"
@@ -184,7 +186,7 @@ export function QrScanner({ onScan, onError }: QrScannerProps) {
             />
             <div className="flex gap-2">
               <Button type="submit" className="flex-1">
-                Potvrdi
+                {tx('Potvrdi')}
               </Button>
               <Button
                 type="button"
@@ -195,7 +197,7 @@ export function QrScanner({ onScan, onError }: QrScannerProps) {
                 }}
               >
                 <Camera className="h-4 w-4 mr-2" />
-                Kamera
+                {tx('Kamera')}
               </Button>
             </div>
           </form>

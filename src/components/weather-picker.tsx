@@ -2,6 +2,7 @@
 
 import { Cloud, CloudFog, CloudLightning, CloudRain, Snowflake, Sun, ThermometerSnowflake, Wind } from 'lucide-react'
 import { WEATHER } from '@/lib/weather-conditions'
+import { useTx } from '@/lib/worker-en'
 
 const ICONS: Record<string, React.ComponentType<{ className?: string }>> = {
   SUNNY: Sun, CLOUDY: Cloud, RAIN: CloudRain, WIND: Wind, FOG: CloudFog, SNOW: Snowflake, ICE: ThermometerSnowflake, STORM: CloudLightning,
@@ -14,6 +15,7 @@ export function WeatherIcon({ id, className }: { id: string; className?: string 
 
 /** Izbor glavnog vremenskog uslova (jedan dodir). */
 export function WeatherPicker({ value, onChange }: { value: string; onChange: (id: string) => void }) {
+  const tx = useTx()
   return (
     <div className="grid grid-cols-4 gap-1.5">
       {WEATHER.map((w) => (
@@ -25,7 +27,7 @@ export function WeatherPicker({ value, onChange }: { value: string; onChange: (i
           className={`min-h-14 rounded-lg border-2 px-1 py-1.5 text-[11px] font-semibold flex flex-col items-center justify-center gap-0.5 leading-tight ${value === w.id ? 'border-primary bg-primary/10' : 'border-border'}`}
         >
           <WeatherIcon id={w.id} className="h-5 w-5" />
-          <span className="text-center">{w.label}</span>
+          <span className="text-center">{tx(w.label)}</span>
         </button>
       ))}
     </div>

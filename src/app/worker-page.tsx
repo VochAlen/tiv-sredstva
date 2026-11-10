@@ -6,10 +6,12 @@ import Image from 'next/image'
 import {
   Plane, LayoutDashboard, ExternalLink, MoreVertical, Info, Sparkles,
   QrCode, ShieldCheck, WifiOff, AlertTriangle, ScanLine, Sun, Moon,
+  Check, Hammer, CalendarCheck, BadgeCheck, FileText, Database,
 } from 'lucide-react'
 import { WorkerView } from '@/components/worker/worker-view'
 import { LanguageToggle } from '@/components/language-toggle'
 import { useLang } from '@/lib/lang-context'
+import { FEATURE_GROUPS, LANDING_TEXT, type FeatureGroupId } from '@/lib/landing-content'
 import Link from 'next/link'
 import { Button } from '@/components/ui/button'
 import {
@@ -104,7 +106,8 @@ function WorkerPageInner() {
   const router = useRouter()
   const scanParam = sp.get('scan')
   const handledScanRef = useRef<string | null>(null)
-  const { t } = useLang()
+  const { t, lang } = useLang()
+  const lt = LANDING_TEXT[lang]
 
   const [initialScan, setInitialScan] = useState<string | undefined>(undefined)
   const [demoMode, setDemoMode] = useState(false)
@@ -158,6 +161,12 @@ function WorkerPageInner() {
               <div className="text-[10px] leading-tight truncate hidden sm:block" style={{ color: c.textFaint }}>{t('app.tagline')}</div>
             </div>
           </Link>
+
+          <nav className="hidden md:flex items-center gap-6 text-sm font-medium" style={{ color: c.textMuted }}>
+            <a href="#how" className="hover:opacity-80">{lt.navHow}</a>
+            <a href="#features" className="hover:opacity-80">{lt.navFeatures}</a>
+            <a href="#compliance" className="hover:opacity-80">{lt.navCompliance}</a>
+          </nav>
 
           <div className="flex items-center gap-1.5 flex-shrink-0">
             <Button
@@ -288,46 +297,98 @@ function WorkerPageInner() {
         </div>
       </section>
 
-      {/* PROBLEM / SOLUTION */}
+      {/* TRAKA POUZDANJA */}
       <section style={{ backgroundColor: c.sectionBg, borderTop: `1px solid ${c.sectionBorder}`, borderBottom: `1px solid ${c.sectionBorder}` }}>
-        <div className="max-w-6xl mx-auto px-3 sm:px-5 py-10 sm:py-14 grid md:grid-cols-2 gap-6">
-          <div className="pl-4" style={{ borderLeft: '3px solid #E3473F' }}>
-            <h2 className="font-display text-xl sm:text-2xl font-semibold" style={{ color: c.text }}>
-              {t('problem.title')}
-            </h2>
-            <p className="mt-3 text-sm sm:text-base max-w-[42ch]" style={{ color: c.textMuted }}>
-              {t('problem.body')}
-            </p>
-          </div>
-          <div className="pl-4" style={{ borderLeft: '3px solid #F2A516' }}>
-            <h2 className="font-display text-xl sm:text-2xl font-semibold" style={{ color: c.text }}>
-              {t('solution.title')}
-            </h2>
-            <p className="mt-3 text-sm sm:text-base max-w-[42ch]" style={{ color: c.textMuted }}>
-              {t('solution.body')}
-            </p>
+        <div className="max-w-6xl mx-auto px-3 sm:px-5 py-4 flex flex-wrap items-center justify-center gap-x-8 gap-y-2 text-xs sm:text-sm font-medium" style={{ color: c.textMuted }}>
+          {['EASA Reg. (EU) 139/2014', 'IATA AHM 340', lang === 'en' ? 'Works offline' : 'Radi i offline', lang === 'en' ? 'Phone, tablet, desktop' : 'Telefon, tablet, računar', 'HR / EN'].map((x) => (
+            <span key={x} className="inline-flex items-center gap-2"><span className="h-1.5 w-1.5 rounded-full" style={{ backgroundColor: '#F2A516' }} />{x}</span>
+          ))}
+        </div>
+      </section>
+
+      {/* KAKO RADI */}
+      <section id="how" className="scroll-mt-20 px-3 sm:px-5 py-12 sm:py-16">
+        <div className="max-w-6xl mx-auto">
+          <SectionHead title={lt.howTitle} sub={lt.howSub} c={c} />
+          <ol className="mt-8 grid md:grid-cols-3 gap-4">
+            {lt.steps.map((st, i) => (
+              <li key={i} className="rounded-xl p-5 sm:p-6 border" style={{ backgroundColor: c.cardBg, borderColor: c.cardBorder }}>
+                <div className="h-9 w-9 rounded-full flex items-center justify-center font-display font-bold text-sm" style={{ backgroundColor: '#F2A516', color: '#0B0E11' }}>{i + 1}</div>
+                <h3 className="mt-4 font-display text-lg font-semibold" style={{ color: c.text }}>{st.t}</h3>
+                <p className="mt-1.5 text-sm" style={{ color: c.textMuted }}>{st.d}</p>
+              </li>
+            ))}
+          </ol>
+        </div>
+      </section>
+
+      {/* FUNKCIJE */}
+      <section id="features" className="scroll-mt-20 px-3 sm:px-5 py-12 sm:py-16" style={{ backgroundColor: c.sectionBg, borderTop: `1px solid ${c.sectionBorder}`, borderBottom: `1px solid ${c.sectionBorder}` }}>
+        <div className="max-w-6xl mx-auto">
+          <SectionHead title={lt.featuresTitle} sub={lt.featuresSub} c={c} />
+          <div className="mt-8 grid md:grid-cols-2 gap-4">
+            {FEATURE_GROUPS.map((g, gi) => {
+              const Icon = GROUP_ICONS[g.id]
+              return (
+                <article key={g.id} className={`rounded-xl border p-5 sm:p-6 ${gi === 0 ? 'md:col-span-2' : ''}`} style={{ backgroundColor: c.pageBg, borderColor: c.cardBorder }}>
+                  <div className="flex items-start gap-3">
+                    <div className="h-10 w-10 rounded-lg flex items-center justify-center flex-shrink-0" style={{ backgroundColor: `${g.accent}22` }}>
+                      <Icon className="h-5 w-5" style={{ color: g.accent }} />
+                    </div>
+                    <div>
+                      <h3 className="font-display text-lg font-semibold" style={{ color: c.text }}>{g.title[lang]}</h3>
+                      <p className="text-sm mt-0.5" style={{ color: c.textMuted }}>{g.lead[lang]}</p>
+                    </div>
+                  </div>
+                  <ul className={`mt-4 grid gap-x-6 gap-y-2 ${gi === 0 ? 'sm:grid-cols-2' : ''}`}>
+                    {g.items.map((it, i) => (
+                      <li key={i} className="flex items-start gap-2 text-sm" style={{ color: c.text }}>
+                        <Check className="h-4 w-4 mt-0.5 flex-shrink-0" style={{ color: g.accent }} />
+                        <span>{it[lang]}</span>
+                      </li>
+                    ))}
+                  </ul>
+                </article>
+              )
+            })}
           </div>
         </div>
       </section>
 
-      {/* 5 OBILJEŽJA — jedno vodeće (QR zaduživanje, srce proizvoda) +
-          četiri u 2x2 mreži, svako sa drugom akcentnom bojom koja nosi
-          značenje (ne dekoraciju): bezbjednosna prijava je crvena,
-          usklađenost je zelena, itd. */}
-      <section className="px-3 sm:px-5 py-10 sm:py-14">
-        <div className="max-w-6xl mx-auto space-y-4">
-          <FeatureLead
-            icon={ScanLine}
-            accent="#F2A516"
-            title={t('feature1.title')}
-            desc={t('feature1.desc')}
-            c={c}
-          />
-          <div className="grid sm:grid-cols-2 gap-4">
-            <FeatureCard icon={LayoutDashboard} accent="#4C8DF2" title={t('feature2.title')} desc={t('feature2.desc')} c={c} />
-            <FeatureCard icon={AlertTriangle} accent="#E3473F" title={t('feature3.title')} desc={t('feature3.desc')} c={c} />
-            <FeatureCard icon={ShieldCheck} accent="#3FB27F" title={t('feature4.title')} desc={t('feature4.desc')} c={c} />
-            <FeatureCard icon={WifiOff} accent="#8A94A0" title={t('feature5.title')} desc={t('feature5.desc')} c={c} />
+      {/* USKLAĐENOST */}
+      <section id="compliance" className="scroll-mt-20 px-3 sm:px-5 py-12 sm:py-16">
+        <div className="max-w-6xl mx-auto">
+          <SectionHead title={lt.compTitle} sub={lt.compSub} c={c} />
+          <div className="mt-8 grid sm:grid-cols-2 lg:grid-cols-3 gap-3">
+            {lt.compItems.map((x) => (
+              <div key={x.ref} className="rounded-xl border p-4 flex items-start gap-3" style={{ backgroundColor: c.cardBg, borderColor: c.cardBorder }}>
+                <ShieldCheck className="h-5 w-5 mt-0.5 flex-shrink-0" style={{ color: '#3FB27F' }} />
+                <div>
+                  <div className="font-mono text-xs font-semibold" style={{ color: '#F2A516' }}>{x.ref}</div>
+                  <div className="text-sm mt-0.5" style={{ color: c.text }}>{x.d}</div>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      </section>
+
+      {/* POZIV NA AKCIJU */}
+      <section className="px-3 sm:px-5 pb-12 sm:pb-16">
+        <div className="max-w-6xl mx-auto rounded-2xl p-6 sm:p-10 text-center border" style={{ backgroundColor: c.cardBg, borderColor: c.cardBorder, borderTop: '3px solid #F2A516' }}>
+          <h2 className="font-display text-2xl sm:text-3xl font-semibold" style={{ color: c.text }}>{lt.ctaTitle}</h2>
+          <p className="mt-2 text-sm sm:text-base max-w-xl mx-auto" style={{ color: c.textMuted }}>{lt.ctaSub}</p>
+          <div className="mt-6 flex flex-wrap justify-center gap-3">
+            <Link href="/login">
+              <Button className="h-11 px-6 font-semibold hover:opacity-90" style={{ backgroundColor: '#F2A516', color: '#0B0E11' }}>
+                <LayoutDashboard className="h-4 w-4 mr-2" />{lt.ctaPrimary}
+              </Button>
+            </Link>
+            <Link href="/fids" target="_blank">
+              <Button variant="outline" className="h-11 px-6" style={{ borderColor: c.btnBorder, backgroundColor: c.btnBg, color: c.text }}>
+                <ExternalLink className="h-4 w-4 mr-2" />{lt.ctaSecondary}
+              </Button>
+            </Link>
           </div>
         </div>
       </section>
@@ -342,58 +403,19 @@ function WorkerPageInner() {
 
 type ThemeTokens = typeof DARK
 
-function FeatureLead({ icon: Icon, accent, title, desc, c }: { icon: React.ComponentType<{ className?: string; style?: React.CSSProperties }>; accent: string; title: string; desc: string; c: ThemeTokens }) {
+function SectionHead({ title, sub, c }: { title: string; sub: string; c: ThemeTokens }) {
   return (
-    <div
-      className="rounded-lg p-5 sm:p-7 flex flex-col sm:flex-row sm:items-center gap-4 sm:gap-6"
-      style={{
-        backgroundColor: c.cardBg,
-        borderStyle: 'solid',
-        borderTopWidth: '1px',
-        borderRightWidth: '1px',
-        borderBottomWidth: '1px',
-        borderLeftWidth: '4px',
-        borderTopColor: c.cardBorder,
-        borderRightColor: c.cardBorder,
-        borderBottomColor: c.cardBorder,
-        borderLeftColor: accent,
-      }}
-    >
-      <div className="h-11 w-11 rounded-md flex items-center justify-center flex-shrink-0" style={{ backgroundColor: `${accent}1A` }}>
-        <Icon className="h-5 w-5" style={{ color: accent }} />
-      </div>
-      <div>
-        <h3 className="font-display text-lg font-semibold" style={{ color: c.text }}>{title}</h3>
-        <p className="mt-1.5 text-sm max-w-[56ch]" style={{ color: c.textMuted }}>{desc}</p>
-      </div>
+    <div className="max-w-2xl">
+      <div className="h-[3px] w-10 rounded-full mb-3" style={{ backgroundColor: '#F2A516' }} />
+      <h2 className="font-display text-2xl sm:text-3xl font-semibold tracking-tight" style={{ color: c.text }}>{title}</h2>
+      <p className="mt-2 text-sm sm:text-base" style={{ color: c.textMuted }}>{sub}</p>
     </div>
   )
 }
 
-function FeatureCard({ icon: Icon, accent, title, desc, c }: { icon: React.ComponentType<{ className?: string; style?: React.CSSProperties }>; accent: string; title: string; desc: string; c: ThemeTokens }) {
-  return (
-    <div
-      className="rounded-lg p-5"
-      style={{
-        backgroundColor: c.cardBg,
-        borderStyle: 'solid',
-        borderTopWidth: '1px',
-        borderRightWidth: '1px',
-        borderBottomWidth: '1px',
-        borderLeftWidth: '3px',
-        borderTopColor: c.cardBorder,
-        borderRightColor: c.cardBorder,
-        borderBottomColor: c.cardBorder,
-        borderLeftColor: accent,
-      }}
-    >
-      <div className="h-9 w-9 rounded-md flex items-center justify-center mb-3" style={{ backgroundColor: `${accent}1A` }}>
-        <Icon className="h-4 w-4" style={{ color: accent }} />
-      </div>
-      <h3 className="font-display text-base font-semibold" style={{ color: c.text }}>{title}</h3>
-      <p className="mt-1.5 text-sm max-w-[40ch]" style={{ color: c.textMuted }}>{desc}</p>
-    </div>
-  )
+const GROUP_ICONS: Record<FeatureGroupId, React.ComponentType<{ className?: string; style?: React.CSSProperties }>> = {
+  worker: ScanLine, workshop: Hammer, maintenance: CalendarCheck, safety: AlertTriangle,
+  authorisation: BadgeCheck, reports: FileText, data: Database,
 }
 
 export function WorkerPage() {

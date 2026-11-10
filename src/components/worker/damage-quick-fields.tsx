@@ -6,6 +6,7 @@ import { Textarea } from '@/components/ui/textarea'
 import { toast } from 'sonner'
 import { compressImage } from '@/lib/image-compress'
 import { CHECKLIST_CATEGORY_ORDER, CHECKLIST_CATEGORY_LABELS } from '@/lib/types'
+import { useTx } from '@/lib/worker-en'
 
 export const MAX_DAMAGE_PHOTOS = 2
 
@@ -22,6 +23,7 @@ export function DamageQuickFields({
 }) {
   const inputRef = useRef<HTMLInputElement>(null)
   const [busy, setBusy] = useState(false)
+  const tx = useTx()
 
   const onFile = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0]
@@ -32,7 +34,7 @@ export function DamageQuickFields({
       const data = await compressImage(file)
       onPhotos([...photos, data].slice(0, MAX_DAMAGE_PHOTOS))
     } catch {
-      toast.error('Slika nije učitana, pokušajte ponovo')
+      toast.error(tx('Slika nije učitana, pokušajte ponovo'))
     } finally {
       setBusy(false)
     }
@@ -41,14 +43,14 @@ export function DamageQuickFields({
   return (
     <div className="space-y-3">
       <div className="space-y-1.5">
-        <div className="text-sm font-medium">1. Slikajte kvar</div>
+        <div className="text-sm font-medium">{tx('1. Slikajte kvar')}</div>
         <div className="flex gap-2 flex-wrap">
           {photos.map((p, i) => (
             <div key={i} className="relative h-20 w-20 rounded-md overflow-hidden border">
-              <img src={p} alt={`Fotografija ${i + 1}`} className="h-full w-full object-cover" />
+              <img src={p} alt={`Photo ${i + 1}`} className="h-full w-full object-cover" />
               <button
                 type="button"
-                aria-label="Ukloni sliku"
+                aria-label={tx('Ukloni sliku')}
                 onClick={() => onPhotos(photos.filter((_, j) => j !== i))}
                 className="absolute top-0.5 right-0.5 h-6 w-6 rounded-full bg-black/60 text-white flex items-center justify-center"
               >
@@ -64,7 +66,7 @@ export function DamageQuickFields({
               className="h-20 w-20 rounded-md border-2 border-dashed flex flex-col items-center justify-center gap-1 text-xs text-muted-foreground active:bg-muted"
             >
               {busy ? <Loader2 className="h-5 w-5 animate-spin" /> : <Camera className="h-6 w-6" />}
-              {busy ? '' : 'Slika'}
+              {busy ? '' : tx('Slika')}
             </button>
           )}
         </div>
@@ -72,7 +74,7 @@ export function DamageQuickFields({
       </div>
 
       <div className="space-y-1.5">
-        <div className="text-sm font-medium">2. Šta nije u redu?</div>
+        <div className="text-sm font-medium">{tx('2. Šta nije u redu?')}</div>
         <div className="grid grid-cols-2 gap-2">
           {CHECKLIST_CATEGORY_ORDER.map((c) => (
             <button
@@ -81,18 +83,18 @@ export function DamageQuickFields({
               onClick={() => onCategory(category === c ? '' : c)}
               className={`min-h-14 rounded-lg border-2 text-sm font-semibold px-2 ${category === c ? 'border-primary bg-primary/10' : 'border-border'}`}
             >
-              {CHECKLIST_CATEGORY_LABELS[c]}
+              {tx(CHECKLIST_CATEGORY_LABELS[c])}
             </button>
           ))}
         </div>
       </div>
 
       <div className="space-y-1.5">
-        <div className="text-sm font-medium">3. Jedna rečenica (nije obavezno)</div>
+        <div className="text-sm font-medium">{tx('3. Jedna rečenica (nije obavezno)')}</div>
         <Textarea
           value={description}
           onChange={(e) => onDescription(e.target.value)}
-          placeholder="npr. curi ulje pri dnu"
+          placeholder={tx('npr. curi ulje pri dnu')}
           rows={2}
         />
       </div>

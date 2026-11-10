@@ -56,6 +56,8 @@ import { HelpButton } from '@/components/ui/help-button'
 import { RestrictionBadges, toRestrictions } from '@/components/restriction-badges'
 import { recordFitnessDeclaration } from '@/lib/actions-safety-reports'
 import { recordMeterReading } from '@/lib/actions-meter'
+import { useTx } from '@/lib/worker-en'
+import { useLang } from '@/lib/lang-context'
 
 type Step = 'scan' | 'identify' | 'inspect' | 'success' | 'blocked'
 
@@ -87,6 +89,8 @@ export function WorkerView({
   defaultEmployeeName?: string
   defaultEmployeeCardId?: string
 }) {
+  const tx = useTx()
+  const { lang } = useLang()
   const [step, setStep] = useState<Step>('scan')
   const [equipment, setEquipment] = useState<EquipmentInfo | null>(null)
   const [cardId, setCardId] = useState(defaultEmployeeCardId)
@@ -133,7 +137,7 @@ export function WorkerView({
         const r = await identifyWorkerByCardId(id)
         if (!alive) return
         if (r.ok && r.worker) { setEmployeeName(r.worker.name); setLookup('found') }
-        else { setLookup('notfound'); if (r.rateLimited) toast.error(r.error ?? 'Previše pokušaja. Pričekajte.') }
+        else { setLookup('notfound'); if (r.rateLimited) toast.error(r.error ?? tx('Previše pokušaja. Pričekajte.')) }
       } catch { if (alive) setLookup('notfound') }
     }, 350)
     return () => { alive = false; clearTimeout(timer) }
@@ -209,7 +213,7 @@ export function WorkerView({
     try {
       const eq = await getEquipmentByCode(code)
       if (!eq) {
-        toast.error(`Sredstvo "${code}" nije pronađeno. Skenirajte QR kod ponovo ili pozovite šefa.`)
+        toast.error(tx('Sredstvo "{code}" nije pronađeno. Skenirajte QR kod ponovo ili pozovite šefa.', { code }))
         return
       }
       setEquipment({
@@ -251,7 +255,7 @@ export function WorkerView({
 
       setStep('identify')
     } catch (e) {
-      toast.error('Nema veze sa serverom. Provjerite internet i pokušajte ponovo.')
+      toast.error(tx('Nema veze sa serverom. Provjerite internet i pokušajte ponovo.'))
     } finally {
       setLookupLoading(false)
     }
@@ -261,7 +265,7 @@ export function WorkerView({
   const handleIdentifySubmit = (e: React.FormEvent) => {
     e.preventDefault()
     if (!cardId.trim() || !employeeName.trim()) {
-      toast.error('Upišite broj kartice. Ime se pojavi samo.')
+      toast.error(tx('Upišite broj kartice. Ime se pojavi samo.'))
       return
     }
     // ADR.OR.C.045 — pritisak na ZADUŽI znači potvrdu sposobnosti za rad (tekst je ispod dugmeta).
@@ -291,8 +295,8 @@ export function WorkerView({
       if (eq) {
         const done = (eq as any).inspectedToday !== false
         setEquipment((cur) => (cur && cur.code === eq.code ? { ...cur, inspectedToday: done, status: eq.status } : cur))
-        if (done && manual) toast.success('Dnevni pregled je urađen — možete zadužiti')
-        if (!done && manual) toast.info('Dnevni pregled još nije urađen')
+        if (done && manual) toast.success(tx('Dnevni pregled je urađen — možete zadužiti'))
+        if (!done && manual) toast.info(tx('Dnevni pregled još nije urađen'))
       }
     } catch { /* mreža - pokušaće ponovo */ }
     finally { if (manual) setRechecking(false) }
@@ -349,7 +353,7 @@ export function WorkerView({
   const buildChecklist = (): ChecklistItem[] => {
     if (effectiveMode === 'fault' && (quickFault || checklistItems.length === 0)) {
       return [{
-        id: 'visual-fault', label: 'Kvar uočen pri zaduživanju', passed: false,
+        id: 'visual-fault', label: tx('Kvar uočen pri zaduživanju'), passed: false,
         ...(checkoutSeverity !== 'MINOR' ? { severity: 'BLOCKING' as const } : {}),
         category: (damageCategory || 'OPSTE') as ChecklistItem['category'],
       }]
@@ -373,15 +377,15 @@ export function WorkerView({
 
     if (actionType === 'CHECK_OUT') {
       if (effectiveMode === 'none') {
-        toast.error('Prođite checklistu (ili "Sve ispravno") ili prijavite kvar')
+        toast.error(tx('Prođite checklistu (ili "Sve ispravno") ili prijavite kvar'))
         return
       }
       if (!faultOnly && !quickFault && unanswered.length > 0) {
-        toast.error(`Odgovorite na sve stavke checkliste (preostalo: ${unanswered.length})`)
+        toast.error(tx('Odgovorite na sve stavke checkliste (preostalo: {n})', { n: unanswered.length }))
         return
       }
       if (effectiveMode === 'fault' && !damageDescription.trim() && !damageCategory && damagePhotos.length === 0 && failedItems.length === 0) {
-        toast.error('Dodajte sliku, izaberite kategoriju ili upišite kratak opis kvara')
+        toast.error(tx('Dodajte sliku, izaberite kategoriju ili upišite kratak opis kvara'))
         return
       }
     }
@@ -420,11 +424,11 @@ export function WorkerView({
           })
           if (r.ok) {
             setBlockedMsg(checkoutSeverity === 'MINOR'
-              ? 'Kvar je prijavljen. Sredstvo nije pregledano danas, pa ga još ne možete uzeti. Pozovite šefa.'
-              : 'Kvar je prijavljen. Sredstvo je zaustavljeno i ne može se uzeti. Uzmite drugo sredstvo.')
+              ? tx('Kvar je prijavljen. Sredstvo nije pregledano danas, pa ga još ne možete uzeti. Pozovite šefa.')
+              : tx('Kvar je prijavljen. Sredstvo je zaustavljeno i ne može se uzeti. Uzmite drugo sredstvo.'))
             setStep('blocked')
-            toast.success('Kvar prijavljen')
-          } else toast.error(r.error ?? 'Greška')
+            toast.success(tx('Kvar prijavljen'))
+          } else toast.error(r.error ?? tx('Greška'))
           return
         }
         if (actionType === 'CHECK_OUT') {
@@ -442,7 +446,7 @@ export function WorkerView({
           })
           if ((res as any).needsFirstUseConfirmation) {
             // Sredstvo je nedavno popravljeno — prvi radnik mora potvrditi da ga je pregledao
-            if (window.confirm(`${res.error}\n\nPotvrđujem da sam pregledao/la sredstvo i da je ispravno.`)) {
+            if (window.confirm(`${res.error}\n\n${tx('Potvrđujem da sam pregledao/la sredstvo i da je ispravno.')}`)) {
               submitInspect({ ...overrides, firstUseConfirmed: true })
             }
             return
@@ -452,14 +456,14 @@ export function WorkerView({
             // Zaduženo; ako je uz to prijavljeno oštećenje koje ne blokira, radionica je obaviještena
             setStep('success')
             if (res.damageReportId && effectiveMode === 'fault') {
-              toast.warning('Zaduženo. Kvar je zabilježen i proslijeđen radionici.')
+              toast.warning(tx('Zaduženo. Kvar je zabilježen i proslijeđen radionici.'))
             } else {
-              toast.success('Uspješno zaduženo!')
+              toast.success(tx('Uspješno zaduženo!'))
             }
           } else {
             // Vjerovatno OUT_OF_SERVICE ili MAINTENANCE
             setStep('blocked')
-            toast.error(res.error ?? 'Greška')
+            toast.error(res.error ?? tx('Greška'))
           }
         } else {
           // CHECK_IN
@@ -474,19 +478,19 @@ export function WorkerView({
           })
           if (res.ok) {
             setStep('success')
-            toast.success('Uspješno razduženo!')
+            toast.success(tx('Uspješno razduženo!'))
             // Brojilo (opciono): greška ne poništava razduženje, samo se prikaže
             if (meterKm.trim() || meterHours.trim()) {
               const m = await recordMeterReading({ equipmentCode: equipment.code, employeeCardId: cardId.trim(), km: meterKm, hours: meterHours })
-              if (!m.ok) toast.warning(`Brojač nije upisan: ${m.error ?? 'greška'}`)
-              else if (m.updated) toast.success('Brojač upisan')
+              if (!m.ok) toast.warning(tx('Brojač nije upisan: {m}', { m: m.error ?? 'error' }))
+              else if (m.updated) toast.success(tx('Brojač upisan'))
             }
           } else {
-            toast.error(res.error ?? 'Greška')
+            toast.error(res.error ?? tx('Greška'))
           }
         }
       } catch (e: any) {
-        toast.error(`Greška: ${e?.message ?? e}`)
+        toast.error(tx('Greška: {m}', { m: e?.message ?? String(e) }))
       }
     })
   }
@@ -508,12 +512,12 @@ export function WorkerView({
           {step !== 'scan' && step !== 'success' && step !== 'blocked' && (
             <Button variant="ghost" size="sm" onClick={() => setStep(step === 'inspect' ? 'identify' : 'scan')}>
               <ArrowLeft className="h-4 w-4 mr-1" />
-              Nazad
+              {tx('Nazad')}
             </Button>
           )}
         </div>
         <div className="text-xs text-muted-foreground font-mono">
-          Korak {step === 'scan' ? 1 : step === 'identify' ? 2 : step === 'inspect' ? 3 : 4} / 4
+          {tx('Korak {n} / 4', { n: step === 'scan' ? 1 : step === 'identify' ? 2 : step === 'inspect' ? 3 : 4 })}
         </div>
       </div>
 
@@ -529,10 +533,10 @@ export function WorkerView({
           {remembered && (
             <div className="flex items-center justify-between gap-3 px-1">
               <div className="min-w-0">
-                <div className="text-sm text-muted-foreground">Zdravo,</div>
+                <div className="text-sm text-muted-foreground">{tx('Zdravo,')}</div>
                 <div className="text-lg font-semibold truncate">{remembered.name}</div>
               </div>
-              <Button type="button" variant="outline" className="h-11" onClick={forgetWorker}>Nisam ja</Button>
+              <Button type="button" variant="outline" className="h-11" onClick={forgetWorker}>{tx('Nisam ja')}</Button>
             </div>
           )}
 
@@ -543,31 +547,31 @@ export function WorkerView({
               onClick={() => handleScan(a.code)}
               className="w-full rounded-2xl bg-amber-500 hover:bg-amber-600 active:scale-[0.99] transition text-white p-4 text-left shadow-md"
             >
-              <div className="text-2xl font-extrabold tracking-wide">VRATI {a.code}</div>
+              <div className="text-2xl font-extrabold tracking-wide">{tx('VRATI {code}', { code: a.code })}</div>
               <div className="text-sm opacity-95 truncate">{a.name}</div>
               <div className="text-xs opacity-90 mt-1">
-                Zaduženo {new Date(a.since).toLocaleString('hr-HR', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' })}
-                {(a.km > 0 || a.hours > 0) && ` · zadnje brojilo: ${[a.km > 0 ? `${a.km} km` : '', a.hours > 0 ? `${a.hours} h` : ''].filter(Boolean).join(' / ')}`}
+                {tx('Zaduženo {when}', { when: new Date(a.since).toLocaleString(lang === 'en' ? 'en-GB' : 'hr-HR', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' }) })}
+                {(a.km > 0 || a.hours > 0) && tx(' · zadnje brojilo: {m}', { m: [a.km > 0 ? `${a.km} km` : '', a.hours > 0 ? `${a.hours} h` : ''].filter(Boolean).join(' / ') })}
               </div>
             </button>
           ))}
 
           <div className="text-center pt-1">
-            <h2 className="text-xl font-bold">{active.length ? 'Ili uzmite drugo sredstvo' : 'Skenirajte QR kod na sredstvu'}</h2>
-            <p className="text-sm text-muted-foreground mt-1">Usmjerite kameru na naljepnicu. Ostalo ide samo.</p>
+            <h2 className="text-xl font-bold">{active.length ? tx('Ili uzmite drugo sredstvo') : tx('Skenirajte QR kod na sredstvu')}</h2>
+            <p className="text-sm text-muted-foreground mt-1">{tx('Usmjerite kameru na naljepnicu. Ostalo ide samo.')}</p>
           </div>
 
           <QrScanner onScan={handleScan} />
 
           <Card className="bg-muted/30">
             <CardContent className="pt-4 text-xs text-muted-foreground">
-              <p className="font-medium mb-1">Kako radi?</p>
+              <p className="font-medium mb-1">{tx('Kako radi?')}</p>
               <ol className="list-decimal list-inside space-y-0.5">
-                <li>Skenirajte QR kod na sredstvu</li>
-                <li>Pritisnite ZADUŽI (ili VRATI)</li>
-                <li>Odgovorite na pitanja o stanju sredstva</li>
+                <li>{tx('Skenirajte QR kod na sredstvu')}</li>
+                <li>{tx('Pritisnite ZADUŽI (ili VRATI)')}</li>
+                <li>{tx('Odgovorite na pitanja o stanju sredstva')}</li>
               </ol>
-              <p className="mt-1">Broj kartice upisujete samo prvi put. Aplikacija ga pamti na ovom uređaju.</p>
+              <p className="mt-1">{tx('Broj kartice upisujete samo prvi put. Aplikacija ga pamti na ovom uređaju.')}</p>
             </CardContent>
           </Card>
 
@@ -575,11 +579,11 @@ export function WorkerView({
           <div className="grid grid-cols-2 gap-2">
             <Button type="button" variant="outline" size="sm" onClick={() => setShowFodDialog(true)}>
               <AlertTriangle className="h-4 w-4 mr-1.5 text-amber-600" />
-              Prijavi FOD
+              {tx('Prijavi FOD')}
             </Button>
             <Button type="button" variant="outline" size="sm" onClick={() => setShowWildlifeDialog(true)}>
               <Bird className="h-4 w-4 mr-1.5 text-emerald-600" />
-              Divlja životinja
+              {tx('Divlja životinja')}
             </Button>
           </div>
         </div>
@@ -595,9 +599,9 @@ export function WorkerView({
 
           {actionType === 'CHECK_OUT' && equipment.inspectedToday === false && (
             <div role="alert" className="rounded-lg border-2 border-red-500 bg-red-50 p-3 text-sm text-red-900">
-              <strong>Sredstvo nije pregledano danas.</strong> Pozovite šefa da uradi pregled, ili prijavite kvar.
+              <strong>{tx('Sredstvo nije pregledano danas.')}</strong>{tx(' Pozovite šefa da uradi pregled, ili prijavite kvar.')}
               <Button type="button" variant="outline" size="sm" className="mt-2 h-10 w-full border-red-400 bg-white" disabled={rechecking} onClick={() => recheckInspection(true)}>
-                {rechecking ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : null}Pregled je urađen — provjeri ponovo
+                {rechecking ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : null}{tx('Pregled je urađen — provjeri ponovo')}
               </Button>
             </div>
           )}
@@ -614,7 +618,7 @@ export function WorkerView({
                   className="inline-flex items-center gap-1.5 px-3 py-2 rounded-lg bg-blue-50 border border-blue-200 text-blue-700 hover:bg-blue-100 transition text-sm font-medium"
                 >
                   <FileText className="h-4 w-4" />
-                  {MANUAL_TYPE_LABELS[m.manualType] || 'Uputstvo'}
+                  {tx(MANUAL_TYPE_LABELS[m.manualType] || 'Uputstvo za upotrebu')}
                   {m.version && <span className="text-xs opacity-60">({m.version})</span>}
                 </a>
               ))}
@@ -628,7 +632,7 @@ export function WorkerView({
               className="inline-flex items-center gap-1.5 px-3 py-2 rounded-lg bg-blue-50 border border-blue-200 text-blue-700 hover:bg-blue-100 transition text-sm font-medium"
             >
               <FileText className="h-4 w-4" />
-              Uputstvo za upotrebu
+              {tx('Uputstvo za upotrebu')}
             </a>
           )}
 
@@ -636,7 +640,7 @@ export function WorkerView({
             <CardHeader>
               <CardTitle className="text-base flex items-center gap-2">
                 <User className="h-4 w-4" />
-                Vaši podaci
+                {tx('Vaši podaci')}
               </CardTitle>
             </CardHeader>
             <CardContent className="space-y-3">
@@ -647,24 +651,24 @@ export function WorkerView({
                     <div className="text-xs text-muted-foreground font-mono">{remembered.cardId}</div>
                   </div>
                   <Button type="button" variant="outline" size="sm" onClick={forgetWorker}>
-                    Nisam ja
+                    {tx('Nisam ja')}
                   </Button>
                 </div>
               ) : (
                 <>
               <div className="space-y-1.5">
-                <Label htmlFor="cardId" className="text-base">Broj vaše kartice</Label>
+                <Label htmlFor="cardId" className="text-base">{tx('Broj vaše kartice')}</Label>
                 <Input
                   id="cardId"
                   value={cardId}
                   onChange={(e) => setCardId(e.target.value.toUpperCase())}
-                  placeholder="npr. EMP-1001"
+                  placeholder={tx('npr. EMP-1001')}
                   className="font-mono uppercase h-12 text-lg"
                   autoCapitalize="characters"
                   required
                 />
                 <Button type="button" variant="outline" className="w-full h-11" onClick={() => setScanCard((v) => !v)}>
-                  <Camera className="h-4 w-4 mr-2" />{scanCard ? 'Zatvori kameru' : 'Skeniraj karticu kamerom'}
+                  <Camera className="h-4 w-4 mr-2" />{scanCard ? tx('Zatvori kameru') : tx('Skeniraj karticu kamerom')}
                 </Button>
                 {scanCard && (
                   <QrScanner onScan={(raw) => {
@@ -673,21 +677,21 @@ export function WorkerView({
                     setScanCard(false)
                   }} />
                 )}
-                <p className="text-xs text-muted-foreground">Upisujete samo ovaj put. Aplikacija zapamti karticu na ovom uređaju.</p>
+                <p className="text-xs text-muted-foreground">{tx('Upisujete samo ovaj put. Aplikacija zapamti karticu na ovom uređaju.')}</p>
               </div>
               <div className="space-y-1.5">
-                <Label htmlFor="empName" className="text-base">Ime i prezime</Label>
+                <Label htmlFor="empName" className="text-base">{tx('Ime i prezime')}</Label>
                 <Input
                   id="empName"
                   value={employeeName}
                   onChange={(e) => setEmployeeName(e.target.value)}
-                  placeholder={lookup === 'loading' ? 'Učitavam…' : 'npr. Vukan Vojvodić'}
+                  placeholder={lookup === 'loading' ? tx('Učitavam…') : tx('npr. Vukan Vojvodić')}
                   readOnly={lookup === 'found'}
                   className={lookup === 'found' ? 'bg-green-50 border-green-300 font-medium' : undefined}
                   required
                 />
-                {lookup === 'found' && <p className="text-sm text-green-700">Pronađeno. Pritisnite dugme ispod.</p>}
-                {lookup === 'notfound' && <p className="text-sm text-amber-700">Ova kartica nije u evidenciji. Provjerite broj ili upišite ime, pa javite šefu.</p>}
+                {lookup === 'found' && <p className="text-sm text-green-700">{tx('Pronađeno. Pritisnite dugme ispod.')}</p>}
+                {lookup === 'notfound' && <p className="text-sm text-amber-700">{tx('Ova kartica nije u evidenciji. Provjerite broj ili upišite ime, pa javite šefu.')}</p>}
               </div>
                 </>
               )}
@@ -701,12 +705,12 @@ export function WorkerView({
                 size="lg"
                 className="w-full h-16 text-2xl font-extrabold tracking-wide rounded-2xl bg-emerald-600 hover:bg-emerald-700 text-white"
               >
-                {equipment.inspectedToday === false ? 'PRIJAVI KVAR' : 'ZADUŽI'}
+                {equipment.inspectedToday === false ? tx('PRIJAVI KVAR') : tx('ZADUŽI')}
               </Button>
               {/* ADR.OR.C.045 — pritisak na dugme je potvrda sposobnosti za rad */}
               <p className="flex items-start justify-center gap-1.5 text-xs text-muted-foreground text-center px-2">
                 <ShieldCheck className="h-3.5 w-3.5 text-emerald-600 flex-shrink-0 mt-0.5" />
-                <span>Pritiskom na dugme potvrđujem da sam sposoban/na za rad (bez alkohola i psihoaktivnih supstanci).</span>
+                <span>{tx('Pritiskom na dugme potvrđujem da sam sposoban/na za rad (bez alkohola i psihoaktivnih supstanci).')}</span>
               </p>
             </>
           ) : (
@@ -715,7 +719,7 @@ export function WorkerView({
               size="lg"
               className="w-full h-16 text-2xl font-extrabold tracking-wide rounded-2xl bg-amber-500 hover:bg-amber-600 text-white"
             >
-              VRATI
+              {tx('VRATI')}
             </Button>
           )}
         </form>
@@ -730,9 +734,9 @@ export function WorkerView({
             <>
               {faultOnly && (
                 <div role="alert" className="rounded-lg border-2 border-red-500 bg-red-50 p-3 text-sm text-red-900">
-                  <strong>Sredstvo nije pregledano danas.</strong> Pozovite šefa, ili prijavite kvar ispod ako ste ga uočili.
+                  <strong>{tx('Sredstvo nije pregledano danas.')}</strong>{tx(' Pozovite šefa, ili prijavite kvar ispod ako ste ga uočili.')}
                   <Button type="button" variant="outline" size="sm" className="mt-2 h-10 w-full border-red-400 bg-white" disabled={rechecking} onClick={() => recheckInspection(true)}>
-                    {rechecking ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : null}Pregled je urađen — provjeri ponovo
+                    {rechecking ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : null}{tx('Pregled je urađen — provjeri ponovo')}
                   </Button>
                 </div>
               )}
@@ -742,7 +746,7 @@ export function WorkerView({
                   <CardHeader>
                     <CardTitle className="text-base flex items-center gap-2">
                       <ClipboardList className="h-4 w-4" />
-                      Checklista prije zaduživanja
+                      {tx('Checklista prije zaduživanja')}
                     </CardTitle>
                   </CardHeader>
                   <CardContent className="space-y-3">
@@ -754,7 +758,7 @@ export function WorkerView({
                       onClick={markAllOk}
                     >
                       <CheckCircle2 className="h-5 w-5 mr-2 shrink-0" />
-                      Sve stavke su ispravne
+                      {tx('Sve stavke su ispravne')}
                     </Button>
 
                     <div className="divide-y rounded-lg border">
@@ -762,7 +766,7 @@ export function WorkerView({
                         const a = answers[item.id]
                         return (
                           <div key={item.id} className={`p-3 space-y-2 ${a === false ? 'bg-red-50' : ''}`}>
-                            <div className="text-sm leading-snug">{item.label}</div>
+                            <div className="text-sm leading-snug">{tx(item.label)}</div>
                             <div className="grid grid-cols-2 gap-2">
                               <Button
                                 type="button"
@@ -778,7 +782,7 @@ export function WorkerView({
                                 className={`h-11 ${a === false ? 'bg-red-600 hover:bg-red-700 text-white' : 'border-red-300 text-red-700 hover:bg-red-50'}`}
                                 onClick={() => answerItem(item.id, false)}
                               >
-                                <XCircle className="h-4 w-4 mr-1.5" />Kvar
+                                <XCircle className="h-4 w-4 mr-1.5" />{tx('Kvar')}
                               </Button>
                             </div>
                           </div>
@@ -786,7 +790,7 @@ export function WorkerView({
                       })}
                     </div>
                     {unanswered.length > 0 && !quickFault && (
-                      <p className="text-xs text-muted-foreground">Preostalo stavki: {unanswered.length}</p>
+                      <p className="text-xs text-muted-foreground">{tx('Preostalo stavki: {n}', { n: unanswered.length })}</p>
                     )}
 
                     <Button
@@ -796,7 +800,7 @@ export function WorkerView({
                       onClick={chooseQuickFault}
                     >
                       <AlertTriangle className="h-5 w-5 mr-2 shrink-0" />
-                      Uočio sam kvar koji nije na listi — prijavi odmah
+                      {tx('Uočio sam kvar koji nije na listi — prijavi odmah')}
                     </Button>
                   </CardContent>
                 </Card>
@@ -805,7 +809,7 @@ export function WorkerView({
               {effectiveMode === 'fault' && (
                 <Card>
                   <CardHeader>
-                    <CardTitle className="text-base">Novi kvar</CardTitle>
+                    <CardTitle className="text-base">{tx('Novi kvar')}</CardTitle>
                   </CardHeader>
                   <CardContent className="space-y-3">
                     <RadioGroup
@@ -814,9 +818,9 @@ export function WorkerView({
                       className="grid grid-cols-1 gap-2"
                     >
                       {[
-                        { v: 'MINOR_DAMAGE', l: faultOnly ? 'Manji kvar' : 'Manji kvar — mogu koristiti sredstvo', cls: 'border-amber-500 bg-amber-50' },
-                        { v: 'MAJOR_DAMAGE', l: 'Veći kvar — sredstvo nije za upotrebu', cls: 'border-orange-500 bg-orange-50' },
-                        { v: 'OUT_OF_SERVICE', l: 'Kritičan kvar — sredstvo nije za upotrebu', cls: 'border-red-500 bg-red-50' },
+                        { v: 'MINOR_DAMAGE', l: faultOnly ? tx('Manji kvar') : tx('Manji kvar — mogu koristiti sredstvo'), cls: 'border-amber-500 bg-amber-50' },
+                        { v: 'MAJOR_DAMAGE', l: tx('Veći kvar — sredstvo nije za upotrebu'), cls: 'border-orange-500 bg-orange-50' },
+                        { v: 'OUT_OF_SERVICE', l: tx('Kritičan kvar — sredstvo nije za upotrebu'), cls: 'border-red-500 bg-red-50' },
                       ].map((o) => (
                         <label key={o.v} className={`flex items-center gap-2 p-3 rounded-lg border-2 cursor-pointer transition ${inspectionResult === o.v ? o.cls : 'border-border'}`}>
                           <RadioGroupItem value={o.v} />
@@ -837,10 +841,10 @@ export function WorkerView({
                       <p className="text-xs text-destructive flex items-start gap-1.5">
                         <AlertTriangle className="h-3.5 w-3.5 flex-shrink-0 mt-0.5" />
                         {checkoutSeverity !== 'MINOR'
-                          ? 'Sredstvo se NEĆE moći zadužiti. Biće prebačeno u status "Neispravno" i kvar proslijeđen održavanju.'
+                          ? tx('Sredstvo se NEĆE moći zadužiti. Biće prebačeno u status "Neispravno" i kvar proslijeđen održavanju.')
                           : faultOnly
-                            ? 'Kvar se šalje održavanju. Sredstvo se ne može zadužiti dok se ne uradi dnevni pregled.'
-                            : 'Kvar se bilježi i javlja održavanju, a sredstvo možete zadužiti.'}
+                            ? tx('Kvar se šalje održavanju. Sredstvo se ne može zadužiti dok se ne uradi dnevni pregled.')
+                            : tx('Kvar se bilježi i javlja održavanju, a sredstvo možete zadužiti.')}
                       </p>
                     </div>
                   </CardContent>
@@ -849,8 +853,8 @@ export function WorkerView({
 
               {effectiveMode !== 'none' && (
                 <div className="space-y-1.5">
-                  <Label htmlFor="notes-insp">Dodatne napomene (opciono)</Label>
-                  <Textarea id="notes-insp" value={notes} onChange={(e) => setNotes(e.target.value)} placeholder="Opciono: bilješke o stanju..." rows={2} />
+                  <Label htmlFor="notes-insp">{tx('Dodatne napomene (opciono)')}</Label>
+                  <Textarea id="notes-insp" value={notes} onChange={(e) => setNotes(e.target.value)} placeholder={tx('Opciono: bilješke o stanju...')} rows={2} />
                 </div>
               )}
 
@@ -861,7 +865,7 @@ export function WorkerView({
                 disabled={isPending || effectiveMode === 'none'}
               >
                 {isPending ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : <Send className="h-4 w-4 mr-2" />}
-                {faultOnly || (effectiveMode === 'fault' && checkoutSeverity !== 'MINOR') ? 'Prijavi kvar' : effectiveMode === 'fault' ? 'Prijavi kvar i zaduži' : 'Zaduži sredstvo'}
+                {faultOnly || (effectiveMode === 'fault' && checkoutSeverity !== 'MINOR') ? tx('Prijavi kvar') : effectiveMode === 'fault' ? tx('Prijavi kvar i zaduži') : tx('Zaduži sredstvo')}
               </Button>
             </>
           ) : (
@@ -871,28 +875,28 @@ export function WorkerView({
                 <CardHeader>
                   <CardTitle className="text-base flex items-center gap-2">
                     <LogOut className="h-4 w-4" />
-                    Razduživanje
+                    {tx('Razduživanje')}
                   </CardTitle>
                 </CardHeader>
                 <CardContent className="space-y-3">
                   <div className="bg-muted/30 p-3 rounded-lg text-sm">
-                    <p>Potvrđujete da razdužujete ovo sredstvo i da ste ga vratili u istom stanju (ili prijavljujete novi kvar).</p>
+                    <p>{tx('Potvrđujete da razdužujete ovo sredstvo i da ste ga vratili u istom stanju (ili prijavljujete novi kvar).')}</p>
                   </div>
 
                   {equipment.meter && (equipment.meter.trackKm || equipment.meter.trackHours) && (
                     <div className="rounded-lg border bg-muted/20 p-2.5">
-                      <Label className="text-sm font-medium">Stanje brojila (nije obavezno)</Label>
-                      <p className="mb-2 text-xs text-muted-foreground">Služi za servisni plan. Upišite ono što pokazuje brojač sada.</p>
+                      <Label className="text-sm font-medium">{tx('Stanje brojila (nije obavezno)')}</Label>
+                      <p className="mb-2 text-xs text-muted-foreground">{tx('Služi za servisni plan. Upišite ono što pokazuje brojač sada.')}</p>
                       <div className="grid grid-cols-2 gap-2">
                         {equipment.meter.trackKm && (
                           <div className="space-y-1">
-                            <Label htmlFor="meter-km" className="text-xs">Kilometri (km)</Label>
+                            <Label htmlFor="meter-km" className="text-xs">{tx('Kilometri (km)')}</Label>
                             <Input id="meter-km" inputMode="decimal" className="h-12 text-base" value={meterKm} onChange={(e) => setMeterKm(e.target.value)} placeholder={String(Math.round(equipment.meter.km))} />
                           </div>
                         )}
                         {equipment.meter.trackHours && (
                           <div className="space-y-1">
-                            <Label htmlFor="meter-h" className="text-xs">Radni sati (h)</Label>
+                            <Label htmlFor="meter-h" className="text-xs">{tx('Radni sati (h)')}</Label>
                             <Input id="meter-h" inputMode="decimal" className="h-12 text-base" value={meterHours} onChange={(e) => setMeterHours(e.target.value)} placeholder={String(Math.round(equipment.meter.hours))} />
                           </div>
                         )}
@@ -908,12 +912,12 @@ export function WorkerView({
                     disabled={isPending}
                   >
                     {isPending ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : <CheckCircle2 className="h-4 w-4 mr-2" />}
-                    Sve OK — brzo razduživanje
+                    {tx('Sve OK — brzo razduživanje')}
                   </Button>
                   <Separator />
 
                   <div className="space-y-1.5">
-                    <Label>Jeste li primijetili novi kvar?</Label>
+                    <Label>{tx('Jeste li primijetili novi kvar?')}</Label>
                     <RadioGroup
                       value={reportDamageIn ? 'yes' : 'no'}
                       onValueChange={(v) => {
@@ -924,11 +928,11 @@ export function WorkerView({
                     >
                       <label className={`flex items-center gap-2 p-3 rounded-lg border-2 cursor-pointer ${!reportDamageIn ? 'border-emerald-500 bg-emerald-50' : 'border-border'}`}>
                         <RadioGroupItem value="no" />
-                        <span className="text-sm font-medium">Ne, sve OK</span>
+                        <span className="text-sm font-medium">{tx('Ne, sve OK')}</span>
                       </label>
                       <label className={`flex items-center gap-2 p-3 rounded-lg border-2 cursor-pointer ${reportDamageIn ? 'border-red-500 bg-red-50' : 'border-border'}`}>
                         <RadioGroupItem value="yes" />
-                        <span className="text-sm font-medium">Da, prijavljujem</span>
+                        <span className="text-sm font-medium">{tx('Da, prijavljujem')}</span>
                       </label>
                     </RadioGroup>
 
@@ -948,9 +952,9 @@ export function WorkerView({
                           className="grid grid-cols-3 gap-2"
                         >
                           {[
-                            { v: 'MINOR', l: 'Manje' },
-                            { v: 'MAJOR', l: 'Veće' },
-                            { v: 'CRITICAL', l: 'Kritično' },
+                            { v: 'MINOR', l: tx('Manje') },
+                            { v: 'MAJOR', l: tx('Veće') },
+                            { v: 'CRITICAL', l: tx('Kritično') },
                           ].map((s) => (
                             <label
                               key={s.v}
@@ -966,12 +970,12 @@ export function WorkerView({
                   </div>
 
                   <div className="space-y-1.5">
-                    <Label htmlFor="notes-in">Napomene (opciono)</Label>
+                    <Label htmlFor="notes-in">{tx('Napomene (opciono)')}</Label>
                     <Textarea
                       id="notes-in"
                       value={notes}
                       onChange={(e) => setNotes(e.target.value)}
-                      placeholder="Opciono..."
+                      placeholder={tx('Opciono...')}
                       rows={2}
                     />
                   </div>
@@ -980,7 +984,7 @@ export function WorkerView({
 
               <Button type="submit" size="lg" className="w-full" disabled={isPending}>
                 {isPending ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : <LogOut className="h-4 w-4 mr-2" />}
-                Razduži sredstvo
+                {tx('Razduži sredstvo')}
               </Button>
             </>
           )}
@@ -995,18 +999,18 @@ export function WorkerView({
               <CheckCircle2 className="h-9 w-9 text-emerald-600" />
             </div>
             <h2 className="text-xl font-bold text-emerald-900">
-              {actionType === 'CHECK_OUT' ? 'Uspješno zaduženo!' : 'Uspješno razduženo!'}
+              {actionType === 'CHECK_OUT' ? tx('Uspješno zaduženo!') : tx('Uspješno razduženo!')}
             </h2>
             <p className="text-sm text-emerald-700">
               {actionType === 'CHECK_OUT'
-                ? 'Preuzeli ste odgovornost za sredstvo tokom smjene.'
-                : 'Sredstvo je vraćeno u dostupne.'}
+                ? tx('Preuzeli ste odgovornost za sredstvo tokom smjene.')
+                : tx('Sredstvo je vraćeno u dostupne.')}
             </p>
             <div className="bg-white/60 rounded-lg p-3 text-left text-sm space-y-1 max-w-xs mx-auto">
               <div className="font-mono font-semibold">{equipment.code}</div>
               <div className="text-muted-foreground">{equipment.name}</div>
               <div className="text-xs text-muted-foreground mt-1">
-                {new Date().toLocaleString('hr-HR')}
+                {new Date().toLocaleString(lang === 'en' ? 'en-GB' : 'hr-HR')}
               </div>
             </div>
             <div className="flex flex-col gap-2 items-center mt-4">
@@ -1018,11 +1022,11 @@ export function WorkerView({
                   className="inline-flex items-center gap-1.5 px-3 py-2 rounded-lg bg-white border border-emerald-300 text-emerald-700 hover:bg-emerald-50 transition text-sm font-medium"
                 >
                   <FileText className="h-4 w-4" />
-                  Preuzmi PDF čeklistu
+                  {tx('Preuzmi PDF čeklistu')}
                 </a>
               )}
               <Button onClick={reset}>
-                Skeniraj sljedeće
+                {tx('Skeniraj sljedeće')}
               </Button>
             </div>
           </CardContent>
@@ -1037,12 +1041,12 @@ export function WorkerView({
               <XCircle className="h-9 w-9 text-red-600" />
             </div>
             <h2 className="text-xl font-bold text-red-900">
-              Ne možete uzeti ovo sredstvo
+              {tx('Ne možete uzeti ovo sredstvo')}
             </h2>
             <p className="text-sm text-red-700 max-w-md mx-auto">
               {blockedMsg ?? (damageDescription.trim()
-                ? 'Kvar je prijavljen. Sredstvo je zaustavljeno i ne može se uzeti. Radionica je obaviještena. Uzmite drugo sredstvo.'
-                : 'Ovo sredstvo je pokvareno ili je u radionici. Ne možete ga uzeti. Uzmite drugo sredstvo ili pozovite šefa.')}
+                ? tx('Kvar je prijavljen. Sredstvo je zaustavljeno i ne može se uzeti. Radionica je obaviještena. Uzmite drugo sredstvo.')
+                : tx('Ovo sredstvo je pokvareno ili je u radionici. Ne možete ga uzeti. Uzmite drugo sredstvo ili pozovite šefa.'))}
             </p>
             <div className="bg-white/60 rounded-lg p-3 text-left text-sm space-y-1 max-w-md mx-auto border border-red-200">
               <div className="flex items-center gap-2">
@@ -1051,20 +1055,20 @@ export function WorkerView({
               </div>
               {damageDescription.trim() ? (
                 <div className="mt-2 pt-2 border-t border-red-200 space-y-1">
-                  <div className="text-xs font-medium text-red-900 uppercase">Prijavljeni kvar:</div>
+                  <div className="text-xs font-medium text-red-900 uppercase">{tx('Prijavljeni kvar:')}</div>
                   <div className="text-sm text-red-800">{damageDescription.trim()}</div>
                   <div className="text-xs text-muted-foreground mt-1">
-                    Težina: <strong className="text-red-900">{damageSeverity === 'MINOR' ? 'Manje' : damageSeverity === 'MAJOR' ? 'Veće' : 'Kritično'}</strong>
+                    {tx('Težina: ')}<strong className="text-red-900">{damageSeverity === 'MINOR' ? tx('Manje') : damageSeverity === 'MAJOR' ? tx('Veće') : tx('Kritično')}</strong>
                   </div>
                 </div>
               ) : (
                 <div className="text-xs text-muted-foreground mt-1">
-                  Trenutni status: <strong className="text-red-900">{STATUS_LABELS[equipment.status as EquipmentStatus] ?? equipment.status}</strong>
+                  {tx('Trenutni status: ')}<strong className="text-red-900">{tx(STATUS_LABELS[equipment.status as EquipmentStatus] ?? equipment.status)}</strong>
                 </div>
               )}
               {equipment.notes && !damageDescription.trim() && (
                 <div className="text-xs text-red-700 mt-1 pt-1 border-t border-red-200">
-                  <strong>Razlog:</strong> {equipment.notes}
+                  <strong>{tx('Razlog:')}</strong> {equipment.notes}
                 </div>
               )}
             </div>
@@ -1077,11 +1081,11 @@ export function WorkerView({
                   className="inline-flex items-center gap-1.5 px-3 py-2 rounded-lg bg-white border border-red-300 text-red-700 hover:bg-red-50 transition text-sm font-medium"
                 >
                   <FileText className="h-4 w-4" />
-                  Preuzmi PDF čeklistu
+                  {tx('Preuzmi PDF čeklistu')}
                 </a>
               )}
               <Button onClick={reset} variant="outline">
-                Skeniraj drugo sredstvo
+                {tx('Skeniraj drugo sredstvo')}
               </Button>
             </div>
           </CardContent>
@@ -1100,6 +1104,7 @@ function EquipmentCard({
   actionType: 'CHECK_OUT' | 'CHECK_IN'
   compact?: boolean
 }) {
+  const tx = useTx()
   return (
     <Card className={actionType === 'CHECK_OUT' ? 'border-primary/30' : 'border-amber-300'}>
       <CardContent className={compact ? 'p-3' : 'p-4'}>
@@ -1110,7 +1115,7 @@ function EquipmentCard({
                 {equipment.code}
               </Badge>
               <Badge variant="secondary" className="text-xs">
-                {EQUIPMENT_TYPE_LABELS[equipment.type as keyof typeof EQUIPMENT_TYPE_LABELS] ?? equipment.type}
+                {tx(EQUIPMENT_TYPE_LABELS[equipment.type as keyof typeof EQUIPMENT_TYPE_LABELS] ?? equipment.type)}
               </Badge>
             </div>
             <h3 className="font-semibold text-base leading-tight">{equipment.name}</h3>
@@ -1126,16 +1131,16 @@ function EquipmentCard({
           </div>
           <div className="flex flex-col items-end gap-1">
             <Badge className={`text-xs ${STATUS_COLORS[equipment.status as EquipmentStatus] ?? ''}`}>
-              {STATUS_LABELS[equipment.status as EquipmentStatus] ?? equipment.status}
+              {tx(STATUS_LABELS[equipment.status as EquipmentStatus] ?? equipment.status)}
             </Badge>
             <div className="text-[10px] text-muted-foreground uppercase">
-              {actionType === 'CHECK_OUT' ? 'Zaduživanje' : 'Razduživanje'}
+              {actionType === 'CHECK_OUT' ? tx('Zaduživanje') : tx('Razduživanje')}
             </div>
           </div>
         </div>
         {toRestrictions(equipment.activeRestrictions).length > 0 && (
           <div className="mt-3 rounded-lg border-2 border-amber-500 bg-amber-50 p-2.5">
-            <div className="text-xs font-bold text-amber-900 mb-1">ISPRAVNO, ALI SA OGRANIČENJEM:</div>
+            <div className="text-xs font-bold text-amber-900 mb-1">{tx('ISPRAVNO, ALI SA OGRANIČENJEM:')}</div>
             <RestrictionBadges restrictions={equipment.activeRestrictions} showLabel />
           </div>
         )}
