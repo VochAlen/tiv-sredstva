@@ -14,6 +14,7 @@ import {
   type Audience, type AttemptKind, type CompetenceSettings, type GivenAnswer, type PoolQuestion, type PublicQuestion, type QuestionInput,
 } from '@/lib/competence-logic'
 import { localDate, normCard, signTest, verifyTest } from '@/lib/competence-server'
+import { queryResults, loadAttemptDetail, type ResultFilters, type ResultPage, type AttemptDetail } from '@/lib/competence-results'
 
 const NOT_AVAILABLE = 'Provjera osposobljenosti radi samo uz Supabase bazu (migracija 041).'
 const unavailable = () => isDemoMode() || !hasServiceClient()
@@ -179,10 +180,19 @@ export async function submitCompetenceTest(params: { token: string; answers: Giv
     const { data: prev } = await sb.from('competence_status').select('*').eq('employee_card_id', claims.card).maybeSingle()
     const next = applyAttempt(prev ? { status: prev.status, supervisedRequired: prev.supervised_required, supervisedDone: prev.supervised_done } : null, grade.passed, new Date(), { intervalMonths: settings.intervalMonths })
 
-    const { error: insErr } = await sb.from('competence_attempts').insert({
+    // Snimak pitanja u trenutku testa (revizijski trag): tekst pitanja i ponuđenih odgovora ostaje tačan i poslije izmjene banke
+    const poolById = new Map(pool.map((q) => [q.id, q]))
+    const questions = grade.answers.map((a) => {
+      const q = poolById.get(a.id)
+      return { id: a.id, topic: q?.topic ?? '', question: q?.question ?? '', options: q?.options ?? [], correctIndex: a.correct, chosen: a.chosen, critical: a.critical }
+    })
+    const base = {
       employee_card_id: claims.card, employee_name: name, audience: claims.audience, kind: claims.kind,
       score_pct: grade.scorePct, critical_failed: grade.criticalFailed, passed: grade.passed, answers: grade.answers, taken_by: claims.by,
-    })
+    }
+    let { error: insErr } = await sb.from('competence_attempts').insert({ ...base, questions, pass_pct: settings.passPct })
+    // Baza bez migracije 044: snimi bez snimka pitanja, test radniku ne smije pasti zbog toga
+    if (insErr && /column|schema cache/i.test(insErr.message)) ({ error: insErr } = await sb.from('competence_attempts').insert(base))
     if (insErr) { console.error('competence attempt insert failed:', insErr.message); return { ok: false, error: 'Rezultat nije snimljen. Pokušajte ponovo.' } }
 
     const patch: Record<string, unknown> = {
@@ -438,4 +448,23 @@ export async function setCompetenceQuestionActive(params: { id: string; active: 
   } catch (e) {
     return { ok: false, error: e instanceof Error ? e.message : 'Greška' }
   }
+}
+
+
+// ======================= šef / inženjer / admin: pregled rezultata testova =======================
+
+/** Tabela svih pokušaja sa pretragom, filterima, sortiranjem i straničenjem. */
+export async function listCompetenceResults(filters: ResultFilters): Promise<ResultPage> {
+  await requireStaff()
+  if (unavailable()) throw new Error(NOT_AVAILABLE)
+  return queryResults(filters ?? {})
+}
+
+/** Detalji jednog pokušaja: sva pitanja, odgovor radnika, tačan odgovor, nadzirane smjene. */
+export async function getCompetenceResultDetail(id: string): Promise<AttemptDetail> {
+  await requireStaff()
+  if (unavailable()) throw new Error(NOT_AVAILABLE)
+  const d = await loadAttemptDetail(id)
+  if (!d) throw new Error('Pokušaj nije pronađen')
+  return d
 }

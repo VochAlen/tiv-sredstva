@@ -143,6 +143,7 @@ import { IncidentsView } from './incidents-view'
 import { DriverAuthView } from './driver-auth-view'
 import { CompetenceView } from './competence-view'
 import { CompetenceAdminView } from './competence-admin-view'
+import { CompetenceResultsView } from './competence-results-view'
 import { AiAdminView } from './ai-admin-view'
 import { FuelParkingView } from './fuel-parking-view'
 import { DeicingView } from './deicing-view'
@@ -194,6 +195,7 @@ const NAV_GROUPS: NavGroup[] = [
       { value: 'qr', label: 'QR kodovi', icon: Printer, minRole: 'engineer' },
       { value: 'driverauth', label: 'Ovlaštenja vozača', icon: Car, minRole: 'engineer' },
       { value: 'competence', label: 'Osposobljenost', icon: GraduationCap, minRole: 'engineer' },
+      { value: 'competence-results', label: 'Rezultati testova', icon: ClipboardList, minRole: 'engineer' },
       { value: 'crs', label: 'CRS (potvrda o puštanju)', icon: Award, minRole: 'engineer' },
       { value: 'scheduling', label: 'Servis i dijelovi', icon: Calendar, minRole: 'engineer' },
     ],
@@ -799,6 +801,10 @@ export function DashboardView({ currentUser }: { currentUser: AppUser }) {
 
         <TabsContent value="ai-admin" className="space-y-4">
           {currentUser.role === 'admin' && <AiAdminView />}
+        </TabsContent>
+
+        <TabsContent value="competence-results" className="space-y-4">
+          <CompetenceResultsView />
         </TabsContent>
 
         <TabsContent value="competence-admin" className="space-y-4">
