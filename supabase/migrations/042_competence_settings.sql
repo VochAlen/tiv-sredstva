@@ -1,5 +1,5 @@
 -- 042: Postavke provjere znanja koje bira ADMIN + datum sljedećeg testa (nadogradnja migracije 041)
--- Pokrenuti ručno u Supabase SQL editoru (nakon 041). Bezbjedno za ponovno pokretanje.
+-- Pokrenuti ručno u Supabase SQL editoru (nakon 041). Sigurno za ponovno pokretanje.
 --
 --  * competence_settings: za svaku ulogu (vozač / šef-radionica / admin) admin bira
 --      - rok ponavljanja: admin upisuje broj mjeseci (1 do 120), jer se propis (CAA/EASA) može promijeniti; sada je najviše 24

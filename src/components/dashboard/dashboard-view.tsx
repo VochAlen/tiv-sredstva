@@ -49,7 +49,7 @@ import {
   AlertTriangle,
   Bird,
   ListChecks,
-  Bell, FileStack, GraduationCap, Settings2 } from 'lucide-react'
+  Bell, FileStack, GraduationCap, Settings2, Sparkles } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
@@ -143,6 +143,7 @@ import { IncidentsView } from './incidents-view'
 import { DriverAuthView } from './driver-auth-view'
 import { CompetenceView } from './competence-view'
 import { CompetenceAdminView } from './competence-admin-view'
+import { AiAdminView } from './ai-admin-view'
 import { FuelParkingView } from './fuel-parking-view'
 import { DeicingView } from './deicing-view'
 import { AerodromeInspectionView } from './aerodrome-inspection-view'
@@ -193,7 +194,6 @@ const NAV_GROUPS: NavGroup[] = [
       { value: 'qr', label: 'QR kodovi', icon: Printer, minRole: 'engineer' },
       { value: 'driverauth', label: 'Ovlaštenja vozača', icon: Car, minRole: 'engineer' },
       { value: 'competence', label: 'Osposobljenost', icon: GraduationCap, minRole: 'engineer' },
-      { value: 'competence-admin', label: 'Postavke provjere znanja', icon: Settings2, minRole: 'admin' },
       { value: 'crs', label: 'CRS (potvrda o puštanju)', icon: Award, minRole: 'engineer' },
       { value: 'scheduling', label: 'Servis i dijelovi', icon: Calendar, minRole: 'engineer' },
     ],
@@ -211,6 +211,8 @@ const NAV_GROUPS: NavGroup[] = [
       { value: 'users-admin', label: 'Korisnici i prava', icon: Users, minRole: 'admin' },
       { value: 'skills-admin', label: 'Kvalifikacije radionice', icon: Wrench, minRole: 'admin' },
       { value: 'notifications', label: 'Obavještenja', icon: Bell, minRole: 'admin' },
+      { value: 'competence-admin', label: 'Postavke provjere znanja', icon: Settings2, minRole: 'admin' },
+      { value: 'ai-admin', label: 'AI postavke', icon: Sparkles, minRole: 'admin' },
     ],
   },
   {
@@ -793,6 +795,10 @@ export function DashboardView({ currentUser }: { currentUser: AppUser }) {
 
         <TabsContent value="competence" className="space-y-4">
           <CompetenceView isAdmin={currentUser.role === 'admin'} />
+        </TabsContent>
+
+        <TabsContent value="ai-admin" className="space-y-4">
+          {currentUser.role === 'admin' && <AiAdminView />}
         </TabsContent>
 
         <TabsContent value="competence-admin" className="space-y-4">

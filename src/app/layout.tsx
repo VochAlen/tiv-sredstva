@@ -31,6 +31,10 @@ export const metadata: Metadata = {
   keywords: ["GSE", "airport", "ground support equipment", "QR", "fleet management", "aviation"],
   authors: [{ name: "GSE Control" }],
   manifest: "/manifest.json",
+  icons: {
+    icon: [{ url: "/favicon-32.png", sizes: "32x32", type: "image/png" }, { url: "/icon-192.png", sizes: "192x192", type: "image/png" }],
+    apple: [{ url: "/apple-touch-icon.png", sizes: "180x180", type: "image/png" }],
+  },
   appleWebApp: {
     capable: true,
     statusBarStyle: "default",
@@ -39,7 +43,7 @@ export const metadata: Metadata = {
 };
 
 export const viewport: Viewport = {
-  themeColor: "#0f172a",
+  themeColor: "#0B0E11",
   width: "device-width",
   initialScale: 1,
   maximumScale: 1,

@@ -101,7 +101,7 @@ export function CompetenceTest() {
           <section className="rounded-2xl bg-white border p-5 space-y-4">
             <div>
               <h1 className="text-lg font-bold">Unesite ID karticu</h1>
-              <p className="text-sm text-slate-600 mt-1">Kratka provjera znanja o radu u aplikaciji i bezbjednosti. Ne traje duže od nekoliko minuta. Služi za obuku, a ne za kažnjavanje.</p>
+              <p className="text-sm text-slate-600 mt-1">Kratka provjera znanja o radu u aplikaciji i sigurnosti. Ne traje duže od nekoliko minuta. Služi za obuku, a ne za kažnjavanje.</p>
             </div>
             <Input value={cardId} onChange={(e) => setCardId(e.target.value)} placeholder="ID kartica" className="h-14 text-lg" autoCapitalize="characters" autoComplete="off"
               onKeyDown={(e) => { if (e.key === 'Enter' && cardId.trim().length >= 3) lookup() }} />
@@ -167,7 +167,7 @@ export function CompetenceTest() {
               {result.passed ? <CheckCircle2 className="h-10 w-10 mx-auto" /> : <ShieldAlert className="h-10 w-10 mx-auto" />}
               <p className="text-3xl font-bold mt-2">{result.scorePct}%</p>
               <p className="font-semibold">{result.passed ? 'Položili ste' : 'Niste položili'}</p>
-              {result.criticalFailed && <p className="text-sm mt-1">Pogrešan odgovor na bezbjednosno pitanje znači pad bez obzira na ukupan rezultat.</p>}
+              {result.criticalFailed && <p className="text-sm mt-1">Pogrešan odgovor na sigurnosno pitanje znači pad bez obzira na ukupan rezultat.</p>}
               <p className="text-sm mt-2">{result.note}</p>
               {result.passed && result.state === 'VALID' && result.validUntil && <p className="text-sm">Važi do {fmt(result.validUntil)}.</p>}
             </div>
@@ -186,7 +186,7 @@ export function CompetenceTest() {
                 <p className="font-semibold text-sm">Pitanja na kojima ste pogriješili</p>
                 {result.review.map((r, i) => (
                   <div key={i} className="rounded-lg border p-3 text-sm space-y-1">
-                    <p className="font-medium">{r.critical && <span className="text-red-700">[bezbjednosno] </span>}{r.question}</p>
+                    <p className="font-medium">{r.critical && <span className="text-red-700">[sigurnosno] </span>}{r.question}</p>
                     <p className="text-red-800 flex gap-1"><XCircle className="h-4 w-4 mt-0.5 flex-shrink-0" />{r.yourAnswer}</p>
                     <p className="text-emerald-800 flex gap-1"><CheckCircle2 className="h-4 w-4 mt-0.5 flex-shrink-0" />{r.correctAnswer}</p>
                     {r.explanation && <p className="text-slate-600">{r.explanation}</p>}

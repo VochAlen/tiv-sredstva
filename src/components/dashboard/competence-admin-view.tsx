@@ -5,7 +5,7 @@
 
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { toast } from 'sonner'
-import { Settings2, Plus, Trash2, Pencil, Loader2, ShieldAlert } from 'lucide-react'
+import { Settings2, Plus, Trash2, Pencil, Loader2, ShieldAlert, Sparkles } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Textarea } from '@/components/ui/textarea'
@@ -14,6 +14,8 @@ import {
   updateCompetenceQuestion, deleteCompetenceQuestion, setCompetenceQuestionActive,
   type AudienceSettings, type BankQuestion,
 } from '@/lib/actions-competence'
+import { getAiStatus, suggestQuestions, type AiStatus } from '@/lib/actions-ai'
+import type { QuestionDraft } from '@/lib/ai-logic'
 import { AUDIENCES, AUDIENCE_LABEL, INTERVAL_MAX, INTERVAL_MIN, INTERVAL_PRESETS, REGULATORY_MAX_MONTHS, intervalLabel, PASS_MAX, PASS_MIN, QUESTIONS_MAX, QUESTIONS_MIN, type Audience } from '@/lib/competence-logic'
 
 const selectCls = 'h-11 w-full rounded-md border bg-background px-3 text-sm'
@@ -28,6 +30,14 @@ export function CompetenceAdminView() {
   const [tab, setTab] = useState<Audience>('DRIVER')
   const [draft, setDraft] = useState<Draft | null>(null)
   const [busy, setBusy] = useState(false)
+  // AI prijedlozi pitanja (opciono; vidi stranicu „AI postavke“)
+  const [ai, setAi] = useState<AiStatus | null>(null)
+  const [aiOpen, setAiOpen] = useState(false)
+  const [aiText, setAiText] = useState('')
+  const [aiCount, setAiCount] = useState(5)
+  const [aiBusy, setAiBusy] = useState(false)
+  const [aiDrafts, setAiDrafts] = useState<QuestionDraft[]>([])
+  useEffect(() => { getAiStatus().then(setAi).catch(() => setAi(null)) }, [])
 
   const load = useCallback(async () => {
     try {
@@ -60,6 +70,18 @@ export function CompetenceAdminView() {
     const r = await saveCompetenceSettings({ audience: tab, ...form, applyToExisting: applyAll })
     setBusy(false)
     if (r.ok) { toast.success(applyAll ? `Sačuvano. Datumi pomjereni za ${r.rescheduled ?? 0} radnika.` : 'Sačuvano. Važi za sljedeće testove.'); void load() } else toast.error(r.error ?? 'Greška')
+  }
+
+  const askAi = async () => {
+    setAiBusy(true)
+    const r = await suggestQuestions({ audience: tab, sourceText: aiText, count: aiCount })
+    setAiBusy(false)
+    if (r.ok && r.drafts) { setAiDrafts(r.drafts); toast.success(`AI je predložio ${r.drafts.length} pitanja${r.dropped ? `, ${r.dropped} odbačeno (nevaljana)` : ''}. Pregledajte ih prije dodavanja.`) }
+    else toast.error(r.error ?? 'Greška')
+  }
+  const addDraft = async (d: QuestionDraft, i: number) => {
+    const r = await createCompetenceQuestion({ audience: tab, topic: d.topic, question: d.question, options: d.options, correctIndex: d.correctIndex, critical: d.critical, explanation: d.explanation })
+    if (r.ok) { setAiDrafts((x) => x.filter((_, j) => j !== i)); toast.success('Pitanje dodato u banku'); void load() } else toast.error(r.error ?? 'Greška')
   }
 
   const saveQuestion = async () => {
@@ -133,7 +155,7 @@ export function CompetenceAdminView() {
 
         <ul className="text-xs text-muted-foreground space-y-1 list-disc pl-4">
           <li>Test se radniku pojavi nasumično između 25% i 90% izabranog roka (npr. za 12 mjeseci: između 3. i 11. mjeseca), da svi ne dođu na red istog dana. Krajnji rok je cijeli izabrani period. Rok upisujete sami, pa ga možete promijeniti ako regulator (CAA ili EASA) promijeni propis.</li>
-          <li>Pitanja označena kao „bezbjednosno“ imaju prednost u izboru, a jedan pogrešan odgovor na njih znači pad bez obzira na procenat.</li>
+          <li>Pitanja označena kao „sigurnosno“ imaju prednost u izboru, a jedan pogrešan odgovor na njih znači pad bez obzira na procenat.</li>
           <li>Pri 3 pitanja i prolazu od 80% treba tačnih 3 od 3 (jedna greška = {oneWrongPct}% manje).</li>
         </ul>
 
@@ -154,8 +176,40 @@ export function CompetenceAdminView() {
             <div className="font-semibold">Banka pitanja: {AUDIENCE_LABEL[tab]}</div>
             <div className="text-xs text-muted-foreground">{list.filter((q) => q.active).length} aktivnih od {list.length}. Isključeno pitanje ostaje sačuvano, ali se ne pojavljuje u testu.</div>
           </div>
-          <Button className="h-11" onClick={() => setDraft(emptyDraft(tab))}><Plus className="h-4 w-4 mr-1" />Novo pitanje</Button>
+          <div className="flex gap-2 flex-wrap">
+            {ai?.enabled && <Button variant="outline" className="h-11" onClick={() => setAiOpen((v) => !v)}><Sparkles className="h-4 w-4 mr-1" />Predloži pomoću AI</Button>}
+            <Button className="h-11" onClick={() => setDraft(emptyDraft(tab))}><Plus className="h-4 w-4 mr-1" />Novo pitanje</Button>
+          </div>
         </div>
+
+        {ai?.enabled && aiOpen && (
+          <div className="rounded-xl border-2 border-dashed p-3 space-y-3">
+            <div className="text-sm font-medium flex items-center gap-1.5"><Sparkles className="h-4 w-4" />AI prijedlog pitanja za: {AUDIENCE_LABEL[tab]}</div>
+            <Textarea rows={6} value={aiText} onChange={(e) => setAiText(e.target.value)} maxLength={6000} placeholder="Zalijepite dio procedure ili uputstva. Pitanja će biti napisana samo iz tog teksta." />
+            <div className="flex items-center gap-2 flex-wrap">
+              <label className="text-sm flex items-center gap-2">Broj pitanja
+                <select className="h-11 rounded-md border bg-background px-2 text-sm" value={aiCount} onChange={(e) => setAiCount(Number(e.target.value))}>
+                  {[3, 4, 5, 6, 8, 10].map((n) => <option key={n} value={n}>{n}</option>)}
+                </select>
+              </label>
+              <Button className="h-11" onClick={askAi} disabled={aiBusy || aiText.trim().length < 200}>{aiBusy ? <Loader2 className="h-4 w-4 animate-spin" /> : 'Predloži'}</Button>
+              <span className="text-xs text-muted-foreground">Model: <span className="font-mono">{ai.model}</span>. Tekst se šalje vanjskom AI servisu, bez ličnih podataka. Potrebno bar 200 znakova.</span>
+            </div>
+            {aiDrafts.map((d, i) => (
+              <div key={i} className="rounded-lg border p-3 text-sm bg-muted/30">
+                <div className="text-xs text-muted-foreground">AI prijedlog · {d.topic}{d.critical && <span className="ml-1 text-red-700 font-semibold">· sigurnosno</span>}</div>
+                <div className="font-medium">{d.question}</div>
+                <ul className="mt-1 text-xs space-y-0.5">{d.options.map((o, k) => <li key={k} className={k === d.correctIndex ? 'text-emerald-700 font-medium' : 'text-muted-foreground'}>{k === d.correctIndex ? '✓ ' : '• '}{o}</li>)}</ul>
+                {d.explanation && <div className="text-xs mt-1 text-muted-foreground">{d.explanation}</div>}
+                <div className="flex gap-2 mt-2">
+                  <Button size="sm" className="h-9" onClick={() => addDraft(d, i)}>Dodaj u banku</Button>
+                  <Button size="sm" variant="outline" className="h-9" onClick={() => setAiDrafts((x) => x.filter((_, j) => j !== i))}>Odbaci</Button>
+                </div>
+              </div>
+            ))}
+            {aiDrafts.length > 0 && <p className="text-xs text-amber-800">Provjerite svaki odgovor prema proceduri prije dodavanja. AI može pogriješiti.</p>}
+          </div>
+        )}
 
         {draft && (
           <div className="rounded-xl border-2 border-foreground/20 p-3 space-y-3">
@@ -201,7 +255,7 @@ export function CompetenceAdminView() {
             </label>
             <label className="flex items-start gap-3 text-sm min-h-11">
               <input type="checkbox" className="h-5 w-5 mt-0.5" checked={draft.critical} onChange={(e) => setDraft({ ...draft, critical: e.target.checked })} />
-              <span>Bezbjednosno pitanje: jedan pogrešan odgovor znači pad, i uvijek ima prednost pri izboru.</span>
+              <span>Sigurnosno pitanje: jedan pogrešan odgovor znači pad, i uvijek ima prednost pri izboru.</span>
             </label>
             <div className="flex gap-2">
               <Button className="h-11" onClick={saveQuestion} disabled={busy}>{busy ? <Loader2 className="h-4 w-4 animate-spin" /> : 'Sačuvaj pitanje'}</Button>
@@ -215,7 +269,7 @@ export function CompetenceAdminView() {
             <div key={q.id} className={`rounded-lg border p-3 text-sm ${q.active ? '' : 'opacity-50'}`}>
               <div className="flex items-start justify-between gap-2">
                 <div className="min-w-0">
-                  <div className="text-xs text-muted-foreground">{q.topic}{q.critical && <span className="ml-1 text-red-700 font-semibold">· bezbjednosno</span>}{!q.active && <span className="ml-1">· isključeno</span>}</div>
+                  <div className="text-xs text-muted-foreground">{q.topic}{q.critical && <span className="ml-1 text-red-700 font-semibold">· sigurnosno</span>}{!q.active && <span className="ml-1">· isključeno</span>}</div>
                   <div className="font-medium">{q.question}</div>
                 </div>
                 <div className="flex gap-1 flex-shrink-0">

@@ -124,7 +124,7 @@ export const EN: Record<string, string> = {
   'Putničke stepenice': 'Passenger stairs', 'Putnički bus': 'Passenger bus', 'Ostalo': 'Other',
   'Dostupno': 'Available', 'Zaduženo': 'Checked out', 'Neispravno': 'Out of service', 'Na održavanju': 'In maintenance',
   // Kategorije kvara
-  'Mehanika': 'Mechanical', 'Elektrika': 'Electrical', 'Hidraulika': 'Hydraulics', 'Bezbjednosna oprema': 'Safety equipment', 'Opšte': 'General',
+  'Mehanika': 'Mechanical', 'Elektrika': 'Electrical', 'Hidraulika': 'Hydraulics', 'Bezbjednosna oprema': 'Safety equipment', 'Sigurnosna oprema': 'Safety equipment', 'Opšte': 'General',
   '1. Slikajte kvar': '1. Take a photo of the fault',
   'Slika': 'Photo',
   '2. Šta nije u redu?': '2. What is wrong?',
@@ -272,6 +272,15 @@ export const EN: Record<string, string> = {
   'Rok provjere znanja je istekao': 'Your knowledge check has expired',
   'Rok: {d}': 'Due: {d}',
   'Otvori provjeru znanja': 'Open the knowledge check',
+  'Predloži kategoriju i opis (AI)': 'Suggest category and description (AI)',
+  'AI prijedlog, provjerite prije slanja': 'AI suggestion, check before sending',
+  'Kategorija': 'Category',
+  'Primijeni': 'Apply',
+  'Odbaci': 'Dismiss',
+  'AI nije dostupan': 'AI is not available',
+  'AI je trenutno zauzet, nastavite ručno': 'AI is busy, continue manually',
+  'AI nije dao upotrebljiv prijedlog': 'AI did not give a usable suggestion',
+  'Upišite bar nekoliko riječi o kvaru': 'Write at least a few words about the fault',
 }
 
 export type Tx = (s: string, vars?: Record<string, string | number>) => string

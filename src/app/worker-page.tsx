@@ -3,12 +3,14 @@
 import { useState, useEffect, useRef, Suspense } from 'react'
 import { useSearchParams, useRouter } from 'next/navigation'
 import Image from 'next/image'
+import dynamic from 'next/dynamic'
 import {
   Plane, LayoutDashboard, ExternalLink, MoreVertical, Info, Sparkles,
-  QrCode, ShieldCheck, WifiOff, AlertTriangle, ScanLine, Sun, Moon,
-  Check, Hammer, CalendarCheck, BadgeCheck, FileText, Database,
+  QrCode, ShieldCheck, Smartphone, AlertTriangle, ScanLine, Sun, Moon,
+  Check, Hammer, CalendarCheck, BadgeCheck, FileText, Database, GraduationCap,
 } from 'lucide-react'
 import { WorkerView } from '@/components/worker/worker-view'
+import { InstallApp } from '@/components/pwa/install-app'
 import { LanguageToggle } from '@/components/language-toggle'
 import { useLang } from '@/lib/lang-context'
 import { FEATURE_GROUPS, LANDING_TEXT, type FeatureGroupId } from '@/lib/landing-content'
@@ -21,6 +23,10 @@ import {
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
 import { isDemoMode } from '@/lib/auth-mode'
+import HeroHud from '@/components/site/hero-hud'
+
+// Three.js scena se učitava tek nakon hidratacije (zaseban chunk, bez SSR-a).
+const HeroScene = dynamic(() => import('@/components/site/hero-scene'), { ssr: false })
 
 // =====================================================
 // JAVNA RADNIČKA STRANICA (/) — vizuelni identitet.
@@ -238,43 +244,46 @@ function WorkerPageInner() {
             fill
             priority
             sizes="100vw"
-            className="object-cover"
+            className="object-cover brightness-[0.5]"
           />
-          {/* Vertikalni overlay - čitljivost na telefonu, gdje tekst pada
-              ispod konzolnog panela. Prati light/dark prekidač: tamniji
-              "noćni" smjer u dark temi, zasvijetljeni u light temi - ista
-              fotografija, drugo osvjetljenje. */}
-          <div className="absolute inset-0" style={{ background: c.heroOverlayVertical }} />
-          {/* Horizontalni overlay - čitljivost na desktopu, gdje tekst
-              stoji lijevo pored fotografije. */}
-          <div className="absolute inset-0 hidden lg:block" style={{ background: c.heroOverlayHorizontal }} />
+          {/* Three.js scena (animirani noćni aerodrom). Fotografija iznad ostaje
+              kao rezerva dok se scena ne učita ili ako WebGL nije dostupan. */}
+          <HeroScene />
+          {/* Hero je namjerno uvijek tamni "noćni" prikaz, bez obzira na
+              light/dark prekidač (kao i fotografija prije). Blagi overlay samo
+              da naslov ostane čitljiv. */}
+          <div className="absolute inset-0 pointer-events-none" style={{ background: 'linear-gradient(to bottom, rgba(11,14,17,0.10) 0%, rgba(11,14,17,0.18) 55%, rgba(11,14,17,0.62) 100%)' }} />
+          <div className="absolute inset-0 pointer-events-none hidden lg:block" style={{ background: 'linear-gradient(to right, rgba(11,14,17,0.55) 0%, rgba(11,14,17,0.22) 50%, rgba(11,14,17,0) 100%)' }} />
+          <HeroHud />
         </div>
 
         <div className="relative px-3 sm:px-5">
-          <div className="max-w-6xl mx-auto grid lg:grid-cols-[1.05fr_1fr] gap-8 lg:gap-12 items-start py-8 lg:py-20">
-            <div className="order-2 lg:order-1 lg:pt-4">
+          <div className="max-w-6xl mx-auto grid lg:grid-cols-[1.05fr_1fr] gap-8 lg:gap-12 items-start lg:items-stretch py-8 lg:py-20">
+            <div className="order-2 lg:order-1 lg:pt-4 lg:flex lg:flex-col lg:justify-between">
+              <div>
               <h1
                 className="font-display text-[2rem] sm:text-[2.6rem] lg:text-[3.1rem] font-semibold leading-[1.08] tracking-tight"
-                style={{ color: c.heroText }}
+                style={{ color: DARK.heroText, textShadow: '0 2px 28px rgba(0,0,0,0.65)' }}
               >
                 {t('hero.headlineLine1')}
                 <br />
                 {t('hero.headlineLine2')}
               </h1>
-              <p className="mt-5 text-base sm:text-lg max-w-[34ch]" style={{ color: c.heroTextMuted }}>
+              <p className="mt-5 text-base sm:text-lg max-w-[34ch]" style={{ color: DARK.heroTextMuted, textShadow: '0 1px 16px rgba(0,0,0,0.7)' }}>
                 {t('hero.subhead')}
               </p>
+              </div>
 
               <div className="mt-6 flex flex-wrap gap-2">
                 {[
                   { icon: QrCode, label: t('hero.tag1') },
                   { icon: ShieldCheck, label: t('hero.tag2') },
-                  { icon: WifiOff, label: t('hero.tag3') },
+                  { icon: Smartphone, label: t('hero.tag3') },
                 ].map((tag, i) => (
                   <div
                     key={i}
                     className="flex items-center gap-1.5 px-2.5 py-1.5 rounded border text-xs font-medium"
-                    style={{ borderColor: 'rgba(242,165,22,0.45)', backgroundColor: c.heroTagBg, color: '#F2A516' }}
+                    style={{ borderColor: 'rgba(242,165,22,0.45)', backgroundColor: DARK.heroTagBg, color: '#F2A516' }}
                   >
                     <tag.icon className="h-3.5 w-3.5" />
                     {tag.label}
@@ -290,6 +299,7 @@ function WorkerPageInner() {
                 <div className="h-[3px]" style={{ backgroundColor: '#F2A516' }} />
                 <div className="px-3 py-4 sm:px-5 sm:py-5">
                   <WorkerView initialScan={initialScan} />
+                  <InstallApp />
                 </div>
               </div>
             </div>
@@ -300,7 +310,7 @@ function WorkerPageInner() {
       {/* TRAKA POUZDANJA */}
       <section style={{ backgroundColor: c.sectionBg, borderTop: `1px solid ${c.sectionBorder}`, borderBottom: `1px solid ${c.sectionBorder}` }}>
         <div className="max-w-6xl mx-auto px-3 sm:px-5 py-4 flex flex-wrap items-center justify-center gap-x-8 gap-y-2 text-xs sm:text-sm font-medium" style={{ color: c.textMuted }}>
-          {['EASA Reg. (EU) 139/2014', 'IATA AHM 340', lang === 'en' ? 'Works offline' : 'Radi i offline', lang === 'en' ? 'Phone, tablet, desktop' : 'Telefon, tablet, računar', 'HR / EN'].map((x) => (
+          {['EASA Reg. (EU) 139/2014', 'IATA AHM 340', lang === 'en' ? 'Installs as an app' : 'Instalira se kao aplikacija', lang === 'en' ? 'Phone, tablet, desktop' : 'Telefon, tablet, računar', 'HR / EN'].map((x) => (
             <span key={x} className="inline-flex items-center gap-2"><span className="h-1.5 w-1.5 rounded-full" style={{ backgroundColor: '#F2A516' }} />{x}</span>
           ))}
         </div>
@@ -329,8 +339,9 @@ function WorkerPageInner() {
           <div className="mt-8 grid md:grid-cols-2 gap-4">
             {FEATURE_GROUPS.map((g, gi) => {
               const Icon = GROUP_ICONS[g.id]
+              const wide = gi === 0 || (gi === FEATURE_GROUPS.length - 1 && gi % 2 === 1)
               return (
-                <article key={g.id} className={`rounded-xl border p-5 sm:p-6 ${gi === 0 ? 'md:col-span-2' : ''}`} style={{ backgroundColor: c.pageBg, borderColor: c.cardBorder }}>
+                <article key={g.id} className={`rounded-xl border p-5 sm:p-6 ${wide ? 'md:col-span-2' : ''}`} style={{ backgroundColor: c.pageBg, borderColor: c.cardBorder }}>
                   <div className="flex items-start gap-3">
                     <div className="h-10 w-10 rounded-lg flex items-center justify-center flex-shrink-0" style={{ backgroundColor: `${g.accent}22` }}>
                       <Icon className="h-5 w-5" style={{ color: g.accent }} />
@@ -340,7 +351,7 @@ function WorkerPageInner() {
                       <p className="text-sm mt-0.5" style={{ color: c.textMuted }}>{g.lead[lang]}</p>
                     </div>
                   </div>
-                  <ul className={`mt-4 grid gap-x-6 gap-y-2 ${gi === 0 ? 'sm:grid-cols-2' : ''}`}>
+                  <ul className={`mt-4 grid gap-x-6 gap-y-2 ${wide ? 'sm:grid-cols-2' : ''}`}>
                     {g.items.map((it, i) => (
                       <li key={i} className="flex items-start gap-2 text-sm" style={{ color: c.text }}>
                         <Check className="h-4 w-4 mt-0.5 flex-shrink-0" style={{ color: g.accent }} />
@@ -375,7 +386,7 @@ function WorkerPageInner() {
 
       {/* POZIV NA AKCIJU */}
       <section className="px-3 sm:px-5 pb-12 sm:pb-16">
-        <div className="max-w-6xl mx-auto rounded-2xl p-6 sm:p-10 text-center border" style={{ backgroundColor: c.cardBg, borderColor: c.cardBorder, borderTop: '3px solid #F2A516' }}>
+        <div className="max-w-6xl mx-auto rounded-2xl p-6 sm:p-10 text-center border" style={{ backgroundColor: c.cardBg, borderColor: c.cardBorder, boxShadow: `inset 0 3px 0 ${'#F2A516'}` }}>
           <h2 className="font-display text-2xl sm:text-3xl font-semibold" style={{ color: c.text }}>{lt.ctaTitle}</h2>
           <p className="mt-2 text-sm sm:text-base max-w-xl mx-auto" style={{ color: c.textMuted }}>{lt.ctaSub}</p>
           <div className="mt-6 flex flex-wrap justify-center gap-3">
@@ -415,7 +426,7 @@ function SectionHead({ title, sub, c }: { title: string; sub: string; c: ThemeTo
 
 const GROUP_ICONS: Record<FeatureGroupId, React.ComponentType<{ className?: string; style?: React.CSSProperties }>> = {
   worker: ScanLine, workshop: Hammer, maintenance: CalendarCheck, safety: AlertTriangle,
-  authorisation: BadgeCheck, reports: FileText, data: Database,
+  authorisation: BadgeCheck, competence: GraduationCap, reports: FileText, data: Database,
 }
 
 export function WorkerPage() {

@@ -1,7 +1,8 @@
 'use client'
 
-import { useRef, useState } from 'react'
-import { Camera, X, Loader2 } from 'lucide-react'
+import { useEffect, useRef, useState } from 'react'
+import { Camera, X, Loader2, Sparkles } from 'lucide-react'
+import { getAiStatus, suggestDamage } from '@/lib/actions-ai'
 import { Textarea } from '@/components/ui/textarea'
 import { toast } from 'sonner'
 import { compressImage } from '@/lib/image-compress'
@@ -9,6 +10,10 @@ import { CHECKLIST_CATEGORY_ORDER, CHECKLIST_CATEGORY_LABELS } from '@/lib/types
 import { useTx } from '@/lib/worker-en'
 
 export const MAX_DAMAGE_PHOTOS = 2
+
+// Stanje AI-ja se čita jednom po otvaranju stranice. Bez ključa ili kad je isključen, ništa se ne prikazuje.
+let aiStatusPromise: Promise<{ enabled: boolean; model: string | null }> | null = null
+const loadAiStatus = () => (aiStatusPromise ??= getAiStatus().then((s) => ({ enabled: s.enabled, model: s.model })).catch(() => ({ enabled: false, model: null })))
 
 // Foto-prvo prijavljivanje: slika → jedna kategorija (velika dugmad) → opciono jedna rečenica.
 export function DamageQuickFields({
@@ -24,6 +29,23 @@ export function DamageQuickFields({
   const inputRef = useRef<HTMLInputElement>(null)
   const [busy, setBusy] = useState(false)
   const tx = useTx()
+  const [ai, setAi] = useState<{ enabled: boolean; model: string | null }>({ enabled: false, model: null })
+  const [aiBusy, setAiBusy] = useState(false)
+  const [sugg, setSugg] = useState<{ category: string | null; text: string | null } | null>(null)
+  useEffect(() => { void loadAiStatus().then(setAi) }, [])
+
+  const askAi = async () => {
+    setAiBusy(true)
+    const r = await suggestDamage({ text: description })
+    setAiBusy(false)
+    if (r.ok) setSugg({ category: r.category ?? null, text: r.text ?? null })
+    else toast.error(tx(r.error ?? 'AI nije dostupan'))
+  }
+  const applySugg = () => {
+    if (sugg?.category) onCategory(sugg.category)
+    if (sugg?.text) onDescription(sugg.text)
+    setSugg(null)
+  }
 
   const onFile = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0]
@@ -97,6 +119,22 @@ export function DamageQuickFields({
           placeholder={tx('npr. curi ulje pri dnu')}
           rows={2}
         />
+        {ai.enabled && description.trim().length >= 6 && !sugg && (
+          <button type="button" onClick={askAi} disabled={aiBusy} className="inline-flex items-center gap-1.5 text-sm font-medium text-primary underline-offset-2 hover:underline min-h-9">
+            {aiBusy ? <Loader2 className="h-4 w-4 animate-spin" /> : <Sparkles className="h-4 w-4" />}{tx('Predloži kategoriju i opis (AI)')}
+          </button>
+        )}
+        {sugg && (
+          <div className="rounded-lg border bg-muted/40 p-2.5 space-y-1.5 text-sm">
+            <div className="text-xs text-muted-foreground flex items-center gap-1"><Sparkles className="h-3 w-3" />{tx('AI prijedlog, provjerite prije slanja')} · <span className="font-mono">{ai.model}</span></div>
+            {sugg.category && <div><span className="text-muted-foreground">{tx('Kategorija')}: </span><b>{tx(CHECKLIST_CATEGORY_LABELS[sugg.category as keyof typeof CHECKLIST_CATEGORY_LABELS])}</b></div>}
+            {sugg.text && <div>{sugg.text}</div>}
+            <div className="flex gap-2 pt-0.5">
+              <button type="button" onClick={applySugg} className="h-10 px-4 rounded-md bg-primary text-primary-foreground text-sm font-semibold">{tx('Primijeni')}</button>
+              <button type="button" onClick={() => setSugg(null)} className="h-10 px-4 rounded-md border text-sm">{tx('Odbaci')}</button>
+            </div>
+          </div>
+        )}
       </div>
     </div>
   )

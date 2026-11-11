@@ -41,7 +41,7 @@ export const CHECKLIST_CATEGORY_LABELS: Record<ChecklistCategory, string> = {
   MEHANIKA: 'Mehanika',
   ELEKTRIKA: 'Elektrika',
   HIDRAULIKA: 'Hidraulika',
-  BEZBJEDNOST: 'Bezbjednosna oprema',
+  BEZBJEDNOST: 'Sigurnosna oprema',
   OPSTE: 'Opšte',
 }
 
@@ -79,7 +79,7 @@ export interface ChecklistItem {
 // Standardni AHM 340 pre-use inspection checklist - koristi se za tipove
 // opreme za koje ne postoji poseban papirni obrazac (fallback).
 export const DEFAULT_CHECKLIST: ChecklistItem[] = [
-  { id: 'tires', label: 'Gume i pneumatski u good stanju (bez oštećenja, odgovarajući pritisak)', passed: null, group: 3 },
+  { id: 'tires', label: 'Gume i pneumatici u dobrom stanju (bez oštećenja, odgovarajući pritisak)', passed: null, group: 3 },
   { id: 'body', label: 'Karoserija bez novih oštećenja', passed: null, group: 2 },
   { id: 'lights', label: 'Svjetla', passed: null, group: 3 },
   { id: 'brakes', label: 'Kočioni sistem funkcionalan', passed: null, group: 3, blocking: true },

@@ -1,5 +1,5 @@
 -- 041: Provjera osposobljenosti osoblja (ADR.OR.D.017 - osposobljenost i provjera znanja; ADR.OPS.B.024 - vozači)
--- Pokrenuti ručno u Supabase SQL editoru (nakon 040). Bezbjedno za ponovno pokretanje.
+-- Pokrenuti ručno u Supabase SQL editoru (nakon 040). Sigurno za ponovno pokretanje.
 --
 -- Tok: test (vozač / šef-radionica / admin) -> pad = status TRAINING (rad samo uz nadzor mentora)
 --      -> N nadziranih smjena (mentor potvrđuje pri zaduživanju) -> ponovni test -> VALID.

@@ -90,7 +90,7 @@ export function CompetenceView({ isAdmin }: { isAdmin: boolean }) {
 
       <div className="rounded-xl border border-amber-300 bg-amber-50 p-3 text-sm text-amber-950">
         <b>Pitanja su nacrt.</b> Napisana su iz uputstva za korištenje i moraju ih pregledati i odobriti odgovorni za obuku prije prve službene provjere.
-        Rok, broj pitanja i prag prolaza podešava administrator. Jedan pogrešan odgovor na bezbjednosno pitanje znači pad. Poslije pada radnik radi uz mentora {COMPETENCE_RULES.supervisedShiftsRequired} smjene, pa ponovo polaže.
+        Rok, broj pitanja i prag prolaza podešava administrator. Jedan pogrešan odgovor na sigurnosno pitanje znači pad. Poslije pada radnik radi uz mentora {COMPETENCE_RULES.supervisedShiftsRequired} smjene, pa ponovo polaže.
       </div>
 
       <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-2">
@@ -138,7 +138,7 @@ export function CompetenceView({ isAdmin }: { isAdmin: boolean }) {
                     <thead><tr className="text-left text-muted-foreground"><th className="py-1">Datum</th><th>Vrsta</th><th>Rezultat</th><th>Ishod</th></tr></thead>
                     <tbody>{attempts.map((a, i) => (
                       <tr key={i} className="border-t"><td className="py-1">{fmt(a.takenAt)}</td><td>{KIND_LABEL[a.kind] ?? a.kind}</td><td>{a.scorePct}%</td>
-                        <td>{a.passed ? 'Položio' : a.criticalFailed ? 'Pad (bezbjednosno pitanje)' : 'Pad'}</td></tr>
+                        <td>{a.passed ? 'Položio' : a.criticalFailed ? 'Pad (sigurnosno pitanje)' : 'Pad'}</td></tr>
                     ))}</tbody>
                   </table>
                 )}
