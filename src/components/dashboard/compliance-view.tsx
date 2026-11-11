@@ -3,7 +3,7 @@
 // Pregled usklađenosti sa EASA 139/2014 za održavanje opreme i sredstava (spisak iz src/lib/easa-compliance.ts).
 
 import { useState } from 'react'
-import { FileDown, CheckCircle2, CircleDot, XCircle, ClipboardList } from 'lucide-react'
+import { FileDown, CheckCircle2, CircleDot, XCircle, ClipboardList, Sparkles } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { COMPLIANCE, STATUS_META, ASSESSED_ON, BASIS, countStatuses, type CStatus } from '@/lib/easa-compliance'
 
@@ -66,6 +66,11 @@ export function ComplianceView() {
                     <div className="min-w-0">
                       <div className="text-xs font-mono text-muted-foreground">{i.ref}</div>
                       <div className="text-sm font-medium leading-snug">{i.req}</div>
+                      {i.ai && (
+                        <span className="mt-1.5 inline-flex items-center gap-1 rounded-full border border-violet-300 bg-violet-50 px-2 py-0.5 text-xs font-medium text-violet-800" title="Pitanja za test se mogu pisati uz AI pomoć">
+                          <Sparkles className="h-3 w-3" />AI pomoć pri kreiranju pitanja
+                        </span>
+                      )}
                     </div>
                     <span className={`flex-shrink-0 inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-xs font-medium ${STYLE[i.status].pill}`}>
                       {STYLE[i.status].icon}{STATUS_META[i.status].short}

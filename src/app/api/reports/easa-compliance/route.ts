@@ -55,7 +55,7 @@ export async function GET() {
     y -= 17
     g.items.forEach((i, idx) => {
       const reqL = wrap(i.req, font, 7, 182)
-      const whL = wrap(i.where + (i.note ? `. ${i.note}` : ''), font, 6.8, W - M - X.wh - 4)
+      const whL = wrap(i.where + (i.note ? `. ${i.note}` : '') + (i.ai ? ' [AI pomoć pri kreiranju pitanja]' : ''), font, 6.8, W - M - X.wh - 4)
       const h = Math.max(reqL.length, whL.length, 2) * 8.6 + 6
       if (y - h < BOTTOM) { ;({ c, y } = newPage(false)) }
       if (idx % 2 === 0) c.page.drawRectangle({ x: M, y: y - h, width: W - 2 * M, height: h, color: ZEBRA })
