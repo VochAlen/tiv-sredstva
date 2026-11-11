@@ -66,6 +66,7 @@ export const FEATURE_GROUPS: FeatureGroup[] = [
     items: [
       { hr: 'Ovlaštenja vozača: kategorije, obuka i rokovi isteka (ADR.OPS.B.024)', en: 'Driver authorisations: categories, training and expiry dates (ADR.OPS.B.024)' },
       { hr: 'Ovlaštenje vozila: zone vožnje, radio, pozivni znak, označavanje i svjetla (ADR.OPS.B.026)', en: 'Vehicle authorisation: driving zones, radio, call sign, marking and lighting (ADR.OPS.B.026)' },
+      { hr: 'Periodična provjera osposobljenosti osoblja i vozača: kratak test sa nasumičnim pitanjima iz banke koju vodi administrator, rok upisuje administrator u mjesecima, uz rad pod nadzorom mentora poslije pada (ADR.OR.D.017, ADR.OPS.B.024)', en: 'Periodic competence check of staff and drivers: a short test of random questions from a pool kept by the administrator, with a repeat interval in months entered by the administrator, and supervised work with a mentor after a fail (ADR.OR.D.017, ADR.OPS.B.024)' },
       { hr: 'Suspenzija i opoziv sa razlogom, provjera pri zaduživanju', en: 'Suspension and revocation with a reason, checked at check-out' },
       { hr: 'Registar ovlaštenih vozila za štampu', en: 'Printable register of authorised vehicles' },
     ],
@@ -117,6 +118,7 @@ export const LANDING_TEXT: Record<Language, {
       { ref: 'ADR.OPS.C.005', d: 'Program održavanja' },
       { ref: 'ADR.OPS.C.007', d: 'Održavanje vozila, dnevni pregled, neispravna vozila' },
       { ref: 'ADR.OPS.B.024', d: 'Ovlaštenje vozača' },
+      { ref: 'ADR.OR.D.017, ADR.OPS.B.024', d: 'Periodična provjera osposobljenosti osoblja i vozača' },
       { ref: 'ADR.OPS.B.026', d: 'Ovlaštenje vozila' },
       { ref: 'ADR.OR.D.035', d: 'Čuvanje zapisa, 5 godina' },
       { ref: 'IATA AHM 340', d: 'Pre-use inspekcija opreme' },
@@ -139,6 +141,7 @@ export const LANDING_TEXT: Record<Language, {
       { ref: 'ADR.OPS.C.005', d: 'Maintenance programme' },
       { ref: 'ADR.OPS.C.007', d: 'Vehicle maintenance, daily check, unserviceable vehicles' },
       { ref: 'ADR.OPS.B.024', d: 'Driver authorisation' },
+      { ref: 'ADR.OR.D.017, ADR.OPS.B.024', d: 'Periodic competence check of staff and drivers' },
       { ref: 'ADR.OPS.B.026', d: 'Vehicle authorisation' },
       { ref: 'ADR.OR.D.035', d: 'Record keeping, 5 years' },
       { ref: 'IATA AHM 340', d: 'Pre-use equipment inspection' },

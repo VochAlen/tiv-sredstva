@@ -26,9 +26,12 @@ import {
 } from 'lucide-react'
 import { QrScanner } from './qr-scanner'
 import { QuickReportDialog } from './quick-report-dialog'
+import { WorkerInspectionDialog } from './worker-inspection-dialog'
+import { getCompetenceForCard, type CardCompetence } from '@/lib/actions-competence'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { Label } from '@/components/ui/label'
 import { Textarea } from '@/components/ui/textarea'
 import { Badge } from '@/components/ui/badge'
@@ -125,6 +128,15 @@ export function WorkerView({
   const [meterKm, setMeterKm] = useState('')
   const [meterHours, setMeterHours] = useState('')
   const [lookup, setLookup] = useState<'idle' | 'loading' | 'found' | 'notfound'>('idle')
+  // Provjera znanja: zadatak / status radnika (samo uz Supabase; u demo modu ili bez migracije se ne prikazuje ništa)
+  const [comp, setComp] = useState<CardCompetence | null>(null)
+  useEffect(() => {
+    const id = (remembered && !editingWorker ? remembered.cardId : lookup === 'found' ? cardId : '').trim()
+    if (id.length < 3) { setComp(null); return }
+    let alive = true
+    getCompetenceForCard(id).then((r) => { if (alive) setComp(r.ok ? r : null) }).catch(() => { if (alive) setComp(null) })
+    return () => { alive = false }
+  }, [remembered, editingWorker, lookup, cardId])
 
   useEffect(() => {
     const id = cardId.trim()
@@ -301,6 +313,14 @@ export function WorkerView({
     } catch { /* mreža - pokušaće ponovo */ }
     finally { if (manual) setRechecking(false) }
   }
+  // Radnik sam radi dnevni pregled (identifikovan ID karticom; server ponovo provjerava ovlaštenje)
+  const [showInspection, setShowInspection] = useState(false)
+  // Nadzor mentora pri zaduživanju (radnik u obuci)
+  const [mentorAsk, setMentorAsk] = useState<{ msg: string; value: string; overrides?: { damageDescription?: string; firstUseConfirmed?: boolean; mentorCardId?: string } } | null>(null)
+  const openInspection = () => {
+    if (cardId.trim().length < 3) { toast.info(tx('Unesite ID karticu da biste uradili pregled')); return }
+    setShowInspection(true)
+  }
   useEffect(() => {
     if (!awaitingInspection) return
     const tick = () => { if (document.visibilityState === 'visible') recheckInspection() }
@@ -395,7 +415,7 @@ export function WorkerView({
 
   // Izdvojeno iz handleInspectSubmit da i brza dugmad (markAllPassed +
   // submit, quickCheckIn) mogu pozvati isti kod bez events-a.
-  const submitInspect = (overrides?: { damageDescription?: string; firstUseConfirmed?: boolean }) => {
+  const submitInspect = (overrides?: { damageDescription?: string; firstUseConfirmed?: boolean; mentorCardId?: string }) => {
     if (!equipment) return
     // Radnik ne mora ukucati ništa ako je dao sliku ili kategoriju (foto-prvo prijava)
     const damageActive = actionType === 'CHECK_OUT' ? effectiveMode === 'fault' : reportDamageIn
@@ -443,7 +463,13 @@ export function WorkerView({
             damageSeverity: checkoutSeverity,
             ...extras,
             firstUseConfirmed: overrides?.firstUseConfirmed,
+            mentorCardId: overrides?.mentorCardId,
           })
+          if ((res as any).mentorRequired) {
+            // Radnik nije prošao provjeru znanja: rad samo uz nadzor mentora (mentor unosi svoju karticu)
+            setMentorAsk({ msg: res.error ?? '', value: '', overrides })
+            return
+          }
           if ((res as any).needsFirstUseConfirmation) {
             // Sredstvo je nedavno popravljeno — prvi radnik mora potvrditi da ga je pregledao
             if (window.confirm(`${res.error}\n\n${tx('Potvrđujem da sam pregledao/la sredstvo i da je ispravno.')}`)) {
@@ -591,6 +617,44 @@ export function WorkerView({
 
       <QuickReportDialog open={showFodDialog} onOpenChange={setShowFodDialog} type="FOD" />
       <QuickReportDialog open={showWildlifeDialog} onOpenChange={setShowWildlifeDialog} type="WILDLIFE" />
+      <Dialog open={!!mentorAsk} onOpenChange={(v) => { if (!v) setMentorAsk(null) }}>
+        <DialogContent className="max-w-sm">
+          <DialogHeader>
+            <DialogTitle>{tx('Rad uz nadzor mentora')}</DialogTitle>
+            <DialogDescription>{mentorAsk?.msg}</DialogDescription>
+          </DialogHeader>
+          <Input
+            autoFocus
+            value={mentorAsk?.value ?? ''}
+            onChange={(e) => setMentorAsk((m) => (m ? { ...m, value: e.target.value } : m))}
+            placeholder={tx('ID kartica mentora')}
+            className="h-12 text-base"
+            autoCapitalize="characters"
+          />
+          <Button
+            className="w-full h-12 text-base"
+            disabled={(mentorAsk?.value ?? '').trim().length < 3}
+            onClick={() => {
+              const m = mentorAsk
+              if (!m) return
+              setMentorAsk(null)
+              submitInspect({ ...m.overrides, mentorCardId: m.value.trim() })
+            }}
+          >
+            {tx('Potvrdi i zaduži')}
+          </Button>
+        </DialogContent>
+      </Dialog>
+      {equipment && (
+        <WorkerInspectionDialog
+          open={showInspection}
+          onOpenChange={setShowInspection}
+          equipmentCode={equipment.code}
+          equipmentName={equipment.name}
+          cardId={cardId}
+          onDone={() => { void recheckInspection() }}
+        />
+      )}
 
       {/* STEP 2: IDENTIFY - info o sredstvu + ID radnika */}
       {step === 'identify' && equipment && !lookupLoading && (
@@ -599,7 +663,10 @@ export function WorkerView({
 
           {actionType === 'CHECK_OUT' && equipment.inspectedToday === false && (
             <div role="alert" className="rounded-lg border-2 border-red-500 bg-red-50 p-3 text-sm text-red-900">
-              <strong>{tx('Sredstvo nije pregledano danas.')}</strong>{tx(' Pozovite šefa da uradi pregled, ili prijavite kvar.')}
+              <strong>{tx('Sredstvo nije pregledano danas.')}</strong>{' '}{tx('Pregled još nije urađen. Uradite ga sada (nekoliko minuta) ili prijavite kvar.')}
+              <Button type="button" size="sm" className="mt-2 h-12 w-full text-base" onClick={openInspection}>
+                <ClipboardList className="h-4 w-4 mr-2" />{tx('Uradi pregled')}
+              </Button>
               <Button type="button" variant="outline" size="sm" className="mt-2 h-10 w-full border-red-400 bg-white" disabled={rechecking} onClick={() => recheckInspection(true)}>
                 {rechecking ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : null}{tx('Pregled je urađen — provjeri ponovo')}
               </Button>
@@ -695,6 +762,22 @@ export function WorkerView({
               </div>
                 </>
               )}
+              {comp && (comp.pendingKind || comp.state === 'DUE' || comp.state === 'TRAINING') && (
+                <a
+                  href="/provjera"
+                  className={`block rounded-lg border p-3 text-sm ${comp.state === 'TRAINING' ? 'border-red-300 bg-red-50 text-red-900' : 'border-blue-300 bg-blue-50 text-blue-900'}`}
+                >
+                  <span className="font-semibold">
+                    {comp.state === 'TRAINING'
+                      ? tx('Rad uz nadzor mentora ({d}/{r} smjena). Polažete test ponovo poslije toga.', { d: comp.supervisedDone ?? 0, r: comp.supervisedRequired ?? 3 })
+                      : comp.pendingKind
+                        ? tx('Imate zadatak: provjera znanja')
+                        : tx('Rok provjere znanja je istekao')}
+                  </span>
+                  {comp.pendingDue && comp.state !== 'TRAINING' && <span className="block text-xs opacity-80">{tx('Rok: {d}', { d: new Date(comp.pendingDue).toLocaleDateString('sr-Latn-ME') })}</span>}
+                  <span className="block text-xs underline mt-0.5">{tx('Otvori provjeru znanja')}</span>
+                </a>
+              )}
             </CardContent>
           </Card>
 
@@ -734,7 +817,10 @@ export function WorkerView({
             <>
               {faultOnly && (
                 <div role="alert" className="rounded-lg border-2 border-red-500 bg-red-50 p-3 text-sm text-red-900">
-                  <strong>{tx('Sredstvo nije pregledano danas.')}</strong>{tx(' Pozovite šefa, ili prijavite kvar ispod ako ste ga uočili.')}
+                  <strong>{tx('Sredstvo nije pregledano danas.')}</strong>{' '}{tx('Pregled još nije urađen. Uradite ga sada (nekoliko minuta) ili prijavite kvar.')}
+                  <Button type="button" size="sm" className="mt-2 h-12 w-full text-base" onClick={openInspection}>
+                    <ClipboardList className="h-4 w-4 mr-2" />{tx('Uradi pregled')}
+                  </Button>
                   <Button type="button" variant="outline" size="sm" className="mt-2 h-10 w-full border-red-400 bg-white" disabled={rechecking} onClick={() => recheckInspection(true)}>
                     {rechecking ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : null}{tx('Pregled je urađen — provjeri ponovo')}
                   </Button>

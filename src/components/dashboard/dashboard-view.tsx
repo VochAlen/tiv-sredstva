@@ -49,7 +49,7 @@ import {
   AlertTriangle,
   Bird,
   ListChecks,
-  Bell, FileStack } from 'lucide-react'
+  Bell, FileStack, GraduationCap, Settings2 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
@@ -141,6 +141,8 @@ import { CrsView } from './crs-view'
 import { SchedulingView } from './scheduling-view'
 import { IncidentsView } from './incidents-view'
 import { DriverAuthView } from './driver-auth-view'
+import { CompetenceView } from './competence-view'
+import { CompetenceAdminView } from './competence-admin-view'
 import { FuelParkingView } from './fuel-parking-view'
 import { DeicingView } from './deicing-view'
 import { AerodromeInspectionView } from './aerodrome-inspection-view'
@@ -190,6 +192,8 @@ const NAV_GROUPS: NavGroup[] = [
       { value: 'damages', label: 'Arhiva kvarova', icon: AlertOctagon },
       { value: 'qr', label: 'QR kodovi', icon: Printer, minRole: 'engineer' },
       { value: 'driverauth', label: 'Ovlaštenja vozača', icon: Car, minRole: 'engineer' },
+      { value: 'competence', label: 'Osposobljenost', icon: GraduationCap, minRole: 'engineer' },
+      { value: 'competence-admin', label: 'Postavke provjere znanja', icon: Settings2, minRole: 'admin' },
       { value: 'crs', label: 'CRS (potvrda o puštanju)', icon: Award, minRole: 'engineer' },
       { value: 'scheduling', label: 'Servis i dijelovi', icon: Calendar, minRole: 'engineer' },
     ],
@@ -785,6 +789,14 @@ export function DashboardView({ currentUser }: { currentUser: AppUser }) {
 
         <TabsContent value="driverauth" className="space-y-4">
           <DriverAuthView />
+        </TabsContent>
+
+        <TabsContent value="competence" className="space-y-4">
+          <CompetenceView isAdmin={currentUser.role === 'admin'} />
+        </TabsContent>
+
+        <TabsContent value="competence-admin" className="space-y-4">
+          {currentUser.role === 'admin' && <CompetenceAdminView />}
         </TabsContent>
 
         <TabsContent value="fuelparking" className="space-y-4">

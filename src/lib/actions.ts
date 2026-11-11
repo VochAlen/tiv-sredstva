@@ -6,6 +6,7 @@
 
 import { db } from '@/lib/db'
 import { wasInspectedToday, NOT_INSPECTED_MSG } from '@/lib/inspection-gate'
+import { competenceGate, logSupervisedShift } from '@/lib/competence-server'
 import { logRepairEvent } from '@/lib/workshop-log'
 import { revalidatePath } from 'next/cache'
 import { notifyExternalFault } from '@/lib/service-notify'
@@ -521,6 +522,8 @@ export async function checkOutEquipment(params: {
   damageCategory?: string
   damagePhotos?: string[]
   firstUseConfirmed?: boolean
+  /** ID kartica mentora: traži se samo od radnika koji nije prošao provjeru znanja (status TRAINING) */
+  mentorCardId?: string
 }) {
   // checkOut je JAVNA akcija - radnici se identifikuju preko PIN-a/ID kartice
   // (ne zahtijeva auth login)
@@ -552,6 +555,13 @@ export async function checkOutEquipment(params: {
     const { checkVehicleAuthorisation } = await import('./actions-vehicle-auth')
     const va = await checkVehicleAuthorisation(gateEquipmentId)
     if (!va.allowed) return { ok: false, error: va.reason, damageReportId: null as string | null, assignmentId: undefined as string | undefined }
+  }
+
+  // Provjera osposobljenosti (migracija 041): radnik u obuci smije zadužiti samo uz nadzor mentora.
+  // Propušta ako tabele ne postoje ili baza ne odgovori (evidencija ne smije zaustaviti operativu).
+  const compGate = await competenceGate(employeeCardId, params.mentorCardId)
+  if (!compGate.ok) {
+    return { ok: false, error: compGate.error, mentorRequired: !!compGate.mentorRequired, damageReportId: null as string | null, assignmentId: undefined as string | undefined }
   }
 
   if (isDemoMode()) {
@@ -607,6 +617,9 @@ export async function checkOutEquipment(params: {
       description: damageDescription, category: damageCategory, photos: damagePhotos,
     })
   }
+
+  // Zaduženo uz mentora: upiši nadziranu smjenu (greška ne poništava zaduženje)
+  if (res.ok && compGate.supervised) await logSupervisedShift(employeeCardId, compGate.supervised, equipmentCode)
 
   revalidatePath('/')
   return {

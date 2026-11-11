@@ -40,7 +40,7 @@ export const COMPLIANCE: CGroup[] = [
     { ref: 'B.024(a)(2)', req: 'Važeća vozačka dozvola i druge potrebne dozvole za specijalna vozila', status: 'PARTIAL', where: 'Broj i važenje airside dozvole', note: 'Ne evidentira se nacionalna vozačka dozvola i kategorija.' },
     { ref: 'B.024(a)(4) / B.029', req: 'Poznavanje jezika za vožnju na manevarskoj površini', status: 'MISSING', where: '—' },
     { ref: 'B.024(b)', req: 'Program obuke vozača (propisi, vozilo, komunikacije, radiotelefonija, ljudski faktor, upoznavanje sa terenom) i ocjena osposobljenosti', status: 'PARTIAL', where: 'Datum obuke i istek se prate', note: 'Sadržaj programa obuke je u proceduri.' },
-    { ref: 'B.024(c)(2)', req: 'Ponovna obuka i provjera osposobljenosti najkasnije svakih 24 mjeseca', status: 'PARTIAL', where: 'Istek obuke i upozorenja o rokovima', note: 'Provjera osposobljenosti nema poseban rok.' },
+    { ref: 'B.024(c)(2)', req: 'Ponovna obuka i provjera osposobljenosti najkasnije svakih 24 mjeseca', status: 'PARTIAL', where: 'Provjera znanja (kratak test) sa rokom (mjeseci) koji upisuje administrator, upozorenje preko 24 mjeseca; istek obuke i upozorenja', note: 'Praktična provjera na vozilu se ne evidentira u aplikaciji.' },
     { ref: 'B.024(d)', req: 'Privremeno ovlaštenje za vožnju uz pratnju ovlaštenog vozila', status: 'MISSING', where: '—' },
     { ref: 'B.024(e)', req: 'Postupak izdavanja, praćenja, suspenzije i opoziva, uz evidenciju', status: 'PARTIAL', where: 'Aktivno / suspendovano stanje ovlaštenja', note: 'Istorija promjena nije potpuna kao kod ovlaštenja vozila.' },
   ] },
@@ -57,7 +57,7 @@ export const COMPLIANCE: CGroup[] = [
   ] },
   { rule: 'ADR.OR.D.017', title: 'Obuka osoblja', items: [
     { ref: 'D.017(a),(b)', req: 'Program obuke za osoblje koje radi na održavanju i vožnji (početna, ponovna, osvježavajuća)', status: 'PARTIAL', where: 'Kvalifikacije radionice, istek rokova', note: 'Početna obuka i sadržaj programa su u proceduri.' },
-    { ref: 'D.017(f)', req: 'Ponovna obuka najkasnije svakih 24 mjeseca', status: 'PARTIAL', where: 'Upozorenja o isteku rokova' },
+    { ref: 'D.017(f)', req: 'Ponovna obuka najkasnije svakih 24 mjeseca', status: 'PARTIAL', where: 'Periodična provjera znanja, rok u mjesecima po izboru administratora, banka pitanja i evidencija pokušaja; upozorenja o isteku rokova', note: 'Sadržaj pitanja odobrava odgovorni za obuku.' },
   ] },
   { rule: 'ADR.OR.D.035', title: 'Čuvanje zapisa', items: [
     { ref: 'D.035(d)', req: 'Opšti rok čuvanja zapisa najmanje 5 godina', status: 'DONE', where: 'Baza ne dozvoljava brisanje zapisa mlađih od 5 godina (migracija 039)' },

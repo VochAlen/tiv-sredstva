@@ -5,7 +5,7 @@ import { isDemoMode, DEMO_USERS } from './lib/auth-mode'
 // Rute koje su javne (ne zahtijevaju auth)
 // / je JAVNA - radnici skeniraju QR bez login-a
 // /dashboard je ZAŠTIĆENA - samo admin/inženjer
-const PUBLIC_ROUTES = ['/', '/login', '/fids', '/auth/callback', '/auth/demo-login', '/auth/logout', '/about', '/features']
+const PUBLIC_ROUTES = ['/', '/login', '/fids', '/auth/callback', '/auth/demo-login', '/auth/logout', '/about', '/features', '/provjera']
 
 function isPublicRoute(pathname: string): boolean {
   return PUBLIC_ROUTES.some((r) => pathname === r || (r !== '/' && pathname.startsWith(r + '/')))
