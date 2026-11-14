@@ -144,6 +144,7 @@ import { DriverAuthView } from './driver-auth-view'
 import { CompetenceView } from './competence-view'
 import { CompetenceAdminView } from './competence-admin-view'
 import { CompetenceResultsView } from './competence-results-view'
+import { MobileMenuButton, MobileBottomBar, CloseOnPick, type BarItem } from './mobile-nav'
 import { AiAdminView } from './ai-admin-view'
 import { FuelParkingView } from './fuel-parking-view'
 import { DeicingView } from './deicing-view'
@@ -339,6 +340,17 @@ export function DashboardView({ currentUser }: { currentUser: AppUser }) {
     return ''
   }, [tab, t])
 
+  // Donja traka na telefonu: glavna odredišta po ulozi (maks. 4) + "Meni"
+  const barItems = useMemo<BarItem[]>(() => {
+    const vis = visibleGroups(currentUser.role).flatMap((g) => g.items)
+    const SHORT: Record<string, string> = { maintenance: 'Kvarovi', mytasks: 'Zadatak', equipment: 'Sredstva', reports: 'Izvještaji', overview: 'Pregled' }
+    return ['maintenance', 'mytasks', 'equipment', 'reports', 'overview']
+      .map((v) => vis.find((i) => i.value === v))
+      .filter((i): i is NavItem => !!i)
+      .slice(0, 4)
+      .map((i) => ({ value: i.value, icon: i.icon, label: NAV_T_KEYS[i.value] ? t(NAV_T_KEYS[i.value]!) : SHORT[i.value] ?? i.label, badge: i.value === 'maintenance' ? stats.openDamages : 0 }))
+  }, [currentUser.role, stats.openDamages, t])
+
   return (
     <SidebarProvider>
       <Sidebar collapsible="icon">
@@ -355,6 +367,7 @@ export function DashboardView({ currentUser }: { currentUser: AppUser }) {
         </SidebarHeader>
 
         <SidebarContent>
+          <CloseOnPick>
           {(() => {
             const all = visibleGroups(currentUser.role)
             const isAdmin = currentUser.role === 'admin'
@@ -367,7 +380,7 @@ export function DashboardView({ currentUser }: { currentUser: AppUser }) {
                       <SidebarMenuItem key={item.value}>
                         <SidebarMenuButton
                           isActive={tab === item.value}
-                          className={item.highlight ? 'font-bold bg-blue-600 text-white hover:bg-blue-700 hover:text-white data-[active=true]:bg-blue-800 data-[active=true]:text-white' : undefined}
+                          className={`max-md:h-11 max-md:text-[15px] ${item.highlight ? 'font-bold bg-blue-600 text-white hover:bg-blue-700 hover:text-white data-[active=true]:bg-blue-800 data-[active=true]:text-white' : ''}`}
                           onClick={() => setTab(item.value)}
                           tooltip={NAV_T_KEYS[item.value] ? t(NAV_T_KEYS[item.value]!) : item.label}
                         >
@@ -401,7 +414,7 @@ export function DashboardView({ currentUser }: { currentUser: AppUser }) {
                         <SidebarMenuItem key={item.value}>
                           <SidebarMenuButton
                             isActive={tab === item.value}
-                            className={item.highlight ? 'font-bold bg-blue-600 text-white hover:bg-blue-700 hover:text-white data-[active=true]:bg-blue-800 data-[active=true]:text-white' : undefined}
+                            className={`max-md:h-11 max-md:text-[15px] ${item.highlight ? 'font-bold bg-blue-600 text-white hover:bg-blue-700 hover:text-white data-[active=true]:bg-blue-800 data-[active=true]:text-white' : ''}`}
                             onClick={() => setTab(item.value)}
                             tooltip={NAV_T_KEYS[item.value] ? t(NAV_T_KEYS[item.value]!) : item.label}
                           >
@@ -415,7 +428,7 @@ export function DashboardView({ currentUser }: { currentUser: AppUser }) {
                       ))}
                       {moreGroups.length > 0 && (
                         <SidebarMenuItem>
-                          <SidebarMenuButton onClick={() => setShowMore((v) => !v)} tooltip="Više">
+                          <SidebarMenuButton data-keep-open onClick={() => setShowMore((v) => !v)} tooltip="Više" className="max-md:h-11 max-md:text-[15px]">
                             <MoreHorizontal />
                             <span>{open ? 'Manje' : 'Više'}</span>
                           </SidebarMenuButton>
@@ -428,6 +441,7 @@ export function DashboardView({ currentUser }: { currentUser: AppUser }) {
               </>
             )
           })()}
+          </CloseOnPick>
         </SidebarContent>
 
         <SidebarFooter>
@@ -441,7 +455,8 @@ export function DashboardView({ currentUser }: { currentUser: AppUser }) {
       <SidebarInset>
         <div className="flex items-center justify-between gap-2 border-b bg-background px-4 py-2.5 sticky top-0 z-10">
           <div className="flex items-center gap-2 min-w-0">
-            <SidebarTrigger />
+            <SidebarTrigger className="hidden md:inline-flex" />
+            <MobileMenuButton />
             <h1 className="text-base font-semibold truncate">{activeNavLabel}</h1>
           </div>
           <div className="flex gap-2 flex-shrink-0">
@@ -453,7 +468,7 @@ export function DashboardView({ currentUser }: { currentUser: AppUser }) {
           </div>
         </div>
 
-        <div className="flex-1 overflow-y-auto p-4 space-y-6">
+        <div className="flex-1 overflow-y-auto p-4 pb-24 md:pb-4 space-y-6">
           <HelpButton helpKey={tab} />
           <Tabs value={tab} onValueChange={setTab}>
         <TabsContent value="mytasks" className="space-y-4">
@@ -910,6 +925,7 @@ export function DashboardView({ currentUser }: { currentUser: AppUser }) {
         </TabsContent>
           </Tabs>
         </div>
+      <MobileBottomBar items={barItems} active={tab} onSelect={setTab} />
       </SidebarInset>
     </SidebarProvider>
   )
